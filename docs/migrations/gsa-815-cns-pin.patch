@@ -1,0 +1,8 @@
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -20,4 +20,4 @@
+ 
+ # Contracts this repo shares with the library (cns.perception, cns.caller).
+ # Private; pinned to a commit like the kernel's conservation-kernel pin.
+-cns @ git+https://github.com/wking53214/CNS.git@4ffcaaacb48c12eaaf822949ce1c08a1ef6e91e0
++cns @ git+https://github.com/wking53214/CNS.git@v0.2.0

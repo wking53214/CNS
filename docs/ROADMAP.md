@@ -77,6 +77,14 @@ for it.
 Nothing here can break a consumer, and everything after it depends on one of
 these existing.
 
+**Status: done in this repository.** Items 1, 2, 3 and 5 landed on
+`claude/cns-variable-alignment-av0hwf`. `v0.1.0` and `v0.2.0` are tagged on
+`main` and both resolve through pip. Two things remain and are not code:
+GitHub Actions has to be enabled for the repository, and the `test` job set
+as a required status check on `main`, or the workflow is a file that never
+runs. The three consumer pin changes are prepared as patches under
+`docs/migrations/` and need applying in their own repositories.
+
 1. **Add `py.typed`** plus the `package-data` entry. One line of real change.
    Turns every annotation in the package from invisible to enforced in three
    consumers' type checkers. Largest single gain available.

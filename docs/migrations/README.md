@@ -12,9 +12,42 @@ consumer, but **not applied**: this session can modify `wking53214/CNS` and
 nothing else, by design. Applying them is a decision for whoever owns the
 consumer repository.
 
-| patch | consumer | removes | dependency change | validated against |
+| patch | consumer | what it does | risk | validated by |
 |---|---|---|---|---|
-| `gsa-815-governance.patch` | GSA-815 | 14 shadowed classes, 125 lines | **none needed** | its own `test_harness.py` |
+| `gsa-815-governance.patch` | GSA-815 | drops 14 shadowed classes, 125 lines | no dependency change | its own `test_harness.py`, byte-identical output |
+| `graph-cns-pin.patch` | GRAPH | raw SHA pin to `@v0.1.0` | none, same commit | `pip download` of the tag |
+| `sentinel_os-cns-pin.patch` | sentinel_os | raw SHA pin to `@v0.1.0` | none, same commit | `pip download` of the tag |
+| `gsa-815-cns-pin.patch` | GSA-815 | raw SHA pin to `@v0.2.0` | none, same commit | `pip download` of the tag |
+
+## The three pin patches
+
+`v0.1.0` and `v0.2.0` are now tagged on `main`, so consumers can pin a name
+instead of a forty-character SHA. Each patch moves a consumer to **the tag of
+the commit it already pins**, so all three are no-ops in content:
+
+| consumer | pinned commit | tag | uses |
+|---|---|---|---|
+| GRAPH | `9f8f3fe` | `v0.1.0` | `cns.graph` |
+| sentinel_os | `9f8f3fe` | `v0.1.0` | `cns.graph` |
+| GSA-815 | `4ffcaaa` | `v0.2.0` | `cns.perception`, `cns.caller` |
+
+They also normalise the URL. GRAPH and sentinel_os spelled the repository
+`wking53214/cns.git` while GSA-815 spelled it `CNS.git`. Both resolve, because
+GitHub redirects on case, but depending on a redirect for a private
+dependency is a needless link in the chain. All three now use `CNS.git`,
+which is the repository's actual name.
+
+Verified: each applies clean with `git apply --check -p1`, and both
+`cns @ git+https://github.com/wking53214/CNS.git@v0.1.0` and `@v0.2.0`
+resolve and download through pip against the private repository, producing
+`cns-0.1.0` and `cns-0.2.0` respectively. The `v0.1.0` sdist contains
+`cns/__init__.py` and `cns/graph.py`, which is what GRAPH and sentinel_os
+import.
+
+Do not consolidate everyone onto one version as part of this. Moving GRAPH
+and sentinel_os from `v0.1.0` to a later tag is a real upgrade decision,
+even though the graph module has not changed; keeping each consumer on the
+commit it already runs is what makes these three patches free.
 
 ## `gsa-815-governance.patch`
 
