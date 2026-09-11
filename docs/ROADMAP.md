@@ -55,17 +55,37 @@ the enforcement test writable, which it currently is not.
 
 ## Baseline and targets
 
-| metric | today | Phase 1 | Phase 3 |
+Counted in owned source only, per `docs/migrations/adoption_backlog.py`.
+Figures marked *done* landed during this plan's execution.
+
+| metric | at the start | now | Phase 3 |
 |---|---|---|---|
-| `kernel_shadow` sites | 59 | 59 | 0 |
-| `drifted_contract` sites | 25 | 25 | under 5 |
-| repositories importing CNS | 3 | 3 | 6+ |
+| `kernel_shadow` sites in owned source | 14 | 14, one patch ready | 0 |
+| `drifted_contract` sites in owned source | 0 | 0 | 0 |
+| repositories importing CNS | 3 | 3 | 4+ |
 | CNS modules with a consumer | 3 of 4 | 3 of 4 | 4 of 4 |
-| CI gating merges | none | required | required |
-| annotations visible to consumers | no | yes | yes |
-| tagged releases | 0 | 3 | 4+ |
+| CI on 3.10-3.13 | none | **done**, green | green |
+| CI gating merges | none | reports only | required check |
+| annotations visible to consumers | no | **done** | yes |
+| tagged releases | 0 | **2** | 3+ |
+| public shape pinned against silent change | no | **done** | yes |
 | blocking spine collisions | 14 | 14 | 0 |
 | classes carried | 24 | 24 | 24 |
+
+The `kernel_shadow` row is 14 rather than 59 because 45 of the 59 sit in
+vendored, harvested or archived code that no repository may edit; see the
+Phase 1 note below and `docs/migrations/README.md`.
+
+The `drifted_contract` row is 0 rather than 25 for two reasons. Twenty-three
+are in code no repository owns: 19 in `Ecology/corpus/`, 2 in
+GSA-Master-Kernel's archive, 2 in GSA-815's `vendor/` submodule. The
+remaining 2, in sentinel_os and GRAPH, are `GraphExtractor` **implementing**
+the Protocol of the same name, which is what the Protocol is for. A kernel
+scan cannot tell an implementation from a diverged copy, so it flags every
+real extractor as drift; treating those as debt would ask a repository to
+delete exactly the code `cns.graph` was written to let it keep.
+`adoption_backlog.py` reports them in their own section, as not-debt, rather
+than silently dropping them.
 
 Note the last row. **Coverage does not grow until Phase 4.** Adding classes
 to an unverified package multiplies the blast radius of every defect the
@@ -166,19 +186,27 @@ harder, which is the opposite of the goal. See `docs/migrations/README.md`
 for the file-by-file evidence and OBSERVE's own `UPSTREAM.md` for the
 de-vendoring plan it already intends.
 
-**The honest Phase 1 target is 23 sites, not 59.** Splitting the library's
-`kernel_shadow` count by who can act on it:
+**The honest Phase 1 target is 14 sites, not 59, and one patch covers all
+14.** Ecology and GSA-Master-Kernel were checked next and gave the same
+answer as OBSERVE. Ecology's 7 are all in `corpus/`, which its README calls
+"harvested data of mixed and partly unrecorded origin ... excluded from tests
+and linting by configuration"; its own 72 source files have zero.
+GSA-Master-Kernel is archival in full, "not a system ... a preserved design
+conversation" whose artifacts are kept byte-for-byte and mostly do not run.
+Splitting the count by who can act on it:
 
-| repo | sites | in its own code |
+| repo | own source | vendored, harvested or archived |
 |---|---|---|
-| OBSERVE | 34 | 0 |
-| GSA-815 | 16 | 14 |
-| Ecology | 7 | 7 |
-| GSA-Master-Kernel | 2 | 2 |
+| GSA-815 | **14** | 3 |
+| OBSERVE | 0 | 34 |
+| Ecology | 0 | 30 |
+| GSA-Master-Kernel | 0 | 3 |
 
-Thirty-six of the 59 are vendored copies of another repository's tree and
-resolve at their source. Of the 23 that are real, the prepared patch covers
-14, leaving Ecology's 7 and GSA-Master-Kernel's 2.
+`docs/migrations/adoption_backlog.py` computes this and cites every exclusion
+to the repository's own documentation, so the number cannot drift back. This
+plan stated the target as 59 and then as 23 before arriving at 14; both
+earlier figures were the same mistake, reading a repository directory as a
+repository's source.
 
 This phase still answers the scorecard's sharpest criticism. `cns.governance`
 is 14 of the package's 24 classes and was graded a liability for having zero

@@ -66,21 +66,77 @@ GSA-815 does, as a submodule) and deleting the copy here". That is the fix,
 it is OBSERVE's own plan, and it is de-vendoring work rather than contract
 work.
 
-### The corrected backlog
+## Ecology and GSA-Master-Kernel: also no patch
 
-Splitting the library's 59 `kernel_shadow` sites by who can actually fix them:
+Checked for the same reason, and the same answer both times.
 
-| repo | sites | in its own code | who fixes it |
-|---|---|---|---|
-| OBSERVE | 34 | 0 | GSA-815 upstream, then a subtree resync |
-| GSA-815 | 16 | 14 | `gsa-815-governance.patch`; the other 2 are `Node`/`Edge` in its `vendor/sentinel_os` submodule |
-| Ecology | 7 | 7 | Ecology |
-| GSA-Master-Kernel | 2 | 2 | GSA-Master-Kernel, in `artifact_15.py` |
+**Ecology's 7 sites are all in `corpus/`.** Its own README is explicit:
+"`corpus/` and `raw_sources/` are harvested data of mixed and partly
+unrecorded origin, are excluded from tests and linting by configuration, and
+are **not** covered by that license or included in any release." It is the
+input data Ecology's memory system ingests and indexes, not Ecology's source.
+Measured separately, Ecology's own 72 `.py` files have **zero** findings and
+`corpus/` has all seven. Editing it would corrupt a dataset and change what
+the memory system retrieves.
 
-**23 of 59 are a repo's own code. The other 36 are vendored copies of
-someone else's tree.** Of those 23, the patch above covers 14. Phase 1 is
-therefore much smaller than 59 sites suggested, and most of what looked like
-adoption debt is really one de-vendoring decision in OBSERVE.
+**GSA-Master-Kernel's 2 sites are archival.** Its README: "An archived Google
+Gemini transcript ... **This is not a system. It is a preserved design
+conversation**", whose `artifact_1.py`-`artifact_15.py` are "Copied
+byte-for-byte from the source; **not** cleaned up or made to run", with 4 of
+15 executing at all. Nothing imports `artifact_15.py`, and the repository has
+no dependency file to add `cns` to. Patching it would destroy the
+byte-for-byte provenance that is the repository's entire purpose.
+
+### The backlog, counted where someone can act on it
+
+`adoption_backlog.py` in this directory computes this, citing each exclusion
+to the repository's own documentation. Run against the live library:
+
+| repo | own source | vendored, harvested or archived |
+|---|---|---|
+| GSA-815 | **14** | 3 |
+| OBSERVE | 0 | 34 |
+| Ecology | 0 | 30 |
+| GSA-Master-Kernel | 0 | 3 |
+| **total** | **14** | **70** |
+
+**Only 14 of the library's `kernel_shadow` sites are in code a repository
+owns, and `gsa-815-governance.patch` covers all 14.** Everything else is a
+vendored subtree, a harvested corpus, or an archive, and each resolves at its
+source or not at all.
+
+So Phase 1 is one patch, not a campaign. `ROADMAP.md` put the target at 59
+sites, then at 23; both were the same mistake made twice, which was reading a
+repository directory as a repository's source. The tool exists so the number
+cannot drift back.
+
+A note on why 70 exceeds the 59 `ghost-buster` reported: this script also
+counts `drifted_contract` findings in the excluded bucket. The owned column
+is the one Phase 1 is measured by, and it agrees exactly.
+
+### Drift is 0 in owned source, and one reason is not an exclusion
+
+`ghost-buster` reports 25 `drifted_contract` findings. Twenty-three are in
+code no repository owns: 19 in `Ecology/corpus/`, 2 in GSA-Master-Kernel's
+archive, 2 in GSA-815's `vendor/` submodule.
+
+The last 2, in sentinel_os and GRAPH, are different and worth understanding.
+Both are `GraphExtractor` **implementing** the Protocol of the same name.
+`cns/graph.py` is explicit that this is intended: "`GraphExtractor` is the
+interface, not the implementation. Each repo keeps its own visitor." A kernel
+scan compares members and cannot tell an implementation from a diverged copy,
+so every real extractor in the library gets flagged. The finding text gives
+it away: "2 of 2 kernel methods shared, differing: `__init__`,
+`current_qualname`, `resolve_attr_chain`, ..." Those differing names are the
+visitor's own work, which the Protocol never claimed.
+
+Counting those as debt would ask a repository to delete precisely the code
+the Protocol was written to let it keep. `adoption_backlog.py` therefore
+never reports drift against a Protocol, and prints the 5 implementations it
+found in a separate not-debt section rather than dropping them silently. This
+is a real limitation of kernel scanning worth remembering: a Protocol in the
+kernel guarantees a permanent drift finding for every consumer that satisfies
+it.
 
 ## The three pin patches
 
