@@ -91,10 +91,30 @@ these existing.
    deliberate diff in review rather than as a consumer's failure next week.
    This is the structural answer to "nothing verifies a commit before three
    repositories pin it."
-4. **Tag `0.1.0`, `0.2.0`, and HEAD.** They exist as commit messages already.
-   Move GRAPH, sentinel_os and GSA-815 from raw SHAs onto tags. The graph
-   module between `9f8f3fe` and HEAD differs only by a docstring header, so
-   this is free.
+4. **Tag `0.1.0` and `0.2.0`.** They exist as commit messages already. Move
+   GRAPH, sentinel_os and GSA-815 from raw SHAs onto tags. The graph module
+   between `9f8f3fe` and HEAD differs only by a docstring header, so this is
+   free. Run these from a **full, non-shallow clone of `wking53214/CNS`**;
+   the full SHAs are given because a short SHA cannot resolve in a clone
+   whose history does not reach it, and a shallow clone's will not:
+
+   ```
+   git tag -a v0.1.0 9f8f3fed8c33d7bd299c715e1416bed9bcbd0a1c \
+       -m "cns 0.1.0: the graph substrate, and the rule"
+   git tag -a v0.2.0 4ffcaaacb48c12eaaf822949ce1c08a1ef6e91e0 \
+       -m "cns 0.2.0: the governance core"
+   git push origin v0.1.0 v0.2.0
+   git ls-remote --tags origin      # both tags should print
+   ```
+
+   Both commits are on `main`. Tag the Phase 0 release only after this
+   branch merges: a release tag on an unmerged branch points at history
+   that `main` does not contain.
+
+   This cannot be done from a Claude Code web session. Branch pushes
+   succeed, but the git proxy returns HTTP 403 on tag refs, and the GitHub
+   MCP server exposes only read tools for tags and releases. It is a local
+   or web-UI step.
 5. **Amend the rule** in `cns/__init__.py` and the README to "pure functions
    of the row, no I/O, no state, no dependencies", delete
    `default_likelihoods()`, and extend the enforcement test to check it.
