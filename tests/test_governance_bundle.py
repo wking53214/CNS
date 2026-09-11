@@ -32,7 +32,6 @@ def test_caller_state_defaults_and_snapshot_shape():
     assert set(snap) == {"caller_id", "intent", "emotion", "posterior", "dynamic", "latent", "next_node"}
     assert snap["dynamic"] == {"perceived_wait": 0.0, "frustration": 0.0}
     assert s.to_dict() == snap
-    assert sum(s.default_likelihoods().values()) == pytest.approx(1.0)
 
 
 def test_governance_enums_are_string_enums():

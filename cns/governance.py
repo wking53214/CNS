@@ -19,19 +19,20 @@ can be instantiated, and that is a decision for its consumers.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import Tuple
+
+from cns.rowenum import RowEnum
 
 __all__ = ["ExecutionDomain", "TrustLevel", "GovernanceError", "IntegrityError", "ValidationError", "AuthorizationError", "RoutingError", "PolicyViolation", "KernelMetadata", "KernelComponent", "IdentityContext", "IntentCategory", "QueueType", "RoutingDecision"]
 
-class ExecutionDomain(str, Enum):
+class ExecutionDomain(RowEnum):
     AI = 'ai'
     DATA = 'data'
     ROUTING = 'routing'
     OPERATIONAL = 'operational'
 
 
-class TrustLevel(str, Enum):
+class TrustLevel(RowEnum):
     UNKNOWN = 'unknown'
     LOW = 'low'
     VERIFIED = 'verified'
@@ -88,7 +89,7 @@ class IdentityContext:
     signature: str
 
 
-class IntentCategory(str, Enum):
+class IntentCategory(RowEnum):
     STATUS = 'status'
     PAYMENT = 'payment'
     DOCUMENTS = 'documents'
@@ -96,7 +97,7 @@ class IntentCategory(str, Enum):
     HARDSHIP = 'hardship'
 
 
-class QueueType(str, Enum):
+class QueueType(RowEnum):
     FAST_PATH = 'fast_path'
     UNCERTAINTY = 'uncertainty'
     SPECIALIST = 'specialist'

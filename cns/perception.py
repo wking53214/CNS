@@ -12,12 +12,13 @@ behaviour and stay in their repo; these are the rows they emit.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import Dict, List
+
+from cns.rowenum import RowEnum
 
 __all__ = ["CallOutcome", "FrictionEvent", "EmotionalState", "CallPercept"]
 
-class CallOutcome(Enum):
+class CallOutcome(RowEnum):
     RESOLVED = 'resolved'
     ABANDONED = 'abandoned'
     ESCALATED = 'escalated'

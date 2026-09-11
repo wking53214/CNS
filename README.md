@@ -30,10 +30,9 @@ Four tests enforce the rule rather than describing it: no forbidden
 import, no file opened, no module-level name, and no method that assigns
 to `self` (`tests/test_graph.py`).
 
-One known exception is scheduled for removal. `CallerState.default_likelihoods`
-returns a hard-coded intent prior, which is a business constant and not a
-property of the row. No repo in the library calls it. It goes at the next
-major version.
+`CallerState.default_likelihoods` was the one real exception, a hard-coded
+intent prior rather than a property of the row. It was removed in 1.0.0,
+having had no caller anywhere in the library.
 
 A repo joins the organism by importing a shape from here instead of
 re-typing it. It needs no knowledge of the other members. That is what
@@ -52,6 +51,7 @@ Protocol and the implementation stays in the repo that owns it.
 | `cns.perception` | `CallOutcome`, `FrictionEvent`, `EmotionalState`, `CallPercept` | GSA-815, OBSERVE (Ecology diverged) |
 | `cns.caller` | `DynamicState`, `CallerState` | GSA-815, OBSERVE |
 | `cns.governance` | `ExecutionDomain`, `TrustLevel`, the `GovernanceError` family, `KernelMetadata`, `KernelComponent`, `IdentityContext`, `IntentCategory`, `QueueType`, `RoutingDecision` | GSA-815, OBSERVE (Ecology diverged) |
+| `cns.rowenum` | `RowEnum` | new in 1.0.0; the serialisation guarantee every enum above inherits |
 
 Every class is extracted by syntax tree from its canonical source and
 verified structurally identical at extraction; the module docstrings
@@ -59,14 +59,18 @@ name the source and the agreement.
 
 ## Consuming it
 
-Pin a commit, the way sentinel_os already pins Conservation_Kernel:
+Pin a tag, the way sentinel_os already pins Conservation_Kernel:
 
 ```
-cns @ git+https://github.com/wking53214/cns.git@<sha>
+cns @ git+https://github.com/wking53214/CNS.git@v1.0.0
 ```
 
 Then `from cns.graph import Node, Edge, Graph` and delete the vendored
 copy. Your own tests are the check that can fail.
+
+Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
+perception), `v1.0.0`. A raw commit SHA still works, but a tag says which
+contract you are joining on.
 
 ## Versioning
 
@@ -74,6 +78,33 @@ A field added with a default is a minor version. A field removed,
 renamed, or given a new meaning is a major version, and every consumer
 moves deliberately. `drifted_copy` in ghost_tools has nothing left to
 report for a class once it lives here.
+
+### Moving to 1.0.0
+
+Two breaking changes, both narrow. Nothing else about any shape moved: the
+same classes carry the same fields in the same order with the same defaults.
+
+**Every enum is now a `RowEnum`.** `str(x)`, `f"{x}"`, `json.dumps(x)` and
+`x == "value"` all give the member's value, on every Python from 3.10 to
+3.13. Before this, `cns.perception.CallOutcome` was a plain `Enum`, so
+`json.dumps` on any `CallPercept` raised `TypeError` and
+`CallOutcome.RESOLVED == "resolved"` was `False`. The four `cns.governance`
+enums were serialisable but rendered differently under an f-string on 3.10
+than on 3.11 and later.
+
+- Code that compares to the member (`x == CallOutcome.RESOLVED`) is
+  unaffected. That is how every consumer in the library uses them.
+- Code that relied on `str(x)` giving `"CallOutcome.RESOLVED"`, or on a
+  comparison to a string being `False`, needs changing. Grep for
+  `str(` and `f"{` around enum members.
+- Code that wrote its own `.value` everywhere can keep doing so, or stop.
+
+**`CallerState.default_likelihoods` is gone.** It returned a hard-coded
+intent prior, which is a business constant rather than a property of the
+row. No repository in the library called it.
+
+`tests/test_serialization.py` is the guarantee, and it is meaningful only
+because CI runs it on all four interpreters.
 
 **The shape is on record.** `tests/public_shape.json` holds every
 exported class with its fields in order, their annotations and defaults,

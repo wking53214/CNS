@@ -39,9 +39,6 @@ class CallerState:
     latent: Optional[Any] = None
     next_node: str = 'root'
 
-    def default_likelihoods(self) -> Dict[str, float]:
-        return {'billing': 0.25, 'tech': 0.25, 'sales': 0.25, 'cancel': 0.25}
-
     def snapshot(self) -> Dict[str, Any]:
         return {'caller_id': self.caller_id, 'intent': self.intent, 'emotion': self.emotion, 'posterior': self.posterior, 'dynamic': {'perceived_wait': self.dynamic.perceived_wait, 'frustration': self.dynamic.frustration}, 'latent': self.latent.to_dict() if self.latent else None, 'next_node': self.next_node}
 

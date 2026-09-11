@@ -28,10 +28,20 @@ steps. A class earns a place here by being a shape at least two repos
 already share. Nerves carry signals. They do not decide what the hand
 does.
 
-Known exception, scheduled for removal: `CallerState.default_likelihoods`
-returns a hard-coded intent prior. It is a business constant rather than
-a property of the row, and no repo in the library calls it. It goes at
-the next major version, when consumers move anyway.
+`CallerState.default_likelihoods` was the one real exception, a
+hard-coded intent prior rather than a property of the row. It was
+removed in 1.0.0, having had no caller anywhere in the library.
+
+ENUMS
+
+Every enum here inherits `cns.rowenum.RowEnum`, and any enum added to a
+row shape must. It guarantees that `str(x)`, `f"{x}"`, `json.dumps(x)`
+and `x == "value"` all agree with the member's value, identically on
+every Python from 3.10 to 3.13. A plain `Enum` cannot be serialised and
+does not compare equal to its own value; a bare `(str, Enum)` mixin can
+be serialised but renders differently on 3.10 than on 3.11 and later.
+Both were shipped before 1.0.0. `tests/test_serialization.py` fails if
+an enum is ever added without the base.
 
 THE PUBLIC SHAPE
 
@@ -48,4 +58,4 @@ minor version. A field removed, renamed, or given a new meaning is a
 major version, and every consumer moves deliberately.
 """
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"

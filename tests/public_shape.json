@@ -50,7 +50,6 @@
           "frozen": false,
           "kind": "dataclass",
           "members": {
-            "default_likelihoods": "def(self) -> 'Dict[str, float]'",
             "snapshot": "def(self) -> 'Dict[str, Any]'",
             "to_dict": "def(self) -> 'Dict[str, Any]'"
           },
@@ -107,8 +106,7 @@
         },
         "ExecutionDomain": {
           "bases": [
-            "str",
-            "Enum"
+            "RowEnum"
           ],
           "enum_members": [
             [
@@ -193,8 +191,7 @@
         },
         "IntentCategory": {
           "bases": [
-            "str",
-            "Enum"
+            "RowEnum"
           ],
           "enum_members": [
             [
@@ -271,8 +268,7 @@
         },
         "QueueType": {
           "bases": [
-            "str",
-            "Enum"
+            "RowEnum"
           ],
           "enum_members": [
             [
@@ -321,8 +317,7 @@
         },
         "TrustLevel": {
           "bases": [
-            "str",
-            "Enum"
+            "RowEnum"
           ],
           "enum_members": [
             [
@@ -477,7 +472,7 @@
       "classes": {
         "CallOutcome": {
           "bases": [
-            "Enum"
+            "RowEnum"
           ],
           "enum_members": [
             [
@@ -607,7 +602,24 @@
         }
       },
       "functions": {}
+    },
+    "cns.rowenum": {
+      "__all__": [
+        "RowEnum"
+      ],
+      "classes": {
+        "RowEnum": {
+          "bases": [
+            "str",
+            "Enum"
+          ],
+          "enum_members": [],
+          "kind": "enum",
+          "members": {}
+        }
+      },
+      "functions": {}
     }
   },
-  "version": "0.2.0"
+  "version": "1.0.0"
 }
