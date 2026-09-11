@@ -13,6 +13,28 @@ independently written repos and is absent from ordinary software.
 | `cns_map.py` | Generates `CNS_MAP.md`. `python cns_map.py OUT.md` |
 | `schema_test.py` | The prediction test, all four vocabulary stages, one command. `python schema_test.py /path/to/library > RESULTS.md` |
 | `RESULTS.md` | Its output on 2026-09-11 (second run, see below): Table 1 and the words that carry the signal. |
+| `COLLISIONS.md` | The collision inventory: every definition behind a name that binds twice inside one repo, with its path, shape, whether other repos carry it, and a disposition. |
+| `collision_inventory.py` | Generates `COLLISIONS.md`. Imports its parsing and classification from `cns_map.py` so the two documents cannot disagree about what a class is. |
+
+## Why the collision inventory exists
+
+`CNS_MAP.md` reports the in-repo collisions only as counts. A count says a
+problem exists; it cannot be acted on. A name cannot be a join key until it
+denotes one thing, so these are the first thing to settle and the settling
+needs the definitions side by side.
+
+The inventory sorts each collision into one of four shapes. SHARED+LOCAL
+means one definition is the copy other repos carry and the rest are local
+classes wearing its name: rename them, no coordination needed. VENDORED
+means a vendored tree is supplying the second definition, which is not a
+divergence at all and ends when the vendor directory becomes a CNS import.
+FORKED means two or more definitions each have consumers elsewhere, so the
+concept forked library-wide and no local rename settles it. LOCAL means no
+definition leaves the repo and the choice costs nothing outside it.
+
+The disposition is mechanical. Which name wins, and whether two definitions
+are really one concept, stays a judgement, exactly as the name-disagreement
+note in the top-level README says.
 
 ## The claim, as it can be defended
 
@@ -38,6 +60,22 @@ schema predicts the shape of repos it was not measured from.
 
     pip install wordfreq
     python schema_test.py /path/to/library > RESULTS.md
+
+    python cns_map.py CNS_MAP.md
+    python collision_inventory.py /path/to/library COLLISIONS.md \
+        --names=<spine names> --map=CNS_MAP.md
+
+`collision_inventory.py` computes the spine itself when given a full
+library; `--names` restricts it to a list, which is what makes a run over a
+subset of repos legible. `--map` diffs the result against a `CNS_MAP.md` and
+prints the differences, so a stale snapshot announces itself instead of
+being mistaken for the present.
+
+**Check out submodules before scanning.** `GSA-815/vendor/sentinel_os` is a
+git submodule. A `git clone --depth 1` without `--recurse-submodules` leaves
+it empty, and all eight of GSA-815's collisions silently disappear, because
+every one of them involves the vendored tree. An inventory that reports zero
+collisions for GSA-815 is measuring an empty directory.
 
 The library layout is one directory per repo. `ARCHIVE`, `HELD_OUT`,
 `CONTROL` and the two thresholds are constants at the top of the script.
