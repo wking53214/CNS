@@ -22,4 +22,4 @@ minor version. A field removed, renamed, or given a new meaning is a
 major version, and every consumer moves deliberately.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

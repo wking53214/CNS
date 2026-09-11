@@ -24,6 +24,13 @@ Protocol and the implementation stays in the repo that owns it.
 | module | shapes | extracted from |
 |---|---|---|
 | `cns.graph` | `Node`, `Edge`, `Graph`, `GraphExtractor` (Protocol), `graph_to_dict` | Ecology, GRAPH, GSA-Master-Kernel, sentinel_os |
+| `cns.perception` | `CallOutcome`, `FrictionEvent`, `EmotionalState`, `CallPercept` | GSA-815, OBSERVE (Ecology diverged) |
+| `cns.caller` | `DynamicState`, `CallerState` | GSA-815, OBSERVE |
+| `cns.governance` | `ExecutionDomain`, `TrustLevel`, the `GovernanceError` family, `KernelMetadata`, `KernelComponent`, `IdentityContext`, `IntentCategory`, `QueueType`, `RoutingDecision` | GSA-815, OBSERVE (Ecology diverged) |
+
+Every class is extracted by syntax tree from its canonical source and
+verified structurally identical at extraction; the module docstrings
+name the source and the agreement.
 
 ## Consuming it
 
