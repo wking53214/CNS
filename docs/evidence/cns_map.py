@@ -20,7 +20,7 @@ ARCHIVE = {"ChatGPT_History","Claude_History","CoPilot_History","Gemini_History"
 # day) every repo was unarchived and taken private, so the set is empty;
 # it stays as a switch for the next time.
 ARCHIVED_ON_GITHUB = set()
-def tag(repo): return repo + ("*" if repo in ARCHIVED_ON_GITHUB else "")
+def tag(repo): return repo + ("*" if repo in ARCHIVED_ON_GITHUB else "")  # ghost_buster: name-disagreement -- `repo` is `k` at every call site
 SKIP_PARTS = {".git","venv",".venv","node_modules","site-packages","__pycache__",
               "build","dist"}
 def skipped(p):
@@ -92,7 +92,7 @@ for r in repos:
                                      lines=(c.end_lineno - c.lineno + 1), hash=h, fields=f, methods=m,
                                      bases=base_names(c), contract=is_contract(c), io=does_io(c)))
 
-def jacc(a, b):
+def jacc(a, b):  # ghost_buster: name-disagreement -- `a` is `sig` at every call site
     return 1.0 if not a and not b else len(a & b) / len(a | b)
 
 rows = []
@@ -114,7 +114,7 @@ for name, recs in defs.items():
     canon_hash = max(hashes, key=lambda h: (len(hashes[h]), len(per_repo[hashes[h][0]]["methods"] | per_repo[hashes[h][0]]["fields"])))
     canon = per_repo[hashes[canon_hash][0]]
     sig = canon["methods"] | canon["fields"]
-    drift = {k: jacc(sig, x["methods"] | x["fields"]) for k, x in per_repo.items() if x["hash"] != canon_hash}
+    drift = {k: jacc(sig, x["methods"] | x["fields"]) for k, x in per_repo.items() if x["hash"] != canon_hash}  # ghost_buster: name-disagreement -- `sig` is `a` in the signature
     kind = "CONTRACT" if all(x["contract"] for x in per_repo.values()) else ("BEHAVIOR+IO" if any(x["io"] for x in per_repo.values()) else "BEHAVIOR")
     rows.append(dict(name=name, repos=sorted(per_repo), n=len(per_repo), variants=len(hashes),
                      canon=canon, canon_repos=sorted(hashes[canon_hash]), drift=drift, kind=kind,
@@ -138,7 +138,7 @@ def table(rs, title):
     out.append("|---|---|---|---|---|---|")
     for r in rs:
         div = ", ".join(f"{k} ({v:.2f})" for k, v in sorted(r["drift"].items(), key=lambda kv: kv[1]))
-        div = ", ".join(f"{tag(k)} ({v:.2f})" for k, v in sorted(r["drift"].items(), key=lambda kv: kv[1]))
+        div = ", ".join(f"{tag(k)} ({v:.2f})" for k, v in sorted(r["drift"].items(), key=lambda kv: kv[1]))  # ghost_buster: name-disagreement -- `k` is `repo` in the signature
         out.append(f"| `{r['name']}` | {r['n']}: {', '.join(map(tag, r['repos']))} | {r['variants']} | {r['kind']} | {', '.join(map(tag, r['canon_repos']))} | {div or 'none'} |")
 
 table(core, "Table of contents: classes in 3+ repos (the spine)")
