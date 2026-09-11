@@ -81,13 +81,21 @@ spine = sorted(n for n, rs in by_name.items() if len(rs) >= 3)
 raw = Counter(w for n in spine for w in words(n))
 
 control = {}
+unread = {}   # a control package that could not be read is reported, never dropped in silence
 for pkg in CONTROL:
     try:
         root = Path(importlib.import_module(pkg).__file__).parent
-        cs = classes_in(root, root.parent)
-        if cs: control[pkg] = cs
-    except Exception:
-        pass
+    except ImportError as e:
+        unread[pkg] = f"not installed ({e})"
+        continue
+    cs = classes_in(root, root.parent)
+    if cs:
+        control[pkg] = cs
+    else:
+        unread[pkg] = "no classes found"
+if unread:
+    print(f"control packages skipped ({len(unread)}): " + ", ".join(f"{k}: {v}" for k, v in sorted(unread.items())), file=sys.stderr)
+print(f"control packages read: {len(control)} of {len(CONTROL)}", file=sys.stderr)
 pkgs_with = Counter()
 for cs in control.values():
     for w in {w for n, _ in cs for w in words(n)}: pkgs_with[w] += 1
