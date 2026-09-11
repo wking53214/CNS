@@ -77,13 +77,23 @@ for it.
 Nothing here can break a consumer, and everything after it depends on one of
 these existing.
 
-**Status: done in this repository.** Items 1, 2, 3 and 5 landed on
-`claude/cns-variable-alignment-av0hwf`. `v0.1.0` and `v0.2.0` are tagged on
-`main` and both resolve through pip. Two things remain and are not code:
-GitHub Actions has to be enabled for the repository, and the `test` job set
-as a required status check on `main`, or the workflow is a file that never
-runs. The three consumer pin changes are prepared as patches under
-`docs/migrations/` and need applying in their own repositories.
+**Status: done and merged to `main`.** `v0.1.0` and `v0.2.0` are tagged on
+`main` and both resolve through pip. CI is live and green: Actions was
+already enabled on this repository, so the workflow ran on first push and
+has passed every run since, including on `main` at `5f50d04`, where all five
+jobs succeeded (`test` on 3.10, 3.11, 3.12, 3.13, plus `packaging`). The
+matrix was also run locally on all four interpreters before merge, which is
+how the public-shape snapshot was confirmed version-stable rather than
+assumed to be.
+
+One item remains, and it is a repository setting rather than code: the `test`
+job is not yet a **required status check** on `main`. Until it is, CI reports
+but does not gate, so a red commit can still land and be pinned. Settings,
+Branches, add a rule on `main`.
+
+The three consumer pin changes and the GSA-815 governance migration are
+prepared as patches under `docs/migrations/` and need applying in their own
+repositories.
 
 1. **Add `py.typed`** plus the `package-data` entry. One line of real change.
    Turns every annotation in the package from invisible to enforced in three
