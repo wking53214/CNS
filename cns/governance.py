@@ -1,4 +1,7 @@
-"""cns.governance: the governance kernel's contracts.
+"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
+See README.md. Do not copy, publish, vendor, or disclose.
+
+cns.governance: the governance kernel's contracts.
 
 Extracted 2026-09-11 from GSA_Governance_Operating_Core_Enterprise.py.
 GSA-815 and OBSERVE agree on every one of these (OBSERVE carries the

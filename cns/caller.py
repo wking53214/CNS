@@ -1,4 +1,7 @@
-"""cns.caller: the canonical caller state.
+"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
+See README.md. Do not copy, publish, vendor, or disclose.
+
+cns.caller: the canonical caller state.
 
 Extracted 2026-09-11 from Domain/CallerState.py, byte-identical in
 GSA-815 and OBSERVE (md5 5011903a). `latent` stays `Any`: the
