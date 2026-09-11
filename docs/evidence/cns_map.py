@@ -15,11 +15,11 @@ from pathlib import Path
 ROOT = Path("/home/user/lib")
 ARCHIVE = {"ChatGPT_History","Claude_History","CoPilot_History","Gemini_History",
            "Gemini_Extraction","ARCHIVE","TOUCHSTONE","Data_files"}
-# Archived on GitHub as of 2026-09-11 (list_repos): read-only there. A
-# canonical copy in one of these is a frozen source, never a write target.
-ARCHIVED_ON_GITHUB = {"content-polish-pipeline","TIE","OBSERVE","HERALD","Ecology","ATS",
-                      "Triad-42","TOUCHSTONE","innovation_os","GEMS","Gemini_History",
-                      "Data_files","CODE","EDDP","synapsis"}
+# Repos archived on GitHub are read-only there: a canonical copy in one is a
+# frozen source, never a write target. As of 2026-09-11 (later the same
+# day) every repo was unarchived and taken private, so the set is empty;
+# it stays as a switch for the next time.
+ARCHIVED_ON_GITHUB = set()
 def tag(repo): return repo + ("*" if repo in ARCHIVED_ON_GITHUB else "")
 SKIP_PARTS = {".git","venv",".venv","node_modules","site-packages","__pycache__",
               "build","dist"}
