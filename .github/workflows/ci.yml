@@ -1,0 +1,71 @@
+# The check that runs before a consumer can pin a commit.
+#
+# Three repositories pin this package by commit SHA. Until this workflow
+# existed, nothing ran the test suite before one of those pins moved, and a
+# broken contract was discoverable only by a consumer's own tests failing
+# some days later. The README is right that consumer tests are the check that
+# can fail; this is the check that runs first.
+#
+# The Python matrix is not decorative. This package's enums use the
+# `(str, Enum)` mixin, whose string and formatting behaviour has shifted
+# across recent releases, and `pyproject.toml` promises support from 3.10.
+# A contract package that serializes differently depending on the
+# interpreter is not a contract.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    name: test (py${{ matrix.python }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[dev]"
+      - name: Tests, including the public-shape snapshot
+        run: python -m pytest -q
+      - name: Type check the package it claims to type
+        # cns/py.typed tells every consumer's checker to trust these
+        # annotations. Shipping that marker over annotations that do not
+        # check is worse than shipping no marker at all.
+        run: python -m mypy --strict cns/
+
+  packaging:
+    runs-on: ubuntu-latest
+    name: packaging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install --upgrade pip build
+      - run: python -m build --wheel --outdir dist/
+      - name: The typing marker must actually ship
+        # A py.typed present in the tree but absent from the wheel is
+        # invisible: consumers install the wheel, and their checkers go back
+        # to ignoring every annotation. This has to be asserted, not assumed.
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          wheel = sorted(glob.glob("dist/cns-*.whl"))[-1]
+          names = zipfile.ZipFile(wheel).namelist()
+          print(f"{wheel}:")
+          for n in sorted(names):
+              print("  ", n)
+          if "cns/py.typed" not in names:
+              sys.exit("FAIL: cns/py.typed is missing from the wheel")
+          print("OK: cns/py.typed ships")
+          PY

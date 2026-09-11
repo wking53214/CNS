@@ -16,9 +16,24 @@ the contracts every repo joins on.
 ## The rule
 
 `cns` carries **row shapes and interfaces**: dataclasses, enums,
-protocols. Nothing here does anything. No I/O, no subprocess, no network,
-no business logic, no dependency outside the standard library. A test
-enforces this (`tests/test_graph.py::test_the_package_carries_shapes_and_nothing_else`).
+protocols. No I/O, no subprocess, no network, no state, no dependency
+outside the standard library.
+
+A row may carry a **pure function of itself**: it reads only its own
+fields, returns a value, writes nothing, and calls nothing outside the
+standard library. `graph_to_dict`, `CallerState.snapshot` and
+`EmotionalState.deteriorating` are those, and consumers already call
+them. Anything a class might *do* beyond that stays in the repo that
+owns it, and the CNS carries its interface as a Protocol instead.
+
+Four tests enforce the rule rather than describing it: no forbidden
+import, no file opened, no module-level name, and no method that assigns
+to `self` (`tests/test_graph.py`).
+
+One known exception is scheduled for removal. `CallerState.default_likelihoods`
+returns a hard-coded intent prior, which is a business constant and not a
+property of the row. No repo in the library calls it. It goes at the next
+major version.
 
 A repo joins the organism by importing a shape from here instead of
 re-typing it. It needs no knowledge of the other members. That is what
@@ -59,6 +74,25 @@ A field added with a default is a minor version. A field removed,
 renamed, or given a new meaning is a major version, and every consumer
 moves deliberately. `drifted_copy` in ghost_tools has nothing left to
 report for a class once it lives here.
+
+**The shape is on record.** `tests/public_shape.json` holds every
+exported class with its fields in order, their annotations and defaults,
+its enum members and its methods. Any change fails
+`tests/test_public_shape.py` and prints what moved. Record it in the same
+commit:
+
+```
+python tests/test_public_shape.py --update
+```
+
+The shape is allowed to change. It is not allowed to change without a
+diff, because CI cannot reach the private repositories that pin this one,
+and their tests find out too late.
+
+**CI runs before a pin can move**: the suite on Python 3.10 through 3.13,
+`mypy --strict` over the package, and a check that `cns/py.typed` really
+ships inside the built wheel. The marker is what tells a consumer's type
+checker to trust these annotations, so it is asserted rather than assumed.
 
 <!-- ghost_buster:name-disagreements:begin -->
 ## Name disagreements

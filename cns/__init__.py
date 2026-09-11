@@ -6,17 +6,40 @@ cns: the contracts the library joins on.
 THE RULE
 
 This package carries row shapes and interfaces: dataclasses, enums,
-protocols. It carries no behaviour, no I/O, no business logic, and no
-dependency outside the standard library. A repo joins the organism by
-importing a shape from here instead of re-typing it; it needs no
+protocols. It carries no I/O, no subprocess, no network, no state, and
+no dependency outside the standard library. A repo joins the organism
+by importing a shape from here instead of re-typing it; it needs no
 knowledge of the other members. That is what makes any combination of
 repos joinable on these keys.
 
-The moment this package DOES something, every consumer is coupled to
-how it does it, and the library is a monolith with extra steps. A
-class earns a place here by being a shape at least two repos already
-share; a behaviour never does. Nerves carry signals. They do not decide
-what the hand does.
+A row may carry a pure function of itself: something that reads only
+its own fields, returns a value, writes nothing and calls nothing
+outside the standard library. `graph_to_dict`, `CallerState.snapshot`
+and `EmotionalState.deteriorating` are those, and consumers already
+call them. Everything else a class might do belongs in the repo that
+owns it; the CNS carries its interface as a Protocol and no more.
+
+This is narrower than it sounds, and it is enforced rather than
+promised: `tests/test_graph.py` rejects a forbidden import, a file
+opened, a module-level name, and any method that assigns to `self`.
+The moment this package holds state or does I/O, every consumer is
+coupled to how it does it, and the library is a monolith with extra
+steps. A class earns a place here by being a shape at least two repos
+already share. Nerves carry signals. They do not decide what the hand
+does.
+
+Known exception, scheduled for removal: `CallerState.default_likelihoods`
+returns a hard-coded intent prior. It is a business constant rather than
+a property of the row, and no repo in the library calls it. It goes at
+the next major version, when consumers move anyway.
+
+THE PUBLIC SHAPE
+
+`tests/public_shape.json` records every exported class, its fields in
+order with their defaults, its enum members, and its methods. Changing
+any of it fails `tests/test_public_shape.py` until the file is
+regenerated in the same commit, so a contract never moves without a
+diff a reviewer can see.
 
 VERSIONING
 

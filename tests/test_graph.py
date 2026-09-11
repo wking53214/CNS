@@ -46,6 +46,49 @@ def test_the_protocol_recognises_a_conforming_extractor():
     assert isinstance(Mine(), GraphExtractor)
 
 
+def _cns_modules():
+    for info in pkgutil.walk_packages(cns.__path__, "cns."):
+        mod = importlib.import_module(info.name)
+        yield info.name, ast.parse(open(mod.__file__).read())
+
+
+def test_no_module_level_state():
+    """A contract package holds no state. Module-level names other than the
+    dunders are shared mutable globals in disguise: two consumers importing
+    the same row would be reading one another's writes."""
+    for name, tree in _cns_modules():
+        for node in tree.body:
+            targets = []
+            if isinstance(node, ast.Assign):
+                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                targets = [node.target.id]
+            for t in targets:
+                assert t.startswith("__") and t.endswith("__"), \
+                    f"{name} defines module-level state: {t}"
+
+
+def test_rows_do_not_mutate_themselves():
+    """The rule's 'no state' half. A row's own methods read it and return
+    something; none of them writes back. A method that mutates self turns a
+    shared contract into a place where behaviour hides."""
+    for name, tree in _cns_modules():
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for sub in ast.walk(node):
+                if isinstance(sub, (ast.Global, ast.Nonlocal)):
+                    raise AssertionError(f"{name}.{node.name} declares global/nonlocal")
+                targets = getattr(sub, "targets", [])
+                if isinstance(sub, (ast.AugAssign, ast.AnnAssign)):
+                    targets = [sub.target]
+                for t in targets:
+                    if (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
+                            and t.value.id == "self"):
+                        raise AssertionError(
+                            f"{name}.{node.name} assigns self.{t.attr}")
+
+
 def test_the_package_carries_shapes_and_nothing_else():
     """The rule, enforced: no I/O, no subprocess, no network, no third-party
     import anywhere in cns. A module that needs one does not belong here."""

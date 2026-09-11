@@ -18,7 +18,7 @@ so that anything holding a Graph can be handed any extractor.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Protocol, runtime_checkable
+from typing import Any, Dict, List, Protocol, runtime_checkable
 
 __all__ = ["Node", "Edge", "Graph", "GraphExtractor", "graph_to_dict"]
 
@@ -61,7 +61,7 @@ class GraphExtractor(Protocol):
     def add_edge(self, src: str, dst: str, kind: str, evidence: str) -> None: ...
 
 
-def graph_to_dict(graph: Graph) -> dict:
+def graph_to_dict(graph: Graph) -> Dict[str, Any]:
     """The JSON row shape of a Graph. `total_row_count` is always present;
     a consumer that did not carry the field before ignores it."""
     return {

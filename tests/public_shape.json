@@ -1,0 +1,613 @@
+{
+  "modules": {
+    "cns.caller": {
+      "__all__": [
+        "DynamicState",
+        "CallerState"
+      ],
+      "classes": {
+        "CallerState": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "caller_id",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "intent",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "emotion",
+              "type": "str"
+            },
+            {
+              "default": "factory:dict",
+              "name": "posterior",
+              "type": "Dict[str, float]"
+            },
+            {
+              "default": "factory:DynamicState",
+              "name": "dynamic",
+              "type": "DynamicState"
+            },
+            {
+              "default": "None",
+              "name": "latent",
+              "type": "Optional[Any]"
+            },
+            {
+              "default": "'root'",
+              "name": "next_node",
+              "type": "str"
+            }
+          ],
+          "frozen": false,
+          "kind": "dataclass",
+          "members": {
+            "default_likelihoods": "def(self) -> 'Dict[str, float]'",
+            "snapshot": "def(self) -> 'Dict[str, Any]'",
+            "to_dict": "def(self) -> 'Dict[str, Any]'"
+          },
+          "slots": false
+        },
+        "DynamicState": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": "0.0",
+              "name": "perceived_wait",
+              "type": "float"
+            },
+            {
+              "default": "0.0",
+              "name": "frustration",
+              "type": "float"
+            }
+          ],
+          "frozen": false,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        }
+      },
+      "functions": {}
+    },
+    "cns.governance": {
+      "__all__": [
+        "ExecutionDomain",
+        "TrustLevel",
+        "GovernanceError",
+        "IntegrityError",
+        "ValidationError",
+        "AuthorizationError",
+        "RoutingError",
+        "PolicyViolation",
+        "KernelMetadata",
+        "KernelComponent",
+        "IdentityContext",
+        "IntentCategory",
+        "QueueType",
+        "RoutingDecision"
+      ],
+      "classes": {
+        "AuthorizationError": {
+          "bases": [
+            "GovernanceError"
+          ],
+          "kind": "exception",
+          "members": {}
+        },
+        "ExecutionDomain": {
+          "bases": [
+            "str",
+            "Enum"
+          ],
+          "enum_members": [
+            [
+              "AI",
+              "ai"
+            ],
+            [
+              "DATA",
+              "data"
+            ],
+            [
+              "ROUTING",
+              "routing"
+            ],
+            [
+              "OPERATIONAL",
+              "operational"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        },
+        "GovernanceError": {
+          "bases": [
+            "Exception"
+          ],
+          "kind": "exception",
+          "members": {}
+        },
+        "IdentityContext": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "tenant_id",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "subject_id",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "roles",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": null,
+              "name": "trust_level",
+              "type": "TrustLevel"
+            },
+            {
+              "default": null,
+              "name": "authentication_method",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "verified",
+              "type": "bool"
+            },
+            {
+              "default": null,
+              "name": "signature",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": true
+        },
+        "IntegrityError": {
+          "bases": [
+            "GovernanceError"
+          ],
+          "kind": "exception",
+          "members": {}
+        },
+        "IntentCategory": {
+          "bases": [
+            "str",
+            "Enum"
+          ],
+          "enum_members": [
+            [
+              "STATUS",
+              "status"
+            ],
+            [
+              "PAYMENT",
+              "payment"
+            ],
+            [
+              "DOCUMENTS",
+              "documents"
+            ],
+            [
+              "ESCALATION",
+              "escalation"
+            ],
+            [
+              "HARDSHIP",
+              "hardship"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        },
+        "KernelComponent": {
+          "annotations": {},
+          "bases": [
+            "object"
+          ],
+          "kind": "class",
+          "members": {
+            "metadata": "property"
+          }
+        },
+        "KernelMetadata": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "name",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "version",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "description",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "domain",
+              "type": "ExecutionDomain"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": true
+        },
+        "PolicyViolation": {
+          "bases": [
+            "GovernanceError"
+          ],
+          "kind": "exception",
+          "members": {}
+        },
+        "QueueType": {
+          "bases": [
+            "str",
+            "Enum"
+          ],
+          "enum_members": [
+            [
+              "FAST_PATH",
+              "fast_path"
+            ],
+            [
+              "UNCERTAINTY",
+              "uncertainty"
+            ],
+            [
+              "SPECIALIST",
+              "specialist"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        },
+        "RoutingDecision": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "queue",
+              "type": "QueueType"
+            },
+            {
+              "default": null,
+              "name": "reason",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": true
+        },
+        "RoutingError": {
+          "bases": [
+            "GovernanceError"
+          ],
+          "kind": "exception",
+          "members": {}
+        },
+        "TrustLevel": {
+          "bases": [
+            "str",
+            "Enum"
+          ],
+          "enum_members": [
+            [
+              "UNKNOWN",
+              "unknown"
+            ],
+            [
+              "LOW",
+              "low"
+            ],
+            [
+              "VERIFIED",
+              "verified"
+            ],
+            [
+              "PRIVILEGED",
+              "privileged"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        },
+        "ValidationError": {
+          "bases": [
+            "GovernanceError"
+          ],
+          "kind": "exception",
+          "members": {}
+        }
+      },
+      "functions": {}
+    },
+    "cns.graph": {
+      "__all__": [
+        "Node",
+        "Edge",
+        "Graph",
+        "GraphExtractor",
+        "graph_to_dict"
+      ],
+      "classes": {
+        "Edge": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "src",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "dst",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "kind",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "evidence",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        },
+        "Graph": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": "factory:dict",
+              "name": "nodes",
+              "type": "Dict[str, Node]"
+            },
+            {
+              "default": "factory:list",
+              "name": "edges",
+              "type": "List[Edge]"
+            },
+            {
+              "default": "0",
+              "name": "total_row_count",
+              "type": "int"
+            }
+          ],
+          "frozen": false,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        },
+        "GraphExtractor": {
+          "annotations": {
+            "edges": "List[Edge]",
+            "filename": "str",
+            "nodes": "Dict[str, Node]"
+          },
+          "bases": [
+            "Protocol"
+          ],
+          "kind": "protocol",
+          "members": {
+            "add_edge": "def(self, src: 'str', dst: 'str', kind: 'str', evidence: 'str') -> 'None'",
+            "add_node": "def(self, name: 'str', kind: 'str') -> 'None'"
+          }
+        },
+        "Node": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "id",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "kind",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "file",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        }
+      },
+      "functions": {
+        "graph_to_dict": "def(graph: 'Graph') -> 'Dict[str, Any]'"
+      }
+    },
+    "cns.perception": {
+      "__all__": [
+        "CallOutcome",
+        "FrictionEvent",
+        "EmotionalState",
+        "CallPercept"
+      ],
+      "classes": {
+        "CallOutcome": {
+          "bases": [
+            "Enum"
+          ],
+          "enum_members": [
+            [
+              "RESOLVED",
+              "resolved"
+            ],
+            [
+              "ABANDONED",
+              "abandoned"
+            ],
+            [
+              "ESCALATED",
+              "escalated"
+            ],
+            [
+              "IN_PROGRESS",
+              "in_progress"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        },
+        "CallPercept": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "caller_id",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "journey",
+              "type": "List[str]"
+            },
+            {
+              "default": null,
+              "name": "friction_events",
+              "type": "List[FrictionEvent]"
+            },
+            {
+              "default": null,
+              "name": "emotional_state",
+              "type": "EmotionalState"
+            },
+            {
+              "default": null,
+              "name": "outcome",
+              "type": "CallOutcome"
+            },
+            {
+              "default": null,
+              "name": "abandonment_risk",
+              "type": "float"
+            },
+            {
+              "default": null,
+              "name": "next_action_distribution",
+              "type": "Dict[str, float]"
+            }
+          ],
+          "frozen": false,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        },
+        "EmotionalState": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "frustration",
+              "type": "float"
+            },
+            {
+              "default": null,
+              "name": "patience",
+              "type": "float"
+            },
+            {
+              "default": null,
+              "name": "trust",
+              "type": "float"
+            }
+          ],
+          "frozen": false,
+          "kind": "dataclass",
+          "members": {
+            "deteriorating": "def(self) -> 'bool'"
+          },
+          "slots": false
+        },
+        "FrictionEvent": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "node",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "type",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "severity",
+              "type": "float"
+            },
+            {
+              "default": null,
+              "name": "timestamp",
+              "type": "float"
+            }
+          ],
+          "frozen": false,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        }
+      },
+      "functions": {}
+    }
+  },
+  "version": "0.2.0"
+}
