@@ -164,6 +164,15 @@ enforcement test fails if someone adds I/O or a third-party import.
 
 ## Phase 1 — Free adoption (days, zero shape change)
 
+**Status: done.** The one patch Phase 1 turned out to consist of is applied
+and pushed to `wking53214/gsa-815` on branch `claude/cns-governance-adoption`
+(`5c5994a`), awaiting review and merge there. Duplicated kernel contracts in
+owned source across the whole library now measure **0**, down from 14, and
+`cns.governance` has its first real consumer. Verified in that clone: all
+fourteen names resolve, each is the same object as `cns.governance`'s,
+`isinstance` holds across the boundary, and the adversarial harness produces
+byte-identical output with the same exit code.
+
 Fifty of the 59 shadow sites are byte-identical copies of classes CNS already
 carries. Nothing needs to be designed. They are deletions.
 

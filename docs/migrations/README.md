@@ -12,9 +12,9 @@ consumer, but **not applied**: this session can modify `wking53214/CNS` and
 nothing else, by design. Applying them is a decision for whoever owns the
 consumer repository.
 
-| patch | consumer | what it does | risk | validated by |
-|---|---|---|---|---|
-| `gsa-815-governance.patch` | GSA-815 | drops 14 shadowed classes, 125 lines | no dependency change | its own `test_harness.py`, byte-identical output |
+| patch | consumer | what it does | risk | validated by | status |
+|---|---|---|---|---|---|
+| `gsa-815-governance.patch` | GSA-815 | drops 14 shadowed classes, 125 lines | no dependency change | its own `test_harness.py`, byte-identical output | **applied**, `gsa-815@claude/cns-governance-adoption` (`5c5994a`) |
 | `graph-cns-pin.patch` | GRAPH | raw SHA pin to `@v0.1.0` | none, same commit | `pip download` of the tag |
 | `sentinel_os-cns-pin.patch` | sentinel_os | raw SHA pin to `@v0.1.0` | none, same commit | `pip download` of the tag |
 | `gsa-815-cns-pin.patch` | GSA-815 | raw SHA pin to `@v0.2.0` | none, same commit | `pip download` of the tag |
