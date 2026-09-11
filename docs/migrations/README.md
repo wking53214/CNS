@@ -19,6 +19,69 @@ consumer repository.
 | `sentinel_os-cns-pin.patch` | sentinel_os | raw SHA pin to `@v0.1.0` | none, same commit | `pip download` of the tag |
 | `gsa-815-cns-pin.patch` | GSA-815 | raw SHA pin to `@v0.2.0` | none, same commit | `pip download` of the tag |
 
+## OBSERVE: there is no patch, and writing one would do harm
+
+`ROADMAP.md` originally named OBSERVE the biggest Phase 1 prize: 34
+`kernel_shadow` sites, "byte-identical copies of all 14 governance classes,
+plus the perception and caller rows", needing a CNS pin added. That was
+measured correctly and interpreted wrongly. Investigated properly:
+
+| where | `.py` files | `kernel_shadow` |
+|---|---|---|
+| OBSERVE's own code | 11 | **0** |
+| `OBSERVE/sentinel_os/` | 176 | **34** |
+
+Every one of the 34 sites is inside `sentinel_os/`, a 176-file subtree
+committed into OBSERVE as plain files. OBSERVE's own code carries no copy of
+any CNS contract at all.
+
+OBSERVE already documents what that subtree is. From its `UPSTREAM.md`:
+"OBSERVE is a downstream of three repositories, not an independent
+codebase", with `sentinel_os/` synced from sentinel_os at `ddedd12` and
+GSA-815 at `44ee595` on 2026-09-07. The CNS extraction happened on
+2026-09-11, **four days after that snapshot**, so what looks like OBSERVE
+holding duplicate contracts is OBSERVE holding a photograph of GSA-815 taken
+before GSA-815 migrated.
+
+The file pairs make it plain:
+
+| file | GSA-815 today | OBSERVE's snapshot |
+|---|---|---|
+| `Domain/CallerState.py` | 20 lines, imports `cns.caller` | 115 lines, defines the classes |
+| `observe_perceive_core.py` | 196 lines, imports `cns.perception` | 223 lines, defines the classes |
+| the governance core | 4985 lines | 4986 and 4987 lines, two diverged copies |
+
+So the six perception and caller sites are **already fixed upstream**, and
+the 28 governance sites are fixed by `gsa-815-governance.patch` above.
+OBSERVE's count falls to zero when the subtree is next synced, with no CNS
+work in OBSERVE whatsoever.
+
+**Patching CNS imports into that subtree would be actively harmful.** It is
+vendored code; editing it increases divergence from upstream and makes the
+resync harder, which is the opposite of the goal. OBSERVE's own `UPSTREAM.md`
+records that a file-by-file sync of 51 diverged files was already attempted
+and dropped its suite from 570 passing to 337, and concludes that reconciling
+them "means adopting the current sentinel_os kernel wholesale (the way
+GSA-815 does, as a submodule) and deleting the copy here". That is the fix,
+it is OBSERVE's own plan, and it is de-vendoring work rather than contract
+work.
+
+### The corrected backlog
+
+Splitting the library's 59 `kernel_shadow` sites by who can actually fix them:
+
+| repo | sites | in its own code | who fixes it |
+|---|---|---|---|
+| OBSERVE | 34 | 0 | GSA-815 upstream, then a subtree resync |
+| GSA-815 | 16 | 14 | `gsa-815-governance.patch`; the other 2 are `Node`/`Edge` in its `vendor/sentinel_os` submodule |
+| Ecology | 7 | 7 | Ecology |
+| GSA-Master-Kernel | 2 | 2 | GSA-Master-Kernel, in `artifact_15.py` |
+
+**23 of 59 are a repo's own code. The other 36 are vendored copies of
+someone else's tree.** Of those 23, the patch above covers 14. Phase 1 is
+therefore much smaller than 59 sites suggested, and most of what looked like
+adoption debt is really one de-vendoring decision in OBSERVE.
+
 ## The three pin patches
 
 `v0.1.0` and `v0.2.0` are now tagged on `main`, so consumers can pin a name

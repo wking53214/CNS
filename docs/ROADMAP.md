@@ -154,18 +154,40 @@ and a deletion, with no dependency work and no shape change at all. It is the
 cheapest win in the entire plan and it should be first because it proves the
 pattern on a repository that has already survived one migration.
 
-**Then OBSERVE,** the largest single holding at 34 sites: byte-identical
-copies of all 14 governance classes, plus the perception and caller rows.
-OBSERVE declares no CNS dependency today, so this adds the pin as well.
+**OBSERVE is not the second target, despite holding 34 sites.** That was
+this plan's original claim and investigation disproved it. All 34 sites sit
+inside `OBSERVE/sentinel_os/`, a 176-file subtree of vendored upstream code;
+OBSERVE's own 11 files hold **zero**. The subtree was synced from GSA-815 on
+2026-09-07, four days before the CNS extraction, so those copies are a
+photograph of GSA-815 taken before GSA-815 migrated. Six of them are already
+fixed upstream and the other 28 are fixed by the GSA-815 patch. Editing that
+subtree would increase its divergence from upstream and make the resync
+harder, which is the opposite of the goal. See `docs/migrations/README.md`
+for the file-by-file evidence and OBSERVE's own `UPSTREAM.md` for the
+de-vendoring plan it already intends.
 
-This phase alone answers the scorecard's sharpest criticism. `cns.governance`
+**The honest Phase 1 target is 23 sites, not 59.** Splitting the library's
+`kernel_shadow` count by who can act on it:
+
+| repo | sites | in its own code |
+|---|---|---|
+| OBSERVE | 34 | 0 |
+| GSA-815 | 16 | 14 |
+| Ecology | 7 | 7 |
+| GSA-Master-Kernel | 2 | 2 |
+
+Thirty-six of the 59 are vendored copies of another repository's tree and
+resolve at their source. Of the 23 that are real, the prepared patch covers
+14, leaving Ecology's 7 and GSA-Master-Kernel's 2.
+
+This phase still answers the scorecard's sharpest criticism. `cns.governance`
 is 14 of the package's 24 classes and was graded a liability for having zero
-consumers. It does not have zero consumers; it has two repositories holding
-identical copies and not importing them. It is not dead weight, it is
-finished work that was never picked up.
+consumers. It does not have zero consumers; GSA-815 holds byte-identical
+copies of every one and simply never imported them. It is not dead weight,
+it is finished work that was never picked up.
 
-**Exit criteria:** `kernel_shadow` at 9 or below; five repositories importing
-CNS; all four modules with a live consumer.
+**Exit criteria:** `kernel_shadow` in own code at 9 or below; `cns.governance`
+with a live consumer; all four modules with a live consumer.
 
 **Moves:** Adoption C+ to B+.
 
