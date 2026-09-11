@@ -75,7 +75,8 @@ def fields_and_methods(c):
     return fields, methods
 
 defs = defaultdict(list)   # name -> [record]
-repos = [p for p in sorted(ROOT.iterdir()) if p.is_dir() and p.name not in ARCHIVE]
+# a checkout of cns beside the library is the extraction, not a repo of the library
+repos = [p for p in sorted(ROOT.iterdir()) if p.is_dir() and p.name not in ARCHIVE and p.name not in {"cns", "CNS"}]
 nfiles = 0
 for r in repos:
     for p in sorted(r.rglob("*.py")):

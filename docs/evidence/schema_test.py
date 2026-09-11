@@ -69,7 +69,12 @@ def classes_in(root, relative_to):
                 for c in t.body if isinstance(c, ast.ClassDef)]
     return out
 
-repos = {p.name: classes_in(p, ROOT) for p in sorted(ROOT.iterdir()) if p.is_dir() and p.name not in ARCHIVE}
+# The subject cannot sit in its own evidence: cns is the extraction, so a
+# checkout of it beside the library would count every contract a third
+# time and inflate the spine. Measured: 62 spine names became 76 with it in.
+SELF = {"cns", "CNS"}
+repos = {p.name: classes_in(p, ROOT) for p in sorted(ROOT.iterdir())
+         if p.is_dir() and p.name not in ARCHIVE and p.name not in SELF}
 repos = {k: v for k, v in repos.items() if v}
 train = {k: v for k, v in repos.items() if k not in HELD_OUT}
 held = {k: repos[k] for k in HELD_OUT if k in repos}
