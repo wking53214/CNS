@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cns"
+version = "0.1.0"
+description = "Central nervous system: the contracts every repo in the library joins on."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["cns*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
