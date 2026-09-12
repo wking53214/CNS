@@ -79,6 +79,129 @@
       },
       "functions": {}
     },
+    "cns.gate": {
+      "__all__": [
+        "GatePosition",
+        "GateOutcome",
+        "GateResult",
+        "Gate",
+        "GateChain",
+        "resolve"
+      ],
+      "classes": {
+        "Gate": {
+          "annotations": {
+            "name": "str",
+            "position": "GatePosition"
+          },
+          "bases": [
+            "Protocol"
+          ],
+          "kind": "protocol",
+          "members": {
+            "check": "def(self, candidate: 'object') -> 'GateResult'"
+          }
+        },
+        "GateChain": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": "()",
+              "name": "alpha",
+              "type": "Tuple[Gate, ...]"
+            },
+            {
+              "default": "()",
+              "name": "omega",
+              "type": "Tuple[Gate, ...]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "complete": "def(self) -> 'bool'",
+            "misplaced": "def(self) -> 'Tuple[str, ...]'"
+          },
+          "slots": true
+        },
+        "GateOutcome": {
+          "bases": [
+            "RowEnum"
+          ],
+          "enum_members": [
+            [
+              "PASS",
+              "pass"
+            ],
+            [
+              "RETRY",
+              "retry"
+            ],
+            [
+              "TERMINAL_BREACH",
+              "terminal_breach"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        },
+        "GatePosition": {
+          "bases": [
+            "RowEnum"
+          ],
+          "enum_members": [
+            [
+              "ALPHA",
+              "alpha"
+            ],
+            [
+              "OMEGA",
+              "omega"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        },
+        "GateResult": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "gate",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "position",
+              "type": "GatePosition"
+            },
+            {
+              "default": null,
+              "name": "outcome",
+              "type": "GateOutcome"
+            },
+            {
+              "default": "''",
+              "name": "reason",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "blocking": "def(self) -> 'bool'"
+          },
+          "slots": true
+        }
+      },
+      "functions": {
+        "resolve": "def(results: 'Iterable[GateResult]') -> 'GateOutcome'"
+      }
+    },
     "cns.governance": {
       "__all__": [
         "ExecutionDomain",
@@ -621,5 +744,5 @@
       "functions": {}
     }
   },
-  "version": "1.0.0"
+  "version": "1.1.0"
 }
