@@ -86,7 +86,9 @@
         "GateResult",
         "Gate",
         "GateChain",
-        "resolve"
+        "resolve",
+        "subject_digest",
+        "unbound"
       ],
       "classes": {
         "Gate": {
@@ -188,18 +190,32 @@
               "default": "''",
               "name": "reason",
               "type": "str"
+            },
+            {
+              "default": "''",
+              "name": "subject",
+              "type": "str"
+            },
+            {
+              "default": "''",
+              "name": "subject_digest",
+              "type": "str"
             }
           ],
           "frozen": true,
           "kind": "dataclass",
           "members": {
-            "blocking": "def(self) -> 'bool'"
+            "binds": "def(self, subject: 'str', digest: 'str') -> 'bool'",
+            "blocking": "def(self) -> 'bool'",
+            "bound": "def(self) -> 'bool'"
           },
           "slots": true
         }
       },
       "functions": {
-        "resolve": "def(results: 'Iterable[GateResult]') -> 'GateOutcome'"
+        "resolve": "def(results: 'Iterable[GateResult]') -> 'GateOutcome'",
+        "subject_digest": "def(content: 'Mapping[str, object]') -> 'str'",
+        "unbound": "def(results: 'Iterable[GateResult]') -> 'Tuple[str, ...]'"
       }
     },
     "cns.governance": {
@@ -744,5 +760,5 @@
       "functions": {}
     }
   },
-  "version": "1.1.0"
+  "version": "1.2.0"
 }

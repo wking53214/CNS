@@ -51,16 +51,47 @@ consumer: any terminal breach wins, then any retry, and PASS only when
 nothing objected. Fail-closed is a property of the contract, not a habit
 each repo has to remember.
 
+BINDING A VERDICT TO WHAT IT JUDGED
+
+Added in 1.2.0, after HERALD was read. Everything above models the verdict
+and nothing modelled the thing judged, so a `GateResult` could be built by
+hand and pointed at anything, or lifted off the payload it was issued for
+and reused on a different one. A gate that cannot be transplanted is worth
+more than a gate that merely exists.
+
+HERALD had already solved this for itself: its `GateDecision` is MAC-signed
+over the claim's content and `verify_against` raises rather than return a
+verdict that does not match. That is the right design and this is the part
+of it that belongs in a shared contract.
+
+`subject` names what was judged. `subject_digest` is a canonical digest of
+its content, computed by `subject_digest()` here so that every consumer
+computes it the same way; a digest each repo derives its own way does not
+cross a repository boundary, which is the only reason to put it here.
+`GateResult.binds` answers whether a verdict was issued against exactly
+this content, and `unbound` names the verdicts in a set that carry no
+binding at all, for a consumer that wants to require one.
+
+**This is tamper-evidence, not tamper-proofing, and the distinction is not
+a quibble.** A digest detects a verdict transplanted onto different content
+and content that drifted after a verdict was issued. It does not detect an
+adversary who recomputes the digest, because there is no secret here and
+there cannot be: a key is state and configuration, and this package holds
+neither. A consumer needing that adds a MAC over these fields, which is
+exactly what HERALD does.
+
 This module carries shapes and pure functions of them, like the rest of the
 package. Running the gates is the consumer's, and so is deciding what each
 gate inspects. The contract says only that there are two ends, which end
-each gate belongs to, and what a mixture of verdicts means.
+each gate belongs to, what a verdict is bound to, and what a mixture of
+verdicts means.
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
-from typing import Iterable, Protocol, Tuple, runtime_checkable
+from typing import Any, Iterable, Mapping, Protocol, Sequence, Tuple, runtime_checkable
 
 from cns.rowenum import RowEnum
 
@@ -71,6 +102,8 @@ __all__ = [
     "Gate",
     "GateChain",
     "resolve",
+    "subject_digest",
+    "unbound",
 ]
 
 
@@ -113,10 +146,25 @@ class GateResult:
     position: GatePosition
     outcome: GateOutcome
     reason: str = ""
+    subject: str = ""
+    subject_digest: str = ""
 
     def blocking(self) -> bool:
         """Whether this verdict stops the request. Reads only its own fields."""
         return self.outcome is not GateOutcome.PASS
+
+    def bound(self) -> bool:
+        """Whether this verdict records what it judged. Reads only its own fields."""
+        return bool(self.subject) and bool(self.subject_digest)
+
+    def binds(self, subject: str, digest: str) -> bool:
+        """Whether this verdict was issued against exactly this content.
+
+        An unbound verdict binds to nothing, including to empty arguments.
+        Returning True there would make every hand-built `GateResult` pass
+        a check whose whole purpose is to catch hand-built ones.
+        """
+        return self.bound() and self.subject == subject and self.subject_digest == digest
 
 
 @runtime_checkable
@@ -181,3 +229,69 @@ def resolve(results: Iterable[GateResult]) -> GateOutcome:
         if r.outcome is GateOutcome.RETRY:
             outcome = GateOutcome.RETRY
     return outcome
+
+
+def _canonical(value: Any) -> str:
+    """A length-prefixed rendering of restricted content, injective by design.
+
+    Not JSON. `json` is forbidden in this package on purpose -- serialization
+    is the consumer's job and `tests/test_graph.py` enforces it -- and a
+    digest needs something stronger than JSON anyway. Length prefixes make
+    the encoding unambiguous without escaping, so no two distinct inputs can
+    render alike: `{"ab": "c"}` and `{"a": "bc"}` are the kind of collision
+    a separator-based format has to escape its way out of and this one
+    cannot have.
+
+    `float` is refused rather than supported. Its shortest-repr rendering is
+    the standard place canonical encodings stop agreeing with each other,
+    and a gate that needs to bind a measurement should bind the string or
+    the scaled integer it actually reported.
+    """
+    if value is None:
+        return "n:"
+    if isinstance(value, bool):
+        # Before int: bool is a subclass of int, and True would render as 1.
+        return "b:1" if value else "b:0"
+    if isinstance(value, int):
+        return f"i:{value}:"
+    if isinstance(value, str):
+        return f"s:{len(value)}:{value}"
+    if isinstance(value, Mapping):
+        items = sorted((str(k) for k in value.keys()))
+        if len(set(items)) != len(items):
+            raise TypeError("mapping keys collide once stringified")
+        body = "".join(_canonical(k) + _canonical(value[k]) for k in items)
+        return f"d:{len(items)}:{body}"
+    if isinstance(value, (list, tuple)) or (
+            isinstance(value, Sequence) and not isinstance(value, (str, bytes))):
+        body = "".join(_canonical(v) for v in value)
+        return f"l:{len(value)}:{body}"
+    raise TypeError(
+        f"cannot bind a verdict to {type(value).__name__}; use str, int, "
+        f"bool, None, or a mapping or sequence of those")
+
+
+def subject_digest(content: Mapping[str, object]) -> str:
+    """Canonical digest of judged content, identical in every consumer.
+
+    SHA-256 over `_canonical`. Canonical matters more than convenient here:
+    two repositories that hash the same claim differently cannot check each
+    other's verdicts, and that is the only reason this function belongs in a
+    shared package rather than in each caller.
+
+    A `TypeError` from here means a gate tried to bind a verdict to content
+    it cannot describe unambiguously. That is a defect in the gate, not a
+    case to paper over.
+    """
+    return hashlib.sha256(_canonical(content).encode("utf-8")).hexdigest()
+
+
+def unbound(results: Iterable[GateResult]) -> Tuple[str, ...]:
+    """Names of verdicts that do not record what they judged.
+
+    For a consumer that requires binding: assert this is empty, the same
+    way `GateChain.misplaced` is asserted empty. It is a separate question
+    from `resolve`, which decides what a set of verdicts means and is not
+    the place to also adjudicate whether they are well-formed.
+    """
+    return tuple(r.gate for r in results if not r.bound())

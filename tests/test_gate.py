@@ -24,6 +24,8 @@ from cns.gate import (
     GatePosition,
     GateResult,
     resolve,
+    subject_digest,
+    unbound,
 )
 from cns.rowenum import RowEnum
 
@@ -93,6 +95,8 @@ def test_a_result_round_trips_through_json():
         "position": "alpha",
         "outcome": "terminal_breach",
         "reason": "no",
+        "subject": "",
+        "subject_digest": "",
     }
 
 
@@ -177,3 +181,92 @@ def test_terminal_breach_short_circuits():
 
     assert resolve(verdicts()) is GateOutcome.TERMINAL_BREACH
     assert seen == ["first"]
+
+
+# --- binding a verdict to what it judged (1.2.0) ---------------------------
+
+
+def test_a_verdict_can_record_what_it_judged():
+    d = subject_digest({"claim_id": "c1", "value": "42"})
+    r = GateResult("origin", GatePosition.ALPHA, GateOutcome.PASS, "ok", "c1", d)
+    assert r.bound()
+    assert r.binds("c1", d)
+
+
+def test_a_hand_built_verdict_binds_to_nothing():
+    """The failure this exists to catch. An unbound result must not satisfy a
+    binding check, including one passed empty arguments, or every hand-built
+    GateResult passes the check written to find hand-built ones."""
+    r = GateResult("loose", GatePosition.ALPHA, GateOutcome.PASS)
+    assert not r.bound()
+    assert not r.binds("", "")
+    assert not r.binds("c1", subject_digest({"any": "thing"}))
+
+
+def test_a_verdict_does_not_bind_to_different_content():
+    """Transplant detection: the verdict was issued for c1's content and does
+    not carry over to c2, or to c1 after c1 changed."""
+    d1 = subject_digest({"claim_id": "c1", "value": "42"})
+    d2 = subject_digest({"claim_id": "c1", "value": "43"})
+    r = GateResult("origin", GatePosition.ALPHA, GateOutcome.TERMINAL_BREACH,
+                   "no", "c1", d1)
+    assert r.binds("c1", d1)
+    assert not r.binds("c1", d2)
+    assert not r.binds("c2", d1)
+
+
+def test_the_digest_is_canonical_not_incidental():
+    """Two consumers that hash the same content differently cannot check each
+    other's verdicts, which is the only reason this function is shared."""
+    assert subject_digest({"a": 1, "b": 2}) == subject_digest({"b": 2, "a": 1})
+    assert subject_digest({"a": 1}) != subject_digest({"a": "1"})
+    assert len(subject_digest({})) == 64
+
+
+def test_the_digest_refuses_content_it_cannot_describe():
+    """A gate binding a verdict to something unrenderable is a defect in the
+    gate. Silently coercing it with str() would hide that."""
+    with pytest.raises(TypeError):
+        subject_digest({"gate": object()})
+    with pytest.raises(TypeError):
+        subject_digest({"measured": 0.1})
+
+
+def test_the_encoding_cannot_collide():
+    """Length prefixes rather than separators, so a shifted boundary cannot
+    produce the same rendering. A separator-based format needs escaping to
+    make this true; this one cannot have the collision."""
+    assert subject_digest({"ab": "c"}) != subject_digest({"a": "bc"})
+    assert subject_digest({"a": "1"}) != subject_digest({"a": 1})
+    assert subject_digest({"a": True}) != subject_digest({"a": 1})
+    assert subject_digest({"a": None}) != subject_digest({"a": ""})
+    assert subject_digest({"a": ["b", "c"]}) != subject_digest({"a": ["bc"]})
+
+
+def test_unbound_names_the_loose_verdicts():
+    d = subject_digest({"x": 1})
+    results = [
+        GateResult("a", GatePosition.ALPHA, GateOutcome.PASS, "", "s", d),
+        GateResult("b", GatePosition.OMEGA, GateOutcome.PASS),
+        GateResult("c", GatePosition.OMEGA, GateOutcome.RETRY, "", "s", ""),
+    ]
+    assert unbound(results) == ("b", "c")
+
+
+def test_binding_is_a_separate_question_from_resolution():
+    """`resolve` decides what verdicts mean; it does not adjudicate whether
+    they are well-formed. Keeping those apart means a consumer that does not
+    require binding is not forced into it, and one that does asserts it
+    explicitly."""
+    loose = [GateResult("b", GatePosition.OMEGA, GateOutcome.TERMINAL_BREACH)]
+    assert resolve(loose) is GateOutcome.TERMINAL_BREACH
+    assert unbound(loose) == ("b",)
+
+
+def test_reason_kept_its_position():
+    """1.1.0 shipped GateResult(gate, position, outcome, reason). The new
+    fields are appended so that positional construction still means what it
+    did, which is why this is a minor version and not a major one."""
+    r = GateResult("g", GatePosition.ALPHA, GateOutcome.RETRY, "because")
+    assert r.reason == "because"
+    assert r.subject == "" and r.subject_digest == ""

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cns"
-version = "1.1.0"
+version = "1.2.0"
 description = "Central nervous system: the contracts every repo in the library joins on."
 requires-python = ">=3.10"
 dependencies = []
