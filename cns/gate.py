@@ -242,10 +242,21 @@ def _canonical(value: Any) -> str:
     a separator-based format has to escape its way out of and this one
     cannot have.
 
-    `float` is refused rather than supported. Its shortest-repr rendering is
-    the standard place canonical encodings stop agreeing with each other,
-    and a gate that needs to bind a measurement should bind the string or
-    the scaled integer it actually reported.
+    `float` is supported with a pinned rendering, added in 1.3.0. An earlier
+    version refused it, on the reasoning that shortest-repr is where
+    canonical encodings stop agreeing. Reading the first real consumer
+    settled it the other way: HERALD's sealed content carries `confidence`
+    and every deduction's `delta` as floats, so a contract that refuses
+    them is a contract that repo cannot adopt, and the contract was the
+    thing that was wrong.
+
+    `repr` is shortest-roundtrip on every CPython this package supports and
+    identical across them, which the test suite checks on all four rather
+    than assumes. The three genuine hazards are handled rather than hoped
+    about: `-0.0` normalises to `0.0` (they are equal and must not digest
+    differently), and NaN and the infinities are refused, because they are
+    not values a verdict can meaningfully be bound to and JSON cannot
+    render them without leaving the standard.
     """
     if value is None:
         return "n:"
@@ -254,6 +265,13 @@ def _canonical(value: Any) -> str:
         return "b:1" if value else "b:0"
     if isinstance(value, int):
         return f"i:{value}:"
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise TypeError(
+                "cannot bind a verdict to NaN or an infinity")
+        if value == 0.0:
+            value = 0.0  # collapses -0.0, which compares equal to it
+        return f"f:{value!r}:"
     if isinstance(value, str):
         return f"s:{len(value)}:{value}"
     if isinstance(value, Mapping):
@@ -268,7 +286,7 @@ def _canonical(value: Any) -> str:
         return f"l:{len(value)}:{body}"
     raise TypeError(
         f"cannot bind a verdict to {type(value).__name__}; use str, int, "
-        f"bool, None, or a mapping or sequence of those")
+        f"float, bool, None, or a mapping or sequence of those")
 
 
 def subject_digest(content: Mapping[str, object]) -> str:

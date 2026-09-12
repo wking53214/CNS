@@ -229,7 +229,9 @@ def test_the_digest_refuses_content_it_cannot_describe():
     with pytest.raises(TypeError):
         subject_digest({"gate": object()})
     with pytest.raises(TypeError):
-        subject_digest({"measured": 0.1})
+        subject_digest({"measured": float("nan")})
+    with pytest.raises(TypeError):
+        subject_digest({"measured": float("inf")})
 
 
 def test_the_encoding_cannot_collide():
@@ -270,3 +272,19 @@ def test_reason_kept_its_position():
     r = GateResult("g", GatePosition.ALPHA, GateOutcome.RETRY, "because")
     assert r.reason == "because"
     assert r.subject == "" and r.subject_digest == ""
+
+
+def test_floats_are_supported_because_the_real_consumer_needs_them():
+    """HERALD seals `confidence` and every deduction's `delta` as floats. A
+    contract that refuses them is one that repo cannot adopt."""
+    d = subject_digest({"confidence": 0.85, "delta": -0.30})
+    assert len(d) == 64
+    assert subject_digest({"c": 0.1}) != subject_digest({"c": 0.2})
+    assert subject_digest({"c": 0.1}) != subject_digest({"c": "0.1"})
+
+
+def test_negative_zero_digests_the_same_as_zero():
+    """-0.0 == 0.0 is True. Two values that compare equal must not produce
+    different digests, or a verdict stops binding to content that did not
+    change."""
+    assert subject_digest({"d": -0.0}) == subject_digest({"d": 0.0})
