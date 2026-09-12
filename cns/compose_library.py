@@ -113,6 +113,7 @@ class LibraryComposer:
     def register_adapter(self, adapter: SystemAdapter) -> None:
         """Register a system adapter from the library."""
         self.adapters[adapter.system_name] = adapter
+        self._build_compatibility_graph()  # Rebuild graph after each registration
 
     def register_translation(
         self,
