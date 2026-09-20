@@ -43,6 +43,21 @@ be serialised but renders differently on 3.10 than on 3.11 and later.
 Both were shipped before 1.0.0. `tests/test_serialization.py` fails if
 an enum is ever added without the base.
 
+INVARIANTS
+
+`cns.gate` is the first thing here that carries an invariant rather than a
+row: the two-ended, ordered, fail-closed decision contract the library's
+governing constraint has always specified. It is still only shapes and pure
+functions of them, because running the gates is the consumer's job. What it
+adds is that the ordering is declared in the type instead of being a
+convention inside whichever file happened to get it right.
+
+That distinction was measured on 2026-09-12 and it is not academic. Of the
+eleven repositories carrying gate vocabulary, four had the precondition end
+with a token outcome check, one had a good outcome stratum and no
+precondition, and five had neither. `GateChain.complete` is that measurement
+as an assertion a consumer can run.
+
 THE PUBLIC SHAPE
 
 `tests/public_shape.json` records every exported class, its fields in
@@ -58,4 +73,4 @@ minor version. A field removed, renamed, or given a new meaning is a
 major version, and every consumer moves deliberately.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.3.0"

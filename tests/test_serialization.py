@@ -27,14 +27,36 @@ from enum import Enum
 import pytest
 
 from cns.caller import CallerState, DynamicState
-from cns.governance import (ExecutionDomain, IdentityContext, IntentCategory,
-                            KernelMetadata, QueueType, RoutingDecision,
-                            TrustLevel)
+from cns.governance import (ExecutionDomain, IdentityContext, KernelMetadata,
+                            QueueType, RoutingDecision, TrustLevel)
 from cns.perception import (CallOutcome, CallPercept, EmotionalState,
                             FrictionEvent)
 from cns.rowenum import RowEnum
 
-ALL_ENUMS = [CallOutcome, ExecutionDomain, TrustLevel, IntentCategory, QueueType]
+def _all_enums():
+    """Every exported enum in the package, discovered rather than listed.
+
+    This was a hand-maintained list of five. A hand-maintained list is the
+    same failure mode `cns.gate` exists to fix: it holds until someone adds
+    a module and does not think to come back here, and then the new enum
+    quietly skips every check below while still passing the structural one
+    at the bottom of this file. Discovery cannot drift."""
+    import importlib
+    import pkgutil
+
+    import cns
+    found = []
+    names = [cns.__name__] + [i.name for i in pkgutil.walk_packages(cns.__path__, "cns.")]
+    for modname in sorted(names):
+        mod = importlib.import_module(modname)
+        for name in getattr(mod, "__all__", []):
+            obj = getattr(mod, name)
+            if isinstance(obj, type) and issubclass(obj, Enum) and obj is not RowEnum:
+                found.append(obj)
+    return found
+
+
+ALL_ENUMS = _all_enums()
 
 
 def _percept() -> CallPercept:
