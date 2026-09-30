@@ -67,10 +67,10 @@ class TestHeraldTranslationBoundary:
         # Proposed is pending human approval, so it's not PASS yet
         assert t.canonical_outcome == GateOutcome.RETRY
 
-    def test_ghost_tools_pass_translates_correctly(self):
-        """ghost_tools PASS should map to PASS."""
+    def test_ghost_tools_confirmed_translates_to_pass(self):
+        """ghost_tools CONFIRMED should map to PASS."""
         t = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.PASS.value,
+            GhostToolsStatus.CONFIRMED.value,
             file_modified="innovation_os/engine.py",
             lines_changed=5,
             severity="MINOR",
@@ -78,10 +78,10 @@ class TestHeraldTranslationBoundary:
         assert t.canonical_outcome == GateOutcome.PASS
         assert t.metadata["lines_changed"] == 5
 
-    def test_ghost_tools_finding_translates_to_breach(self):
-        """ghost_tools finding (defect) should map to TERMINAL_BREACH."""
+    def test_ghost_tools_rejected_translates_to_breach(self):
+        """ghost_tools REJECTED (a human said no) should map to TERMINAL_BREACH."""
         t = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.FINDING.value,
+            GhostToolsStatus.REJECTED.value,
             file_modified="innovation_os/engine.py",
             lines_changed=0,
             severity="CRITICAL",
@@ -107,9 +107,9 @@ class TestHeraldRoundTrip:
         recovered = translate_canonical_to_innovation_os(t.canonical_outcome, t.subject_hash)
         assert recovered == original
 
-    def test_ghost_tools_roundtrip_pass(self):
-        """PASS → canonical → back should yield PASS."""
-        original = GhostToolsStatus.PASS.value
+    def test_ghost_tools_roundtrip_confirmed(self):
+        """CONFIRMED → canonical → back should yield CONFIRMED."""
+        original = GhostToolsStatus.CONFIRMED.value
         t = translate_ghost_tools_to_canonical(original, "file.py", 5)
         recovered = translate_canonical_to_ghost_tools(t.canonical_outcome, t.subject_hash)
         assert recovered == original
@@ -145,7 +145,7 @@ class TestCompositionCycle:
         # Innovation OS says REJECTED
         # ghost_tools tries to fix Innovation OS code to prevent silent approval
         fix_status = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.PASS.value,
+            GhostToolsStatus.CONFIRMED.value,
             file_modified="innovation_os/lifecycle.py",
             lines_changed=12,
             severity="MAJOR",
@@ -219,6 +219,44 @@ class TestCompositionGaps:
         pytest.skip("Gap: Failure recovery mechanism not specified")
 
 
+class TestGhostToolsVocabularyPin:
+    """Step 1.4: one ghost_tools vocabulary, pinned to its source of truth.
+
+    Source: wking53214/ghost_tools, ghost_buster/schema.py, class Status,
+    read at commit 93143f5 (the file last changed in d1fd094). The members
+    and their order are copied from that file, not inferred. If ghost_tools
+    changes its Status, this list changes in the same commit that moves
+    the passthrough, and the diff is the review.
+    """
+
+    GHOST_TOOLS_STATUS_SOURCE = [
+        ("CONFIRMED", "confirmed"),
+        ("REASONED", "reasoned"),
+        ("CONFIRMED_BY_REVIEW", "confirmed_by_review"),
+        ("REJECTED", "rejected"),
+        ("SUPPRESSED", "suppressed"),
+    ]
+
+    def test_enum_matches_ghost_buster_schema_status(self):
+        assert [(m.name, m.value) for m in GhostToolsStatus] == \
+            self.GHOST_TOOLS_STATUS_SOURCE
+
+    def test_every_member_translates_and_every_outcome_maps_back(self):
+        """No member falls through to the unknown-status fallback, and the
+        reverse direction only ever produces a real member."""
+        for member in GhostToolsStatus:
+            t = translate_ghost_tools_to_canonical(member.value, "f.py", 0)
+            assert t.source_verdict == member.value
+            assert isinstance(t.canonical_outcome, GateOutcome)
+        members = {m.value for m in GhostToolsStatus}
+        for outcome in GateOutcome:
+            assert translate_canonical_to_ghost_tools(outcome, "h") in members
+
+    def test_the_invented_vocabulary_is_gone(self):
+        for stale in ("pass", "finding", "skipped", "unsummoned"):
+            assert stale not in {m.value for m in GhostToolsStatus}
+
+
 class TestSubjectBinding:
     """Do translated outcomes stay bound to what they judged?"""
 
@@ -255,12 +293,12 @@ class TestSubjectBinding:
         """ghost_tools outcome should bind to file hash, not just filename."""
         # Same file, different lines changed
         t1 = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.PASS.value,
+            GhostToolsStatus.CONFIRMED.value,
             file_modified="engine.py",
             lines_changed=5,
         )
         t2 = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.PASS.value,
+            GhostToolsStatus.CONFIRMED.value,
             file_modified="engine.py",
             lines_changed=10,
         )
