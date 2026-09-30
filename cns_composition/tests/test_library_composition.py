@@ -7,8 +7,8 @@ work correctly across all systems.
 
 import pytest
 
-from cns.compose_library import LibraryComposer, SystemModel
-from cns.adapters import (
+from cns_composition.compose_library import LibraryComposer, SystemModel
+from cns_composition.adapters import (
     register_core_adapters,
     register_core_translation_rules,
     SwizzleAdapter,
@@ -200,6 +200,80 @@ class TestCompositionExecution:
         assert trace_cycle2.cycle == 2
 
 
+class TestAdaptersSurviveComposition:
+    """Step 1.2 regression: composing must not consume the adapters."""
+
+    @pytest.fixture
+    def composer(self):
+        c = LibraryComposer()
+        register_core_adapters(c)
+        register_core_translation_rules(c)
+        return c
+
+    def test_same_path_three_times_leaves_input_models_intact(self, composer):
+        """The compose routine used to pop a model off each adapter's
+        input set per run, so the third run of this path crashed."""
+        path = ["swizzle", "ghost_tools", "wizzle", "innovation_os"]
+        before = {name: set(a.input_models)
+                  for name, a in composer.adapters.items()}
+        subject = {"repo": "test_repo", "commit": "abc123"}
+        for cycle in (1, 2, 3):
+            trace = composer.compose(path, subject, cycle=cycle)
+            assert len(trace.steps) == 4
+        after = {name: set(a.input_models)
+                 for name, a in composer.adapters.items()}
+        assert after == before
+
+
+class TestTranslationHappensBeforeInvoke:
+    """Step 1.3 regression: the previous outcome is translated into the
+    current adapter's input model before the adapter runs, and the
+    adapter's own output is left untranslated."""
+
+    def test_two_step_path_translates_the_input_not_the_output(self):
+        from cns.gate import GateOutcome
+        from cns_composition.compose_library import SystemAdapter
+
+        class Emitter(SystemAdapter):
+            def __init__(self):
+                super().__init__(system_name="emitter", input_models=set(),
+                                 output_model=SystemModel.SWIZZLE_VERDICT)
+
+            def invoke(self, subject, input_outcome=None):
+                return "escaped"
+
+        class Judge(SystemAdapter):
+            """Accepts only Innovation OS decisions; passes iff it was
+            handed the translated form of the emitter's verdict."""
+
+            def __init__(self):
+                super().__init__(
+                    system_name="judge",
+                    input_models={SystemModel.INNOVATION_OS_DECISION},
+                    output_model=SystemModel.CNS_GATE_OUTCOME)
+
+            def invoke(self, subject, input_outcome=None):
+                return "pass" if input_outcome == "rejected" else "retry"
+
+        composer = LibraryComposer()
+        composer.register_adapter(Emitter())
+        composer.register_adapter(Judge())
+        composer.register_translation(
+            SystemModel.SWIZZLE_VERDICT, SystemModel.INNOVATION_OS_DECISION,
+            lambda v: "rejected" if v == "escaped" else "approved")
+
+        trace = composer.compose(["emitter", "judge"], {"repo": "r"})
+
+        # The judge was handed the translated verdict, not the raw one.
+        assert trace.steps[1].input_outcome == "rejected"
+        # Its own output stayed in its own model. Under the old logic the
+        # judge saw "escaped", answered "retry", and that answer was then
+        # pushed through the verdict-to-decision rule into "branched",
+        # which no canonicaliser recognises.
+        assert trace.steps[1].output_outcome == "pass"
+        assert trace.overall_outcome is GateOutcome.PASS
+
+
 class TestTranslationRules:
     """Verify translation rules work at system boundaries."""
 
@@ -259,7 +333,7 @@ class TestCompositionBuilder:
 
     def test_builder_add_systems(self, composer):
         """Build composition fluently."""
-        from cns.compose_library import CompositionBuilder
+        from cns_composition.compose_library import CompositionBuilder
 
         builder = CompositionBuilder(composer)
         path = (
@@ -274,7 +348,7 @@ class TestCompositionBuilder:
 
     def test_builder_execute(self, composer):
         """Builder can execute composition directly."""
-        from cns.compose_library import CompositionBuilder
+        from cns_composition.compose_library import CompositionBuilder
 
         builder = CompositionBuilder(composer)
         subject = {"repo": "test_repo", "commit": "abc123"}
@@ -290,7 +364,7 @@ class TestCompositionBuilder:
 
     def test_builder_unknown_system_raises(self, composer):
         """Adding unknown system raises ValueError."""
-        from cns.compose_library import CompositionBuilder
+        from cns_composition.compose_library import CompositionBuilder
 
         builder = CompositionBuilder(composer)
         with pytest.raises(ValueError, match="System not registered"):

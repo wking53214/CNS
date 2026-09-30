@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cns"
-version = "1.3.0"
+version = "1.4.0"
 description = "Central nervous system: the contracts every repo in the library joins on."
 requires-python = ">=3.10"
 dependencies = []
@@ -13,7 +13,10 @@ dependencies = []
 dev = ["pytest>=7", "mypy>=1.8"]
 
 [tool.setuptools.packages.find]
-include = ["cns*"]
+# The wheel is the shapes package only. cns_composition is a sibling
+# package in this repository (behaviour over cns.gate) and is deliberately
+# not shipped with it.
+include = ["cns", "cns.*"]
 
 # PEP 561. Without this marker a consumer's mypy or pyright treats the whole
 # package as untyped and silently ignores every annotation in it, which for a
@@ -22,4 +25,7 @@ include = ["cns*"]
 cns = ["py.typed"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Every test directory. The composition tests once lived under a directory
+# the runner never looked at, which is where five skips hid from the
+# no-skip conftest for a while.
+testpaths = ["tests", "cns_composition/tests"]

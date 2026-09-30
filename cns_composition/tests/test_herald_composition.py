@@ -6,7 +6,7 @@ Each failure is a requirement for the 5-cycle loop to work.
 
 import pytest
 from cns.gate import GateOutcome
-from cns.herald_passthrough import (
+from cns_composition.herald_passthrough import (
     HeraldCompositionResult,
     SwizzleVerdict,
     InnovationOSDecision,
@@ -67,10 +67,10 @@ class TestHeraldTranslationBoundary:
         # Proposed is pending human approval, so it's not PASS yet
         assert t.canonical_outcome == GateOutcome.RETRY
 
-    def test_ghost_tools_pass_translates_correctly(self):
-        """ghost_tools PASS should map to PASS."""
+    def test_ghost_tools_confirmed_translates_to_pass(self):
+        """ghost_tools CONFIRMED should map to PASS."""
         t = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.PASS.value,
+            GhostToolsStatus.CONFIRMED.value,
             file_modified="innovation_os/engine.py",
             lines_changed=5,
             severity="MINOR",
@@ -78,10 +78,10 @@ class TestHeraldTranslationBoundary:
         assert t.canonical_outcome == GateOutcome.PASS
         assert t.metadata["lines_changed"] == 5
 
-    def test_ghost_tools_finding_translates_to_breach(self):
-        """ghost_tools finding (defect) should map to TERMINAL_BREACH."""
+    def test_ghost_tools_rejected_translates_to_breach(self):
+        """ghost_tools REJECTED (a human said no) should map to TERMINAL_BREACH."""
         t = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.FINDING.value,
+            GhostToolsStatus.REJECTED.value,
             file_modified="innovation_os/engine.py",
             lines_changed=0,
             severity="CRITICAL",
@@ -107,9 +107,9 @@ class TestHeraldRoundTrip:
         recovered = translate_canonical_to_innovation_os(t.canonical_outcome, t.subject_hash)
         assert recovered == original
 
-    def test_ghost_tools_roundtrip_pass(self):
-        """PASS → canonical → back should yield PASS."""
-        original = GhostToolsStatus.PASS.value
+    def test_ghost_tools_roundtrip_confirmed(self):
+        """CONFIRMED → canonical → back should yield CONFIRMED."""
+        original = GhostToolsStatus.CONFIRMED.value
         t = translate_ghost_tools_to_canonical(original, "file.py", 5)
         recovered = translate_canonical_to_ghost_tools(t.canonical_outcome, t.subject_hash)
         assert recovered == original
@@ -145,7 +145,7 @@ class TestCompositionCycle:
         # Innovation OS says REJECTED
         # ghost_tools tries to fix Innovation OS code to prevent silent approval
         fix_status = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.PASS.value,
+            GhostToolsStatus.CONFIRMED.value,
             file_modified="innovation_os/lifecycle.py",
             lines_changed=12,
             severity="MAJOR",
@@ -167,7 +167,10 @@ class TestCompositionCycle:
 
 
 class TestCompositionGaps:
-    """These tests expose what's MISSING for the loop to actually work."""
+    """What is MISSING for the loop to actually work, recorded the way the
+    root conftest demands: as assertions of the gap, not skips. Each one
+    fails the day its gap closes and makes someone write the real test.
+    The questions from the original skips are kept in the docstrings."""
 
     def test_gap_swizzle_needs_innovation_os_interface(self):
         """SWIZZLE has no native way to invoke Innovation OS as a target.
@@ -175,38 +178,60 @@ class TestCompositionGaps:
         SWIZZLE currently tests ghost_tools (code modification system).
         Innovation OS is a decision system, not code modification.
         What does "test Innovation OS" mean? What are the test cases?
+
+        The gap, asserted: the SWIZZLE adapter is a placeholder that never
+        reads its subject. When a real adapter lands, this fails.
         """
-        # This will fail until SWIZZLE can define test cases for Innovation OS
-        pytest.skip("Gap: SWIZZLE needs Innovation OS adapter interface")
+        from cns_composition.adapters import SwizzleAdapter
+        adapter = SwizzleAdapter()
+        assert adapter.invoke({"repo": "a"}, None) == adapter.invoke({"repo": "b", "commit": "c"}, None) == "escaped"
+        assert adapter.invoke({}, "retry") == "banished"
 
     def test_gap_innovation_os_needs_to_expose_decision_interface(self):
         """Innovation OS makes decisions, but how does HERALD get them out?
 
         Innovation OS has a lifecycle, but no canonical "decision" export format.
         HERALD needs to hook into: Problem → Idea → Decision point.
+
+        The gap, asserted: the Innovation OS adapter decides from the input
+        outcome alone and never consults the subject.
         """
-        # This will fail until Innovation OS has a decision query interface
-        pytest.skip("Gap: Innovation OS needs decision export interface")
+        from cns_composition.adapters import InnovationOSAdapter
+        adapter = InnovationOSAdapter()
+        assert adapter.invoke({"problem": "p1"}, None) == adapter.invoke({"problem": "p2"}, None) == "proposed"
+        assert adapter.invoke({"problem": "p1"}, "banished") == "approved"
 
     def test_gap_ghost_tools_needs_innovation_os_file_interface(self):
-        """ghost_tools modifies code, but what IS \"Innovation OS code to fix\"?
+        """ghost_tools modifies code, but what IS "Innovation OS code to fix"?
 
         ghost_tools works on Python files. Innovation OS is a framework.
         Does ghost_tools patch innovation_os/*.py files?
         Does it understand the semantic meaning of lifecycle decisions?
+
+        The gap, asserted: the ghost_tools adapter never opens or reads the
+        file its subject names.
         """
-        # This will fail until we define the "target" for ghost_tools
-        pytest.skip("Gap: ghost_tools needs Innovation OS semantic interface")
+        from cns_composition.adapters import GhostToolsAdapter
+        adapter = GhostToolsAdapter()
+        assert adapter.invoke({"file": "a.py"}, "escaped") == adapter.invoke({"file": "b.py"}, "escaped") == "confirmed"
+        assert adapter.invoke({"file": "a.py"}, None) == "reasoned"
 
     def test_gap_no_cycle_termination_condition(self):
-        """How many cycles until success? What is \"success\"?
+        """How many cycles until success? What is "success"?
 
         The loop spec says 5 cycles, but:
-        - Does \"all PASS\" mean we're done?
+        - Does "all PASS" mean we're done?
         - Can we hit cycles 2-4 without progress?
         - Is there a regression detection (cycle 3 makes it worse)?
+
+        The gap, asserted: a trace carries a cycle number and a convergence
+        flag read off the final outcome, and nothing else. A termination
+        criterion would be a new field here.
         """
-        pytest.skip("Gap: Cycle termination criteria not defined")
+        from dataclasses import fields
+        from cns_composition.compose_library import CompositionTrace
+        assert [f.name for f in fields(CompositionTrace)] == [
+            "steps", "overall_outcome", "composition_path", "cycle", "converged"]
 
     def test_gap_no_failure_recovery(self):
         """What happens if ghost_tools breaks something else?
@@ -214,9 +239,52 @@ class TestCompositionGaps:
         If cycle 3 (ghost_tools fix) introduces a NEW bug detected in cycle 4:
         - Does ghost_tools know to revert?
         - Does HERALD have a rollback path?
-        - Is there a \"worse than before\" detection?
+        - Is there a "worse than before" detection?
+
+        The gap, asserted: neither composer exposes any recovery operation.
         """
-        pytest.skip("Gap: Failure recovery mechanism not specified")
+        from cns_composition.compose_library import CompositionBuilder, LibraryComposer
+        public = {n for cls in (LibraryComposer, CompositionBuilder)
+                  for n in dir(cls) if not n.startswith("_")}
+        assert not {"rollback", "revert", "recover", "undo"} & public
+
+
+class TestGhostToolsVocabularyPin:
+    """Step 1.4: one ghost_tools vocabulary, pinned to its source of truth.
+
+    Source: wking53214/ghost_tools, ghost_buster/schema.py, class Status,
+    read at commit 93143f5 (the file last changed in d1fd094). The members
+    and their order are copied from that file, not inferred. If ghost_tools
+    changes its Status, this list changes in the same commit that moves
+    the passthrough, and the diff is the review.
+    """
+
+    GHOST_TOOLS_STATUS_SOURCE = [
+        ("CONFIRMED", "confirmed"),
+        ("REASONED", "reasoned"),
+        ("CONFIRMED_BY_REVIEW", "confirmed_by_review"),
+        ("REJECTED", "rejected"),
+        ("SUPPRESSED", "suppressed"),
+    ]
+
+    def test_enum_matches_ghost_buster_schema_status(self):
+        assert [(m.name, m.value) for m in GhostToolsStatus] == \
+            self.GHOST_TOOLS_STATUS_SOURCE
+
+    def test_every_member_translates_and_every_outcome_maps_back(self):
+        """No member falls through to the unknown-status fallback, and the
+        reverse direction only ever produces a real member."""
+        for member in GhostToolsStatus:
+            t = translate_ghost_tools_to_canonical(member.value, "f.py", 0)
+            assert t.source_verdict == member.value
+            assert isinstance(t.canonical_outcome, GateOutcome)
+        members = {m.value for m in GhostToolsStatus}
+        for outcome in GateOutcome:
+            assert translate_canonical_to_ghost_tools(outcome, "h") in members
+
+    def test_the_invented_vocabulary_is_gone(self):
+        for stale in ("pass", "finding", "skipped", "unsummoned"):
+            assert stale not in {m.value for m in GhostToolsStatus}
 
 
 class TestSubjectBinding:
@@ -255,12 +323,12 @@ class TestSubjectBinding:
         """ghost_tools outcome should bind to file hash, not just filename."""
         # Same file, different lines changed
         t1 = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.PASS.value,
+            GhostToolsStatus.CONFIRMED.value,
             file_modified="engine.py",
             lines_changed=5,
         )
         t2 = translate_ghost_tools_to_canonical(
-            GhostToolsStatus.PASS.value,
+            GhostToolsStatus.CONFIRMED.value,
             file_modified="engine.py",
             lines_changed=10,
         )

@@ -3,7 +3,7 @@
 ## Completed Work
 
 ### 1. Core Architecture (COMPLETED)
-- **File**: `cns/compose_library.py` (343 lines)
+- **File**: `cns_composition/compose_library.py` (343 lines)
 - **Status**: Committed and pushed
 - **Components**:
   - `SystemModel` enum: 6 outcome models covering SWIZZLE, ghost_tools, WIZZLE, Innovation OS, and CNS canonical form
@@ -15,7 +15,7 @@
 **Key Achievement**: Scales from four specific systems to library-wide orchestration via extensible adapter pattern.
 
 ### 2. System Implementations (COMPLETED)
-- **File**: `cns/adapters.py` (270 lines)
+- **File**: `cns_composition/adapters.py` (270 lines)
 - **Status**: Committed and pushed
 - **Adapters Implemented**:
   - `SwizzleAdapter`: Adversarial test framework producing Verdict outcomes
@@ -234,8 +234,8 @@ if not converged:
 
 | File | Lines | Status | Purpose |
 |------|-------|--------|---------|
-| `cns/compose_library.py` | 343 | ✅ Committed | Generic orchestration engine |
-| `cns/adapters.py` | 270 | ✅ Committed | Core system adapter implementations |
+| `cns_composition/compose_library.py` | 343 | ✅ Committed | Generic orchestration engine |
+| `cns_composition/adapters.py` | 270 | ✅ Committed | Core system adapter implementations |
 | `Tests/test_library_composition.py` | 421 | ✅ Committed | Comprehensive test suite (21 passing) |
 | `LIBRARY_COMPOSITION_GUIDE.md` | 380 | ✅ Committed | Usage guide and scaling patterns |
 | `COMPOSITION_IMPLEMENTATION_STATUS.md` | This file | Documentation | Current status and roadmap |

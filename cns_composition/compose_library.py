@@ -1,4 +1,7 @@
-"""Generic composition orchestrator for entire library.
+"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
+See README.md. Do not copy, publish, vendor, or disclose.
+
+Generic composition orchestrator for entire library.
 
 Discovers systems across 67 repos, builds composition graphs,
 and routes outcomes through compatible chains without universal translation.
@@ -11,7 +14,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from abc import ABC, abstractmethod
 
-from .gate import GateOutcome, subject_digest
+from cns.gate import GateOutcome, subject_digest
 
 
 class SystemModel(str, Enum):
@@ -198,19 +201,23 @@ class LibraryComposer:
         for system_name in composition_path:
             adapter = self.adapters[system_name]
 
-            # Invoke system
-            outcome = adapter.invoke(subject, input_outcome=previous_outcome)
-
-            # Translate if needed
+            # Translate the previous outcome into this adapter's input
+            # model before invoking it. The adapter's own output is left in
+            # its native model; the next step translates it if it must.
+            input_outcome = previous_outcome
             if previous_outcome and steps:
                 from_model = steps[-1].output_model
-                to_model = adapter.input_models.pop()  # first compatible model
+                to_model = self._compatible_input_model(adapter, from_model)
                 if from_model != to_model:
-                    outcome = self._translate(outcome, from_model, to_model)
+                    input_outcome = self._translate(
+                        previous_outcome, from_model, to_model)
+
+            # Invoke system
+            outcome = adapter.invoke(subject, input_outcome=input_outcome)
 
             step = CompositionStep(
                 system_name=system_name,
-                input_outcome=previous_outcome,
+                input_outcome=input_outcome,
                 output_outcome=outcome,
                 output_model=adapter.output_model,
                 subject_hash=subject_hash,
@@ -229,6 +236,31 @@ class LibraryComposer:
             cycle=cycle,
             converged=converged,
         )
+
+    def _compatible_input_model(
+        self,
+        adapter: SystemAdapter,
+        from_model: SystemModel,
+    ) -> SystemModel:
+        """The input model of `adapter` to hand `from_model` to.
+
+        A lookup, not a pop: an earlier version removed the chosen model
+        from the adapter's input set on every run, so the same path could
+        be composed only as many times as the adapter had input models.
+        Prefers the model itself when the adapter accepts it (no
+        translation), then the first model a translation rule exists for,
+        then the first model by name so the choice is deterministic.
+        """
+        if not adapter.input_models:
+            raise ValueError(
+                f"System {adapter.system_name} declares no input models")
+        if from_model in adapter.input_models:
+            return from_model
+        candidates = sorted(adapter.input_models, key=lambda m: m.value)
+        for model in candidates:
+            if (from_model, model) in self.translation_rules:
+                return model
+        return candidates[0]
 
     def _translate(
         self,

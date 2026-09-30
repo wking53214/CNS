@@ -53,6 +53,14 @@ Protocol and the implementation stays in the repo that owns it.
 | `cns.governance` | `ExecutionDomain`, `TrustLevel`, the `GovernanceError` family, `KernelMetadata`, `KernelComponent`, `IdentityContext`, `IntentCategory`, `QueueType`, `RoutingDecision` | GSA-815, OBSERVE (Ecology diverged) |
 | `cns.rowenum` | `RowEnum` | new in 1.0.0; the serialisation guarantee every enum above inherits |
 
+The composition layer is a sibling package in this repository, not part of
+`cns` and not shipped in the `cns` wheel. It is behaviour written against
+`cns.gate`, so the purity test would reject it inside the package:
+
+| package | modules | role |
+|---|---|---|
+| `cns_composition` | `compose`, `compose_library`, `adapters`, `herald_passthrough` | orchestrators, adapters and outcome translation over `cns.gate`; tests in `cns_composition/tests` |
+
 Every class is extracted by syntax tree from its canonical source and
 verified structurally identical at extraction; the module docstrings
 name the source and the agreement.
@@ -69,8 +77,9 @@ Then `from cns.graph import Node, Edge, Graph` and delete the vendored
 copy. Your own tests are the check that can fail.
 
 Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
-perception), `v1.0.0`. A raw commit SHA still works, but a tag says which
-contract you are joining on.
+perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
+moved out of the package to `cns_composition`). A raw commit SHA still
+works, but a tag says which contract you are joining on.
 
 ## Versioning
 

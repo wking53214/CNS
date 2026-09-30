@@ -1,4 +1,7 @@
-"""HERALD as pure translation gate — no logic, only outcome mapping.
+"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
+See README.md. Do not copy, publish, vendor, or disclose.
+
+HERALD as pure translation gate — no logic, only outcome mapping.
 
 Maps between:
 - SWIZZLE Verdict enum
@@ -16,7 +19,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Optional, Union
 
-from .gate import GateOutcome, GatePosition, GateResult, subject_digest
+from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
 
 
 # ============================================================================
@@ -43,11 +46,19 @@ class InnovationOSDecision(str, Enum):
 
 
 class GhostToolsStatus(str, Enum):
-    """From ghost_tools outcome model"""
-    PASS = "pass"              # check passed → PASS
-    FINDING = "finding"        # defect found → TERMINAL_BREACH
-    SKIPPED = "skipped"        # excluded → RETRY
-    UNSUMMONED = "unsummoned"  # test failure → TERMINAL_BREACH
+    """From ghost_tools: ghost_buster/schema.py, class Status.
+
+    The one ghost_tools outcome vocabulary this package carries. An earlier
+    version of this module invented a second one (pass, finding, skipped,
+    unsummoned) that no ghost_tools source ever produced; the composer's
+    model list already named the real members. Pinned to the source by
+    tests/test_herald_composition.py, so a change on either side is a diff.
+    """
+    CONFIRMED = "confirmed"                      # deterministic detector → PASS
+    REASONED = "reasoned"                        # unverified semantic claim → TERMINAL_BREACH
+    CONFIRMED_BY_REVIEW = "confirmed_by_review"  # a human verified it → PASS
+    REJECTED = "rejected"                        # a human said no → TERMINAL_BREACH
+    SUPPRESSED = "suppressed"                    # known, accepted, tracked → RETRY
 
 
 # ============================================================================
@@ -158,10 +169,11 @@ def translate_ghost_tools_to_canonical(
     """ghost_tools outcome → GateOutcome with all metadata preserved."""
 
     mapping = {
-        GhostToolsStatus.PASS.value: GateOutcome.PASS,
-        GhostToolsStatus.FINDING.value: GateOutcome.TERMINAL_BREACH,
-        GhostToolsStatus.SKIPPED.value: GateOutcome.RETRY,
-        GhostToolsStatus.UNSUMMONED.value: GateOutcome.TERMINAL_BREACH,
+        GhostToolsStatus.CONFIRMED.value: GateOutcome.PASS,
+        GhostToolsStatus.CONFIRMED_BY_REVIEW.value: GateOutcome.PASS,
+        GhostToolsStatus.REASONED.value: GateOutcome.TERMINAL_BREACH,
+        GhostToolsStatus.REJECTED.value: GateOutcome.TERMINAL_BREACH,
+        GhostToolsStatus.SUPPRESSED.value: GateOutcome.RETRY,
     }
 
     outcome = mapping.get(status, GateOutcome.TERMINAL_BREACH)
@@ -222,12 +234,12 @@ def translate_canonical_to_ghost_tools(
     """Canonical GateOutcome → ghost_tools status for fixing."""
 
     reverse_mapping = {
-        GateOutcome.PASS: GhostToolsStatus.PASS.value,
-        GateOutcome.RETRY: GhostToolsStatus.SKIPPED.value,
-        GateOutcome.TERMINAL_BREACH: GhostToolsStatus.FINDING.value,
+        GateOutcome.PASS: GhostToolsStatus.CONFIRMED.value,
+        GateOutcome.RETRY: GhostToolsStatus.SUPPRESSED.value,
+        GateOutcome.TERMINAL_BREACH: GhostToolsStatus.REJECTED.value,
     }
 
-    return reverse_mapping.get(outcome, GhostToolsStatus.UNSUMMONED.value)
+    return reverse_mapping.get(outcome, GhostToolsStatus.REJECTED.value)
 
 
 # ============================================================================

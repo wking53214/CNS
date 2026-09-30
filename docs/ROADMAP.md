@@ -315,3 +315,7 @@ package, which is the exact failure CNS exists to prevent.
 The `ghost_tools` disclosure from the scorecard's dimension 9 is an ownership
 decision, not an engineering task, and it is deliberately absent from every
 phase above. It should be decided rather than scheduled.
+
+Verdict receipts and the shuffle-seed field (TACK Layer 5) are carried by
+sentinel_os alone, so no receipt or seed shape is added to `cns.gate` under
+the two-repos rule; revisited when a second consumer appears.
