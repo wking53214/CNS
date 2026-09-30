@@ -200,6 +200,31 @@ class TestCompositionExecution:
         assert trace_cycle2.cycle == 2
 
 
+class TestAdaptersSurviveComposition:
+    """Step 1.2 regression: composing must not consume the adapters."""
+
+    @pytest.fixture
+    def composer(self):
+        c = LibraryComposer()
+        register_core_adapters(c)
+        register_core_translation_rules(c)
+        return c
+
+    def test_same_path_three_times_leaves_input_models_intact(self, composer):
+        """The compose routine used to pop a model off each adapter's
+        input set per run, so the third run of this path crashed."""
+        path = ["swizzle", "ghost_tools", "wizzle", "innovation_os"]
+        before = {name: set(a.input_models)
+                  for name, a in composer.adapters.items()}
+        subject = {"repo": "test_repo", "commit": "abc123"}
+        for cycle in (1, 2, 3):
+            trace = composer.compose(path, subject, cycle=cycle)
+            assert len(trace.steps) == 4
+        after = {name: set(a.input_models)
+                 for name, a in composer.adapters.items()}
+        assert after == before
+
+
 class TestTranslationRules:
     """Verify translation rules work at system boundaries."""
 

@@ -207,7 +207,7 @@ class LibraryComposer:
             # Translate if needed
             if previous_outcome and steps:
                 from_model = steps[-1].output_model
-                to_model = adapter.input_models.pop()  # first compatible model
+                to_model = self._compatible_input_model(adapter, from_model)
                 if from_model != to_model:
                     outcome = self._translate(outcome, from_model, to_model)
 
@@ -232,6 +232,31 @@ class LibraryComposer:
             cycle=cycle,
             converged=converged,
         )
+
+    def _compatible_input_model(
+        self,
+        adapter: SystemAdapter,
+        from_model: SystemModel,
+    ) -> SystemModel:
+        """The input model of `adapter` to hand `from_model` to.
+
+        A lookup, not a pop: an earlier version removed the chosen model
+        from the adapter's input set on every run, so the same path could
+        be composed only as many times as the adapter had input models.
+        Prefers the model itself when the adapter accepts it (no
+        translation), then the first model a translation rule exists for,
+        then the first model by name so the choice is deterministic.
+        """
+        if not adapter.input_models:
+            raise ValueError(
+                f"System {adapter.system_name} declares no input models")
+        if from_model in adapter.input_models:
+            return from_model
+        candidates = sorted(adapter.input_models, key=lambda m: m.value)
+        for model in candidates:
+            if (from_model, model) in self.translation_rules:
+                return model
+        return candidates[0]
 
     def _translate(
         self,
