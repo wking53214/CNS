@@ -25,4 +25,7 @@ include = ["cns", "cns.*"]
 cns = ["py.typed"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Every test directory. The composition tests once lived under a directory
+# the runner never looked at, which is where five skips hid from the
+# no-skip conftest for a while.
+testpaths = ["tests", "cns_composition/tests"]

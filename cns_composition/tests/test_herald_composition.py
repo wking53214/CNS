@@ -167,7 +167,10 @@ class TestCompositionCycle:
 
 
 class TestCompositionGaps:
-    """These tests expose what's MISSING for the loop to actually work."""
+    """What is MISSING for the loop to actually work, recorded the way the
+    root conftest demands: as assertions of the gap, not skips. Each one
+    fails the day its gap closes and makes someone write the real test.
+    The questions from the original skips are kept in the docstrings."""
 
     def test_gap_swizzle_needs_innovation_os_interface(self):
         """SWIZZLE has no native way to invoke Innovation OS as a target.
@@ -175,38 +178,60 @@ class TestCompositionGaps:
         SWIZZLE currently tests ghost_tools (code modification system).
         Innovation OS is a decision system, not code modification.
         What does "test Innovation OS" mean? What are the test cases?
+
+        The gap, asserted: the SWIZZLE adapter is a placeholder that never
+        reads its subject. When a real adapter lands, this fails.
         """
-        # This will fail until SWIZZLE can define test cases for Innovation OS
-        pytest.skip("Gap: SWIZZLE needs Innovation OS adapter interface")
+        from cns_composition.adapters import SwizzleAdapter
+        adapter = SwizzleAdapter()
+        assert adapter.invoke({"repo": "a"}, None) == adapter.invoke({"repo": "b", "commit": "c"}, None) == "escaped"
+        assert adapter.invoke({}, "retry") == "banished"
 
     def test_gap_innovation_os_needs_to_expose_decision_interface(self):
         """Innovation OS makes decisions, but how does HERALD get them out?
 
         Innovation OS has a lifecycle, but no canonical "decision" export format.
         HERALD needs to hook into: Problem → Idea → Decision point.
+
+        The gap, asserted: the Innovation OS adapter decides from the input
+        outcome alone and never consults the subject.
         """
-        # This will fail until Innovation OS has a decision query interface
-        pytest.skip("Gap: Innovation OS needs decision export interface")
+        from cns_composition.adapters import InnovationOSAdapter
+        adapter = InnovationOSAdapter()
+        assert adapter.invoke({"problem": "p1"}, None) == adapter.invoke({"problem": "p2"}, None) == "proposed"
+        assert adapter.invoke({"problem": "p1"}, "banished") == "approved"
 
     def test_gap_ghost_tools_needs_innovation_os_file_interface(self):
-        """ghost_tools modifies code, but what IS \"Innovation OS code to fix\"?
+        """ghost_tools modifies code, but what IS "Innovation OS code to fix"?
 
         ghost_tools works on Python files. Innovation OS is a framework.
         Does ghost_tools patch innovation_os/*.py files?
         Does it understand the semantic meaning of lifecycle decisions?
+
+        The gap, asserted: the ghost_tools adapter never opens or reads the
+        file its subject names.
         """
-        # This will fail until we define the "target" for ghost_tools
-        pytest.skip("Gap: ghost_tools needs Innovation OS semantic interface")
+        from cns_composition.adapters import GhostToolsAdapter
+        adapter = GhostToolsAdapter()
+        assert adapter.invoke({"file": "a.py"}, "escaped") == adapter.invoke({"file": "b.py"}, "escaped") == "confirmed"
+        assert adapter.invoke({"file": "a.py"}, None) == "reasoned"
 
     def test_gap_no_cycle_termination_condition(self):
-        """How many cycles until success? What is \"success\"?
+        """How many cycles until success? What is "success"?
 
         The loop spec says 5 cycles, but:
-        - Does \"all PASS\" mean we're done?
+        - Does "all PASS" mean we're done?
         - Can we hit cycles 2-4 without progress?
         - Is there a regression detection (cycle 3 makes it worse)?
+
+        The gap, asserted: a trace carries a cycle number and a convergence
+        flag read off the final outcome, and nothing else. A termination
+        criterion would be a new field here.
         """
-        pytest.skip("Gap: Cycle termination criteria not defined")
+        from dataclasses import fields
+        from cns_composition.compose_library import CompositionTrace
+        assert [f.name for f in fields(CompositionTrace)] == [
+            "steps", "overall_outcome", "composition_path", "cycle", "converged"]
 
     def test_gap_no_failure_recovery(self):
         """What happens if ghost_tools breaks something else?
@@ -214,9 +239,14 @@ class TestCompositionGaps:
         If cycle 3 (ghost_tools fix) introduces a NEW bug detected in cycle 4:
         - Does ghost_tools know to revert?
         - Does HERALD have a rollback path?
-        - Is there a \"worse than before\" detection?
+        - Is there a "worse than before" detection?
+
+        The gap, asserted: neither composer exposes any recovery operation.
         """
-        pytest.skip("Gap: Failure recovery mechanism not specified")
+        from cns_composition.compose_library import CompositionBuilder, LibraryComposer
+        public = {n for cls in (LibraryComposer, CompositionBuilder)
+                  for n in dir(cls) if not n.startswith("_")}
+        assert not {"rollback", "revert", "recover", "undo"} & public
 
 
 class TestGhostToolsVocabularyPin:
