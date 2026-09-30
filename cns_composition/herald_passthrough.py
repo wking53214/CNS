@@ -1,4 +1,7 @@
-"""HERALD as pure translation gate — no logic, only outcome mapping.
+"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
+See README.md. Do not copy, publish, vendor, or disclose.
+
+HERALD as pure translation gate — no logic, only outcome mapping.
 
 Maps between:
 - SWIZZLE Verdict enum
@@ -16,7 +19,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Optional, Union
 
-from .gate import GateOutcome, GatePosition, GateResult, subject_digest
+from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
 
 
 # ============================================================================

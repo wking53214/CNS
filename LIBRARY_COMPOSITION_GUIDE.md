@@ -53,7 +53,7 @@ class SystemModel(str, Enum):
 Every system declares what models it accepts and produces:
 
 ```python
-from cns.compose_library import SystemAdapter, SystemModel
+from cns_composition.compose_library import SystemAdapter, SystemModel
 
 class MySystemAdapter(SystemAdapter):
     def __init__(self):
@@ -75,8 +75,8 @@ class MySystemAdapter(SystemAdapter):
 Compose systems along a path specified by system names:
 
 ```python
-from cns.adapters import register_core_adapters, register_core_translation_rules
-from cns.compose_library import LibraryComposer
+from cns_composition.adapters import register_core_adapters, register_core_translation_rules
+from cns_composition.compose_library import LibraryComposer
 
 # Initialize orchestrator
 composer = LibraryComposer()
@@ -200,7 +200,7 @@ Create adapters for each repo's system:
 
 ```python
 # repo1/adapter.py
-from cns.compose_library import SystemAdapter, SystemModel
+from cns_composition.compose_library import SystemAdapter, SystemModel
 
 class Repo1Adapter(SystemAdapter):
     def __init__(self):
@@ -222,7 +222,7 @@ class Repo1Adapter(SystemAdapter):
 Register all adapters and translation rules:
 
 ```python
-from cns.compose_library import LibraryComposer, SystemModel
+from cns_composition.compose_library import LibraryComposer, SystemModel
 from repo1.adapter import Repo1Adapter
 from repo2.adapter import Repo2Adapter
 # ... 65 more repos ...
@@ -277,7 +277,7 @@ print(f"Converged in {trace.cycle} cycles: {trace.overall_outcome.value}")
 Build compositions programmatically:
 
 ```python
-from cns.compose_library import CompositionBuilder
+from cns_composition.compose_library import CompositionBuilder
 
 builder = CompositionBuilder(composer)
 trace = (

@@ -7,8 +7,8 @@ work correctly across all systems.
 
 import pytest
 
-from cns.compose_library import LibraryComposer, SystemModel
-from cns.adapters import (
+from cns_composition.compose_library import LibraryComposer, SystemModel
+from cns_composition.adapters import (
     register_core_adapters,
     register_core_translation_rules,
     SwizzleAdapter,
@@ -259,7 +259,7 @@ class TestCompositionBuilder:
 
     def test_builder_add_systems(self, composer):
         """Build composition fluently."""
-        from cns.compose_library import CompositionBuilder
+        from cns_composition.compose_library import CompositionBuilder
 
         builder = CompositionBuilder(composer)
         path = (
@@ -274,7 +274,7 @@ class TestCompositionBuilder:
 
     def test_builder_execute(self, composer):
         """Builder can execute composition directly."""
-        from cns.compose_library import CompositionBuilder
+        from cns_composition.compose_library import CompositionBuilder
 
         builder = CompositionBuilder(composer)
         subject = {"repo": "test_repo", "commit": "abc123"}
@@ -290,7 +290,7 @@ class TestCompositionBuilder:
 
     def test_builder_unknown_system_raises(self, composer):
         """Adding unknown system raises ValueError."""
-        from cns.compose_library import CompositionBuilder
+        from cns_composition.compose_library import CompositionBuilder
 
         builder = CompositionBuilder(composer)
         with pytest.raises(ValueError, match="System not registered"):

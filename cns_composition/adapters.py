@@ -1,4 +1,7 @@
-"""System adapters for SWIZZLE, ghost_tools, WIZZLE, and Innovation OS.
+"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
+See README.md. Do not copy, publish, vendor, or disclose.
+
+System adapters for SWIZZLE, ghost_tools, WIZZLE, and Innovation OS.
 
 Each adapter declares its outcome model and implements the invoke interface
 for the LibraryComposer to orchestrate.

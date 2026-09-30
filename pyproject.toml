@@ -13,7 +13,10 @@ dependencies = []
 dev = ["pytest>=7", "mypy>=1.8"]
 
 [tool.setuptools.packages.find]
-include = ["cns*"]
+# The wheel is the shapes package only. cns_composition is a sibling
+# package in this repository (behaviour over cns.gate) and is deliberately
+# not shipped with it.
+include = ["cns", "cns.*"]
 
 # PEP 561. Without this marker a consumer's mypy or pyright treats the whole
 # package as untyped and silently ignores every annotation in it, which for a

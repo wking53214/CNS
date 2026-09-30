@@ -1,4 +1,7 @@
-"""Generic composition orchestrator for entire library.
+"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
+See README.md. Do not copy, publish, vendor, or disclose.
+
+Generic composition orchestrator for entire library.
 
 Discovers systems across 67 repos, builds composition graphs,
 and routes outcomes through compatible chains without universal translation.
@@ -11,7 +14,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from abc import ABC, abstractmethod
 
-from .gate import GateOutcome, subject_digest
+from cns.gate import GateOutcome, subject_digest
 
 
 class SystemModel(str, Enum):
