@@ -225,6 +225,55 @@ class TestAdaptersSurviveComposition:
         assert after == before
 
 
+class TestTranslationHappensBeforeInvoke:
+    """Step 1.3 regression: the previous outcome is translated into the
+    current adapter's input model before the adapter runs, and the
+    adapter's own output is left untranslated."""
+
+    def test_two_step_path_translates_the_input_not_the_output(self):
+        from cns.gate import GateOutcome
+        from cns_composition.compose_library import SystemAdapter
+
+        class Emitter(SystemAdapter):
+            def __init__(self):
+                super().__init__(system_name="emitter", input_models=set(),
+                                 output_model=SystemModel.SWIZZLE_VERDICT)
+
+            def invoke(self, subject, input_outcome=None):
+                return "escaped"
+
+        class Judge(SystemAdapter):
+            """Accepts only Innovation OS decisions; passes iff it was
+            handed the translated form of the emitter's verdict."""
+
+            def __init__(self):
+                super().__init__(
+                    system_name="judge",
+                    input_models={SystemModel.INNOVATION_OS_DECISION},
+                    output_model=SystemModel.CNS_GATE_OUTCOME)
+
+            def invoke(self, subject, input_outcome=None):
+                return "pass" if input_outcome == "rejected" else "retry"
+
+        composer = LibraryComposer()
+        composer.register_adapter(Emitter())
+        composer.register_adapter(Judge())
+        composer.register_translation(
+            SystemModel.SWIZZLE_VERDICT, SystemModel.INNOVATION_OS_DECISION,
+            lambda v: "rejected" if v == "escaped" else "approved")
+
+        trace = composer.compose(["emitter", "judge"], {"repo": "r"})
+
+        # The judge was handed the translated verdict, not the raw one.
+        assert trace.steps[1].input_outcome == "rejected"
+        # Its own output stayed in its own model. Under the old logic the
+        # judge saw "escaped", answered "retry", and that answer was then
+        # pushed through the verdict-to-decision rule into "branched",
+        # which no canonicaliser recognises.
+        assert trace.steps[1].output_outcome == "pass"
+        assert trace.overall_outcome is GateOutcome.PASS
+
+
 class TestTranslationRules:
     """Verify translation rules work at system boundaries."""
 

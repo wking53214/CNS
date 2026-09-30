@@ -201,19 +201,23 @@ class LibraryComposer:
         for system_name in composition_path:
             adapter = self.adapters[system_name]
 
-            # Invoke system
-            outcome = adapter.invoke(subject, input_outcome=previous_outcome)
-
-            # Translate if needed
+            # Translate the previous outcome into this adapter's input
+            # model before invoking it. The adapter's own output is left in
+            # its native model; the next step translates it if it must.
+            input_outcome = previous_outcome
             if previous_outcome and steps:
                 from_model = steps[-1].output_model
                 to_model = self._compatible_input_model(adapter, from_model)
                 if from_model != to_model:
-                    outcome = self._translate(outcome, from_model, to_model)
+                    input_outcome = self._translate(
+                        previous_outcome, from_model, to_model)
+
+            # Invoke system
+            outcome = adapter.invoke(subject, input_outcome=input_outcome)
 
             step = CompositionStep(
                 system_name=system_name,
-                input_outcome=previous_outcome,
+                input_outcome=input_outcome,
                 output_outcome=outcome,
                 output_model=adapter.output_model,
                 subject_hash=subject_hash,
