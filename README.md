@@ -77,8 +77,9 @@ Then `from cns.graph import Node, Edge, Graph` and delete the vendored
 copy. Your own tests are the check that can fail.
 
 Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
-perception), `v1.0.0`. A raw commit SHA still works, but a tag says which
-contract you are joining on.
+perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
+moved out of the package to `cns_composition`). A raw commit SHA still
+works, but a tag says which contract you are joining on.
 
 ## Versioning
 
