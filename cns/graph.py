@@ -1,7 +1,4 @@
-"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
-See README.md. Do not copy, publish, vendor, or disclose.
-
-cns.graph: the code-graph substrate.
+"""cns.graph: the code-graph substrate.
 
 Extracted 2026-09-11 from four repos that each carried it verbatim
 (Ecology, GRAPH, GSA-Master-Kernel, sentinel_os). `Node` and `Edge` were

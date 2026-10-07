@@ -262,7 +262,6 @@ def main(root, out_path, only=None, map_path=None):
     rows.sort(key=lambda r: (order[r["verdict"]], r["name"], r["repo"]))
 
     out = []
-    out.append("> **CONFIDENTIAL.** Part of wking53214/CNS; see the repository NOTICE.\n")
     out.append("# Collision inventory: what each colliding name actually holds\n")
     out.append(f"Scanned {nfiles} parsed .py files in {len(repos)} repos: {', '.join(sorted(repos))}.")
     if only:

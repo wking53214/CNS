@@ -1,16 +1,6 @@
-> **CONFIDENTIAL. Trade secret of William King (wking53214).**
-> This repository, its contents, and its history are proprietary and
-> confidential. Access is granted to named individuals only, under
-> obligation of confidentiality, for the purpose of consuming or
-> maintaining the package. Do not copy, publish, vendor, or disclose any
-> part of it, including class shapes, module layout, the evidence under
-> `docs/`, and this repository's existence as the source of shared
-> contracts. Notice first recorded 2026-09-11; the commit history of this
-> file is its dated record.
-
 # cns
 
-The central nervous system of the library: one private package holding
+The central nervous system of the library: one package holding
 the contracts every repo joins on.
 
 ## The rule
@@ -160,3 +150,8 @@ the same note inline on each signature and each call. Edit the code, not
 this block: it is rewritten whole every run and contains no timestamp, so
 a run that changes nothing produces no diff.
 <!-- ghost_buster:name-disagreements:end -->
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Copyright 2026 William N. King.

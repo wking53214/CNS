@@ -1,7 +1,4 @@
-"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
-See README.md. Do not copy, publish, vendor, or disclose.
-
-cns.perception: the OBSERVE/PERCEIVE row shapes.
+"""cns.perception: the OBSERVE/PERCEIVE row shapes.
 
 Extracted 2026-09-11 from observe_perceive_core.py, which GSA-815 and
 OBSERVE carry byte-identical (md5 32ab74f9) and Ecology carries in a

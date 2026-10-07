@@ -1,7 +1,4 @@
-"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
-See README.md. Do not copy, publish, vendor, or disclose.
-
-HERALD as pure translation gate — no logic, only outcome mapping.
+"""HERALD as pure translation gate — no logic, only outcome mapping.
 
 Maps between:
 - SWIZZLE Verdict enum

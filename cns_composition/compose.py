@@ -1,7 +1,4 @@
-"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
-See README.md. Do not copy, publish, vendor, or disclose.
-
-Composition orchestrator for SWIZZLE, ghost_tools, WIZZLE, and Innovation OS.
+"""Composition orchestrator for SWIZZLE, ghost_tools, WIZZLE, and Innovation OS.
 
 One unified interface to chain systems without needing HERALD unless a semantic
 gap is unavoidable. Translates only at system boundaries where outcome models differ.

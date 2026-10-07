@@ -1,7 +1,4 @@
-"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-09-11.
-See README.md. Do not copy, publish, vendor, or disclose.
-
-cns: the contracts the library joins on.
+"""cns: the contracts the library joins on.
 
 THE RULE
 
