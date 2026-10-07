@@ -1,5 +1,3 @@
-> **CONFIDENTIAL.** Part of wking53214/CNS; see the repository NOTICE.
-
 # Production readiness scorecard
 
 Assessed 2026-09-11 against `cns` 0.2.0 at `4a2fd10`, with ten of the
@@ -154,7 +152,7 @@ annotation in `cns`. For a package whose entire deliverable is typed row
 shapes, this discards most of the value at the consumer boundary. It is a
 one-line fix plus a `package-data` entry.
 
-No `LICENSE` file, only `NOTICE`. `pyproject.toml` declares no license
+No `LICENSE` file, only `NOTICE`. (Resolved 2026-10-06: Apache-2.0 `LICENSE`, `NOTICE` and `pyproject.toml` license field.) `pyproject.toml` declares no license
 field. For proprietary code that is a defensible choice, but it should be
 deliberate and stated rather than absent.
 
@@ -172,6 +170,10 @@ submodule whose absence silently removes eight collisions from any scan
 (now documented in `docs/evidence/README.md`).
 
 ## 9. Confidentiality posture — C
+
+> **Superseded 2026-10-06.** The owner decided to make CNS public under the
+> Apache License 2.0; the confidentiality notice and NOTICE terms were
+> withdrawn. The assessment below is kept as it was written.
 
 The NOTICE is clear, dated, and forbids disclosing "this repository's
 existence as the source of shared contracts".

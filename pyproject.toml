@@ -7,6 +7,8 @@ name = "cns"
 version = "1.4.0"
 description = "Central nervous system: the contracts every repo in the library joins on."
 requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "William N. King" }]
 dependencies = []
 
 [project.optional-dependencies]

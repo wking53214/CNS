@@ -1,7 +1,4 @@
-"""CONFIDENTIAL. Trade secret of William King (wking53214). Recorded 2026-10-06.
-See README.md. Do not copy, publish, vendor, or disclose.
-
-No CCC record, no use: the door Triad output passes through to enter CNS.
+"""No CCC record, no use: the door Triad output passes through to enter CNS.
 
 WHY THIS EXISTS
 

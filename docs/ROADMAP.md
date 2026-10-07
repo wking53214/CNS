@@ -1,5 +1,3 @@
-> **CONFIDENTIAL.** Part of wking53214/CNS; see the repository NOTICE.
-
 # Strategic plan: moving the scorecard
 
 Companion to `PRODUCTION_READINESS.md`. Baselines measured 2026-09-11 across

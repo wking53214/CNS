@@ -1,5 +1,3 @@
-> **CONFIDENTIAL.** Part of wking53214/CNS; see the repository NOTICE.
-
 # Consumer migrations
 
 Phase 1 of `ROADMAP.md` is the zero-risk half of the adoption work: fifty of

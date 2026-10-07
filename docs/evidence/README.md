@@ -1,5 +1,3 @@
-> **CONFIDENTIAL.** Part of wking53214/CNS; see the repository NOTICE. Recorded 2026-09-11.
-
 # CNS evidence package
 
 The measurements behind the claim that the library shares a schema: a

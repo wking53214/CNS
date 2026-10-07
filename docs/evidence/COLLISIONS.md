@@ -1,5 +1,3 @@
-> **CONFIDENTIAL.** Part of wking53214/CNS; see the repository NOTICE.
-
 # Collision inventory: what each colliding name actually holds
 
 Scanned 905 parsed .py files in 10 repos: AUGUR, Ecology, GEMS, GRAPH, GSA-815, GSA-Master-Kernel, OBSERVE, innovation_os, observe-perceive, sentinel_os.
