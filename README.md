@@ -60,6 +60,7 @@ The composition layer is a sibling package in this repository, not part of
 | package | modules | role |
 |---|---|---|
 | `cns_composition` | `compose`, `compose_library`, `adapters`, `herald_passthrough` | orchestrators, adapters and outcome translation over `cns.gate`; tests in `cns_composition/tests` |
+| `cns_composition` | `ccc_admission` | rule 2 of the Triad governance design, no CCC record, no use: the door Triad output passes through. CNS asks CCC through a one-method lookup CCC supplies (`ccc.record_status.MachineRecords`) and refuses anything CCC does not hold with exactly that text |
 
 Every class is extracted by syntax tree from its canonical source and
 verified structurally identical at extraction; the module docstrings
