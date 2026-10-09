@@ -14,7 +14,6 @@ from cns_composition.adapters import (
     SwizzleAdapter,
     GhostToolsAdapter,
     WizzleAdapter,
-    InnovationOSAdapter,
 )
 
 
@@ -43,15 +42,6 @@ class TestAdapterRegistration:
         assert SystemModel.GHOST_TOOLS_STATUS in adapter.input_models
         assert adapter.output_model == SystemModel.WIZZLE_FORENSICS
 
-    def test_innovation_os_adapter_input_output_models(self):
-        """Innovation OS accepts multiple input models, produces decision."""
-        adapter = InnovationOSAdapter()
-        assert adapter.system_name == "innovation_os"
-        assert SystemModel.SWIZZLE_VERDICT in adapter.input_models
-        assert SystemModel.GHOST_TOOLS_STATUS in adapter.input_models
-        assert SystemModel.WIZZLE_FORENSICS in adapter.input_models
-        assert adapter.output_model == SystemModel.INNOVATION_OS_DECISION
-
 
 class TestLibraryComposerIntegration:
     """Verify LibraryComposer works with core adapters."""
@@ -65,11 +55,10 @@ class TestLibraryComposerIntegration:
         return c
 
     def test_adapters_registered(self, composer):
-        """All four core adapters are registered."""
+        """All three core adapters are registered."""
         assert "swizzle" in composer.adapters
         assert "ghost_tools" in composer.adapters
         assert "wizzle" in composer.adapters
-        assert "innovation_os" in composer.adapters
 
     def test_compatibility_graph_built(self, composer):
         """Compatibility graph reflects actual outcome model connections."""
@@ -79,27 +68,21 @@ class TestLibraryComposerIntegration:
         # ghost_tools → WIZZLE (GHOST_TOOLS_STATUS in wizzle.input_models)
         assert "wizzle" in composer.graph.get("ghost_tools", set())
 
-        # ghost_tools → Innovation OS (GHOST_TOOLS_STATUS in innovation_os.input_models)
-        assert "innovation_os" in composer.graph.get("ghost_tools", set())
-
-        # WIZZLE → Innovation OS (WIZZLE_FORENSICS in innovation_os.input_models)
-        assert "innovation_os" in composer.graph.get("wizzle", set())
-
-    def test_find_path_swizzle_to_innovation_os(self, composer):
-        """Find path from SWIZZLE to Innovation OS."""
-        path = composer.find_composition_path("swizzle", "innovation_os")
+    def test_find_path_swizzle_to_wizzle(self, composer):
+        """Find path from SWIZZLE to WIZZLE."""
+        path = composer.find_composition_path("swizzle", "wizzle")
         assert path is not None
         assert path[0] == "swizzle"
-        assert path[-1] == "innovation_os"
+        assert path[-1] == "wizzle"
         # Should route through at least ghost_tools or directly if possible
         assert len(path) >= 2
 
-    def test_find_path_ghost_tools_to_innovation_os(self, composer):
-        """Find path from ghost_tools to Innovation OS."""
-        path = composer.find_composition_path("ghost_tools", "innovation_os")
+    def test_find_path_ghost_tools_to_wizzle(self, composer):
+        """Find path from ghost_tools to WIZZLE."""
+        path = composer.find_composition_path("ghost_tools", "wizzle")
         assert path is not None
         assert "ghost_tools" in path
-        assert "innovation_os" in path
+        assert "wizzle" in path
 
     def test_find_path_circular(self, composer):
         """No circular paths from SWIZZLE back to SWIZZLE."""
@@ -145,17 +128,16 @@ class TestCompositionExecution:
                 assert step.subject_hash == subject_hash
 
     def test_full_circle_composition(self, composer):
-        """Execute full circle (SWIZZLE → ghost_tools → WIZZLE → Innovation OS)."""
+        """Execute full circle (SWIZZLE → ghost_tools → WIZZLE)."""
         subject = {"repo": "test_repo", "commit": "abc123"}
-        composition = ["swizzle", "ghost_tools", "wizzle", "innovation_os"]
+        composition = ["swizzle", "ghost_tools", "wizzle"]
 
         trace = composer.compose(composition, subject, cycle=1)
 
-        assert len(trace.steps) == 4
+        assert len(trace.steps) == 3
         assert trace.steps[0].system_name == "swizzle"
         assert trace.steps[1].system_name == "ghost_tools"
         assert trace.steps[2].system_name == "wizzle"
-        assert trace.steps[3].system_name == "innovation_os"
 
         # Final outcome should be canonical (PASS/RETRY/TERMINAL_BREACH)
         assert trace.overall_outcome.value in ("pass", "retry", "terminal_breach")
@@ -178,7 +160,7 @@ class TestCompositionExecution:
     def test_convergence_check(self, composer):
         """Convergence detection identifies whether composition settled."""
         subject = {"repo": "test_repo", "commit": "abc123"}
-        composition = ["swizzle", "ghost_tools", "wizzle", "innovation_os"]
+        composition = ["swizzle", "ghost_tools", "wizzle"]
         trace = composer.compose(composition, subject, cycle=1)
 
         # Final outcome is PASS or TERMINAL_BREACH → converged
@@ -213,13 +195,13 @@ class TestAdaptersSurviveComposition:
     def test_same_path_three_times_leaves_input_models_intact(self, composer):
         """The compose routine used to pop a model off each adapter's
         input set per run, so the third run of this path crashed."""
-        path = ["swizzle", "ghost_tools", "wizzle", "innovation_os"]
+        path = ["swizzle", "ghost_tools", "wizzle"]
         before = {name: set(a.input_models)
                   for name, a in composer.adapters.items()}
         subject = {"repo": "test_repo", "commit": "abc123"}
         for cycle in (1, 2, 3):
             trace = composer.compose(path, subject, cycle=cycle)
-            assert len(trace.steps) == 4
+            assert len(trace.steps) == 3
         after = {name: set(a.input_models)
                  for name, a in composer.adapters.items()}
         assert after == before
@@ -243,13 +225,13 @@ class TestTranslationHappensBeforeInvoke:
                 return "escaped"
 
         class Judge(SystemAdapter):
-            """Accepts only Innovation OS decisions; passes iff it was
+            """Accepts only ghost_tools statuses; passes iff it was
             handed the translated form of the emitter's verdict."""
 
             def __init__(self):
                 super().__init__(
                     system_name="judge",
-                    input_models={SystemModel.INNOVATION_OS_DECISION},
+                    input_models={SystemModel.GHOST_TOOLS_STATUS},
                     output_model=SystemModel.CNS_GATE_OUTCOME)
 
             def invoke(self, subject, input_outcome=None):
@@ -259,8 +241,8 @@ class TestTranslationHappensBeforeInvoke:
         composer.register_adapter(Emitter())
         composer.register_adapter(Judge())
         composer.register_translation(
-            SystemModel.SWIZZLE_VERDICT, SystemModel.INNOVATION_OS_DECISION,
-            lambda v: "rejected" if v == "escaped" else "approved")
+            SystemModel.SWIZZLE_VERDICT, SystemModel.GHOST_TOOLS_STATUS,
+            lambda v: "rejected" if v == "escaped" else "confirmed")
 
         trace = composer.compose(["emitter", "judge"], {"repo": "r"})
 
@@ -268,8 +250,7 @@ class TestTranslationHappensBeforeInvoke:
         assert trace.steps[1].input_outcome == "rejected"
         # Its own output stayed in its own model. Under the old logic the
         # judge saw "escaped", answered "retry", and that answer was then
-        # pushed through the verdict-to-decision rule into "branched",
-        # which no canonicaliser recognises.
+        # pushed through the verdict-to-status rule as if it were a verdict.
         assert trace.steps[1].output_outcome == "pass"
         assert trace.overall_outcome is GateOutcome.PASS
 
@@ -284,41 +265,12 @@ class TestTranslationRules:
         register_core_translation_rules(c)
         return c
 
-    def test_verdict_to_decision_translation(self, composer):
-        """SWIZZLE verdict translates to Innovation OS decision."""
-        rule = composer.translation_rules.get(
-            (SystemModel.SWIZZLE_VERDICT, SystemModel.INNOVATION_OS_DECISION)
-        )
-        assert rule is not None
-
-        # Test translation mappings
-        assert rule("banished") == "approved"
-        assert rule("dismissed") == "approved"
-        assert rule("escaped") == "rejected"
-        assert rule("conjured") == "rejected"
-        assert rule("unsummoned") == "branched"
-
-    def test_status_to_decision_translation(self, composer):
-        """ghost_tools status translates to Innovation OS decision."""
-        rule = composer.translation_rules.get(
-            (SystemModel.GHOST_TOOLS_STATUS, SystemModel.INNOVATION_OS_DECISION)
-        )
-        assert rule is not None
-
-        assert rule("confirmed") == "approved"
-        assert rule("reasoned") == "branched"
-        assert rule("rejected") == "rejected"
-
-    def test_decision_to_gate_translation(self, composer):
-        """Innovation OS decision translates to CNS gate outcome."""
-        rule = composer.translation_rules.get(
-            (SystemModel.INNOVATION_OS_DECISION, SystemModel.CNS_GATE_OUTCOME)
-        )
-        assert rule is not None
-
-        assert rule("approved") == "pass"
-        assert rule("rejected") == "terminal_breach"
-        assert rule("branched") == "retry"
+    def test_core_systems_register_no_translation_rules(self, composer):
+        """The gap, asserted: the three core systems chain without any
+        translation rule, because each accepts the previous system's output
+        model directly. The day a core rule is added this fails, and whoever
+        adds it writes the real test for it."""
+        assert composer.translation_rules == {}
 
 
 class TestCompositionBuilder:
@@ -340,11 +292,10 @@ class TestCompositionBuilder:
             builder.add_system("swizzle")
             .add_system("ghost_tools")
             .add_system("wizzle")
-            .add_system("innovation_os")
             .build()
         )
 
-        assert path == ["swizzle", "ghost_tools", "wizzle", "innovation_os"]
+        assert path == ["swizzle", "ghost_tools", "wizzle"]
 
     def test_builder_execute(self, composer):
         """Builder can execute composition directly."""

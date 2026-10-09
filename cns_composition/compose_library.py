@@ -20,7 +20,6 @@ class SystemModel(str, Enum):
     GHOST_TOOLS_STATUS = "ghost_tools_status"  # CONFIRMED/REASONED/CONFIRMED_BY_REVIEW/REJECTED/SUPPRESSED
     GHOST_TOOLS_SEVERITY = "ghost_tools_severity"  # CRITICAL/MAJOR/MINOR/INFORMATIONAL
     WIZZLE_FORENSICS = "wizzle_forensics"  # REMOVED_FROM_LIBRARY/RELOCATED_TO_TESTS/REGRESSION/UNKNOWN
-    INNOVATION_OS_DECISION = "innovation_os_decision"  # PROPOSED/EVALUATED/APPROVED/REJECTED/BRANCHED
     CNS_GATE_OUTCOME = "cns_gate_outcome"  # PASS/RETRY/TERMINAL_BREACH (canonical)
 
 
@@ -320,15 +319,6 @@ class LibraryComposer:
             if outcome in ("relocated_to_tests", "intentional_removal"):
                 return GateOutcome.PASS
             elif outcome in ("removed_from_library", "regression"):
-                return GateOutcome.TERMINAL_BREACH
-            else:
-                return GateOutcome.RETRY
-
-        # Innovation OS decisions
-        elif model == SystemModel.INNOVATION_OS_DECISION:
-            if outcome == "approved":
-                return GateOutcome.PASS
-            elif outcome == "rejected":
                 return GateOutcome.TERMINAL_BREACH
             else:
                 return GateOutcome.RETRY

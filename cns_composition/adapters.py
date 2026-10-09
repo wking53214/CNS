@@ -1,4 +1,4 @@
-"""System adapters for SWIZZLE, ghost_tools, WIZZLE, and Innovation OS.
+"""System adapters for SWIZZLE, ghost_tools, and WIZZLE.
 
 Each adapter declares its outcome model and implements the invoke interface
 for the LibraryComposer to orchestrate.
@@ -135,60 +135,8 @@ class WizzleAdapter(SystemAdapter):
             return "unknown"  # need more context
 
 
-class InnovationOSAdapter(SystemAdapter):
-    """Adapter for Innovation OS: governed decision system.
-
-    Takes input from SWIZZLE/ghost_tools/WIZZLE and produces a decision
-    within the innovation lifecycle: PROPOSED/EVALUATED/APPROVED/REJECTED/BRANCHED
-    """
-
-    def __init__(self):
-        super().__init__(
-            system_name="innovation_os",
-            input_models={
-                SystemModel.SWIZZLE_VERDICT,
-                SystemModel.GHOST_TOOLS_STATUS,
-                SystemModel.GHOST_TOOLS_SEVERITY,
-                SystemModel.WIZZLE_FORENSICS,
-                SystemModel.CNS_GATE_OUTCOME,
-            },
-            output_model=SystemModel.INNOVATION_OS_DECISION,
-        )
-
-    def invoke(
-        self,
-        subject: Dict[str, Any],
-        input_outcome: Optional[str] = None,
-    ) -> str:
-        """Produce governance decision based on input evidence.
-
-        Args:
-            subject: What we're deciding on
-            input_outcome: Evidence from prior system (verdict/status/forensics)
-
-        Returns:
-            Decision: one of PROPOSED/EVALUATED/APPROVED/REJECTED/BRANCHED
-        """
-        # In real execution, this consults the Innovation OS decision model
-        # applying governance rules to translate evidence into a decision
-        # For now, show the translation pattern
-
-        if input_outcome is None:
-            # No prior evidence; propose for evaluation
-            return "proposed"
-        elif input_outcome in ("banished", "dismissed", "confirmed"):
-            # Evidence supports approval
-            return "approved"
-        elif input_outcome in ("escaped", "conjured", "reasoned"):
-            # Evidence supports rejection or alternative path
-            return "rejected"
-        else:
-            # Uncertain; need more information
-            return "branched"
-
-
 def register_core_adapters(composer: Any) -> None:
-    """Register the four core system adapters with a LibraryComposer.
+    """Register the three core system adapters with a LibraryComposer.
 
     Args:
         composer: LibraryComposer instance to register adapters on
@@ -196,75 +144,17 @@ def register_core_adapters(composer: Any) -> None:
     composer.register_adapter(SwizzleAdapter())
     composer.register_adapter(GhostToolsAdapter())
     composer.register_adapter(WizzleAdapter())
-    composer.register_adapter(InnovationOSAdapter())
 
 
 def register_core_translation_rules(composer: Any) -> None:
     """Register translation rules between outcome models.
 
+    The three core systems register none. Each accepts the previous system's
+    output model directly (SWIZZLE verdicts feed ghost_tools, ghost_tools
+    statuses feed WIZZLE), and the last output is canonicalised by the
+    composer itself. The function stays as the one place a rule would be
+    added, so callers do not change.
+
     Args:
         composer: LibraryComposer instance to register rules on
     """
-    # SWIZZLE → Innovation OS
-    def translate_verdict_to_decision(verdict: str) -> str:
-        if verdict in ("banished", "dismissed"):
-            return "approved"
-        elif verdict in ("escaped", "conjured", "misnamed"):
-            return "rejected"
-        else:
-            return "branched"
-
-    composer.register_translation(
-        SystemModel.SWIZZLE_VERDICT,
-        SystemModel.INNOVATION_OS_DECISION,
-        translate_verdict_to_decision,
-    )
-
-    # ghost_tools Status → Innovation OS Decision
-    def translate_status_to_decision(status: str) -> str:
-        if status == "confirmed":
-            return "approved"
-        elif status == "reasoned":
-            return "branched"
-        elif status == "rejected":
-            return "rejected"
-        else:
-            return "branched"
-
-    composer.register_translation(
-        SystemModel.GHOST_TOOLS_STATUS,
-        SystemModel.INNOVATION_OS_DECISION,
-        translate_status_to_decision,
-    )
-
-    # WIZZLE Forensics → Innovation OS Decision
-    def translate_forensics_to_decision(forensics: str) -> str:
-        if forensics in ("relocated_to_tests", "intentional_removal"):
-            return "approved"
-        elif forensics == "removed_from_library":
-            return "rejected"
-        elif forensics == "regression":
-            return "rejected"
-        else:
-            return "branched"
-
-    composer.register_translation(
-        SystemModel.WIZZLE_FORENSICS,
-        SystemModel.INNOVATION_OS_DECISION,
-        translate_forensics_to_decision,
-    )
-
-    # All → CNS Gate Outcome (canonical)
-    def translate_decision_to_gate(decision: str) -> str:
-        if decision == "approved":
-            return "pass"
-        elif decision == "rejected":
-            return "terminal_breach"
-        else:
-            return "retry"
-
-    composer.register_translation(
-        SystemModel.INNOVATION_OS_DECISION,
-        SystemModel.CNS_GATE_OUTCOME,
-        translate_decision_to_gate,
-    )

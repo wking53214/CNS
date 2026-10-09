@@ -2,7 +2,6 @@
 
 Maps between:
 - SWIZZLE Verdict enum
-- Innovation OS lifecycle decisions
 - ghost_tools Status/Severity outcomes
 - CNS GateChain/GateOutcome canonical form
 
@@ -33,15 +32,6 @@ class SwizzleVerdict(str, Enum):
     UNSUMMONED = "unsummoned"  # test failure → TERMINAL_BREACH
 
 
-class InnovationOSDecision(str, Enum):
-    """From Innovation OS lifecycle"""
-    PROPOSED = "proposed"      # AI generated → pending
-    EVALUATED = "evaluated"    # system assessed → advisory
-    APPROVED = "approved"      # human authorized → PASS
-    REJECTED = "rejected"      # failed evaluation → TERMINAL_BREACH
-    BRANCHED = "branched"      # alternative path → RETRY
-
-
 class GhostToolsStatus(str, Enum):
     """From ghost_tools: ghost_buster/schema.py, class Status.
 
@@ -70,7 +60,7 @@ class HeraldTranslation:
     Never filters, transforms, or decides.
     """
 
-    source_system: str           # "swizzle" | "innovation_os" | "ghost_tools"
+    source_system: str           # "swizzle" | "ghost_tools"
     source_verdict: str          # original verdict/decision/status
     canonical_outcome: GateOutcome
     subject: Optional[Any] = None
@@ -115,44 +105,6 @@ def translate_swizzle_to_canonical(
         metadata={
             "proof_holds": proof_holds,
             "finding_count": len(findings),
-        },
-    )
-
-
-def translate_innovation_os_to_canonical(
-    decision: str,
-    problem_id: str,
-    idea_id: str,
-    evaluation_score: Optional[float] = None,
-    authorization_required: bool = False,
-) -> HeraldTranslation:
-    """Innovation OS lifecycle decision → GateOutcome with all metadata preserved."""
-
-    mapping = {
-        InnovationOSDecision.PROPOSED.value: GateOutcome.RETRY,      # pending human eval
-        InnovationOSDecision.EVALUATED.value: GateOutcome.RETRY,     # waiting for approval
-        InnovationOSDecision.APPROVED.value: GateOutcome.PASS,       # authorized
-        InnovationOSDecision.REJECTED.value: GateOutcome.TERMINAL_BREACH,
-        InnovationOSDecision.BRANCHED.value: GateOutcome.RETRY,      # alternative path
-    }
-
-    outcome = mapping.get(decision, GateOutcome.TERMINAL_BREACH)
-    subject_hash = subject_digest({
-        "problem": problem_id,
-        "idea": idea_id,
-        "decision": decision,
-        "score": evaluation_score,
-    })
-
-    return HeraldTranslation(
-        source_system="innovation_os",
-        source_verdict=decision,
-        canonical_outcome=outcome,
-        subject={"problem": problem_id, "idea": idea_id},
-        subject_hash=subject_hash,
-        metadata={
-            "evaluation_score": evaluation_score,
-            "authorization_required": authorization_required,
         },
     )
 
@@ -209,21 +161,6 @@ def translate_canonical_to_swizzle(
     return reverse_mapping.get(outcome, SwizzleVerdict.UNSUMMONED.value)
 
 
-def translate_canonical_to_innovation_os(
-    outcome: GateOutcome,
-    subject_hash: str,
-) -> str:
-    """Canonical GateOutcome → Innovation OS decision for next cycle."""
-
-    reverse_mapping = {
-        GateOutcome.PASS: InnovationOSDecision.APPROVED.value,
-        GateOutcome.RETRY: InnovationOSDecision.BRANCHED.value,
-        GateOutcome.TERMINAL_BREACH: InnovationOSDecision.REJECTED.value,
-    }
-
-    return reverse_mapping.get(outcome, InnovationOSDecision.REJECTED.value)
-
-
 def translate_canonical_to_ghost_tools(
     outcome: GateOutcome,
     subject_hash: str,
@@ -252,7 +189,6 @@ class HeraldCompositionResult:
 
     cycle: int
     swizzle_verdict: Optional[str]
-    innovation_os_decision: Optional[str]
     ghost_tools_status: Optional[str]
     canonical_flow: list[HeraldTranslation]
     overall_outcome: GateOutcome
