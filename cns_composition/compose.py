@@ -1,4 +1,4 @@
-"""Composition orchestrator for SWIZZLE, ghost_tools, WIZZLE, and Innovation OS.
+"""Composition orchestrator for SWIZZLE, ghost_tools, and WIZZLE.
 
 One unified interface to chain systems without needing HERALD unless a semantic
 gap is unavoidable. Translates only at system boundaries where outcome models differ.
@@ -14,11 +14,10 @@ from cns.gate import GateOutcome, subject_digest
 
 
 class SystemName(str, Enum):
-    """The four systems in the composition."""
+    """The three systems in the composition."""
     SWIZZLE = "swizzle"
     GHOST_TOOLS = "ghost_tools"
     WIZZLE = "wizzle"
-    INNOVATION_OS = "innovation_os"
 
 
 @dataclass(frozen=True)
@@ -53,13 +52,13 @@ class CompositionTrace:
 
 
 class Composer:
-    """Orchestrates composition of SWIZZLE, ghost_tools, WIZZLE, and Innovation OS.
+    """Orchestrates composition of SWIZZLE, ghost_tools, and WIZZLE.
 
     Usage:
         composer = Composer()
         trace = composer.run_cycle(
             composition=[SystemName.SWIZZLE, SystemName.GHOST_TOOLS, SystemName.SWIZZLE],
-            subject={"repo": "innovation_os", "commit": "abc123"}
+            subject={"repo": "example_repo", "commit": "abc123"}
         )
     """
 
@@ -122,8 +121,6 @@ class Composer:
             return self._invoke_ghost_tools(subject, subject_hash, input_outcome)
         elif system == SystemName.WIZZLE:
             return self._invoke_wizzle(subject, subject_hash, input_outcome)
-        elif system == SystemName.INNOVATION_OS:
-            return self._invoke_innovation_os(subject, subject_hash, input_outcome)
         else:
             raise ValueError(f"Unknown system: {system}")
 
@@ -201,67 +198,6 @@ class Composer:
             metadata={"subject": subject, "forensics_layer": True},
         )
 
-    def _invoke_innovation_os(
-        self,
-        subject: Dict[str, Any],
-        subject_hash: str,
-        input_outcome: Optional[str],
-    ) -> CompositionStep:
-        """Innovation OS: governed decision system.
-
-        Takes input from SWIZZLE/ghost_tools/WIZZLE and produces a decision:
-        PROPOSED, EVALUATED, APPROVED, REJECTED, BRANCHED
-
-        If input_outcome is ESCAPED (defect found), translates to REJECTED.
-        If input_outcome is BANISHED (no defect), translates to APPROVED.
-        """
-        if input_outcome is None:
-            # No prior outcome; Innovation OS generates proposal
-            decision = "proposed"
-        else:
-            # Translate input outcome to decision
-            decision = self._translate_to_innovation_os(input_outcome)
-
-        return CompositionStep(
-            system=SystemName.INNOVATION_OS,
-            input_outcome=input_outcome,
-            output_outcome=decision,
-            subject_hash=subject_hash,
-            metadata={"subject": subject, "decision_type": "evaluation"},
-        )
-
-    def _translate_to_innovation_os(self, outcome: str) -> str:
-        """Translate SWIZZLE/ghost_tools/WIZZLE outcome to Innovation OS decision.
-
-        This is where HERALD-like translation happens, but localized to this
-        specific boundary. No universal translator needed; just one clear rule set.
-        """
-        # SWIZZLE verdicts
-        if outcome in ("banished", "dismissed"):
-            return "approved"  # defect found and named correctly
-        elif outcome in ("escaped", "conjured", "misnamed"):
-            return "rejected"  # defect not found or false positive
-        elif outcome == "unsummoned":
-            return "branched"  # test framework failure; try alternative path
-
-        # ghost_tools status
-        elif outcome == "confirmed":
-            return "approved"  # finding is definite
-        elif outcome == "reasoned":
-            return "branched"  # finding needs review; alternative path
-        elif outcome == "rejected":
-            return "rejected"  # human said no
-
-        # WIZZLE forensics
-        elif outcome == "removed_from_library":
-            return "rejected"  # regression or refactoring removed production use
-        elif outcome == "relocated_to_tests":
-            return "approved"  # safe relocation; continue
-
-        # Fallback
-        else:
-            return "branched"  # unknown; try alternative
-
     def _canonicalize_final_outcome(self, final_step: CompositionStep) -> GateOutcome:
         """Convert final step's outcome to canonical GateOutcome.
 
@@ -269,17 +205,8 @@ class Composer:
         """
         outcome = final_step.output_outcome or "unknown"
 
-        # Innovation OS decisions
-        if final_step.system == SystemName.INNOVATION_OS:
-            if outcome in ("approved",):
-                return GateOutcome.PASS
-            elif outcome in ("rejected",):
-                return GateOutcome.TERMINAL_BREACH
-            elif outcome in ("branched", "evaluated", "proposed"):
-                return GateOutcome.RETRY
-
         # SWIZZLE verdicts
-        elif final_step.system == SystemName.SWIZZLE:
+        if final_step.system == SystemName.SWIZZLE:
             if outcome in ("banished", "dismissed"):
                 return GateOutcome.PASS
             elif outcome in ("escaped", "conjured"):

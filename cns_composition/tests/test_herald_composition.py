@@ -1,4 +1,4 @@
-"""Integration tests: SWIZZLE → HERALD → Innovation OS → ghost_tools → repeat.
+"""Integration tests: SWIZZLE → HERALD → ghost_tools → repeat.
 
 These tests will FAIL and expose what's missing from direct composition.
 Each failure is a requirement for the 5-cycle loop to work.
@@ -9,19 +9,16 @@ from cns.gate import GateOutcome
 from cns_composition.herald_passthrough import (
     HeraldCompositionResult,
     SwizzleVerdict,
-    InnovationOSDecision,
     GhostToolsStatus,
     translate_swizzle_to_canonical,
-    translate_innovation_os_to_canonical,
     translate_ghost_tools_to_canonical,
     translate_canonical_to_swizzle,
-    translate_canonical_to_innovation_os,
     translate_canonical_to_ghost_tools,
 )
 
 
 class TestHeraldTranslationBoundary:
-    """Can HERALD translate between three outcome models without loss?"""
+    """Can HERALD translate between two outcome models without loss?"""
 
     def test_swizzle_banished_translates_to_pass(self):
         """SWIZZLE's highest verdict should map to PASS."""
@@ -43,29 +40,6 @@ class TestHeraldTranslationBoundary:
             proof_holds=True,
         )
         assert t.canonical_outcome == GateOutcome.TERMINAL_BREACH
-
-    def test_innovation_os_approved_translates_to_pass(self):
-        """Innovation OS approved decision should be PASS."""
-        t = translate_innovation_os_to_canonical(
-            InnovationOSDecision.APPROVED.value,
-            problem_id="prob_1",
-            idea_id="idea_42",
-            evaluation_score=0.95,
-            authorization_required=True,
-        )
-        assert t.canonical_outcome == GateOutcome.PASS
-        assert t.metadata["evaluation_score"] == 0.95
-
-    def test_innovation_os_proposed_not_yet_pass(self):
-        """Innovation OS proposed (AI generated) should be RETRY, not PASS."""
-        t = translate_innovation_os_to_canonical(
-            InnovationOSDecision.PROPOSED.value,
-            problem_id="prob_1",
-            idea_id="idea_1",
-            evaluation_score=None,
-        )
-        # Proposed is pending human approval, so it's not PASS yet
-        assert t.canonical_outcome == GateOutcome.RETRY
 
     def test_ghost_tools_confirmed_translates_to_pass(self):
         """ghost_tools CONFIRMED should map to PASS."""
@@ -100,13 +74,6 @@ class TestHeraldRoundTrip:
         # Should map to BANISHED (which is PASS)
         assert recovered == original
 
-    def test_innovation_os_roundtrip_approved(self):
-        """APPROVED → canonical → back should yield APPROVED."""
-        original = InnovationOSDecision.APPROVED.value
-        t = translate_innovation_os_to_canonical(original, "p1", "i1")
-        recovered = translate_canonical_to_innovation_os(t.canonical_outcome, t.subject_hash)
-        assert recovered == original
-
     def test_ghost_tools_roundtrip_confirmed(self):
         """CONFIRMED → canonical → back should yield CONFIRMED."""
         original = GhostToolsStatus.CONFIRMED.value
@@ -116,7 +83,12 @@ class TestHeraldRoundTrip:
 
 
 class TestCompositionCycle:
-    """Simulate one full cycle: SWIZZLE → Innovation OS → ghost_tools → re-test."""
+    """Simulate one full cycle: SWIZZLE → ghost_tools → re-test.
+
+    There is no cycle 2 test. It covered the Innovation OS decision step,
+    which was removed when innovation_os was retired; the numbering is left
+    as it was so the later cycles keep their names.
+    """
 
     def test_cycle_1_swizzle_finds_issue(self):
         """Cycle 1: SWIZZLE tests Innovation OS, finds issue."""
@@ -129,16 +101,6 @@ class TestCompositionCycle:
         )
         assert verdict.canonical_outcome == GateOutcome.TERMINAL_BREACH
         assert verdict.source_system == "swizzle"
-
-    def test_cycle_2_innovation_os_receives_breach(self):
-        """Cycle 2: Innovation OS interprets SWIZZLE's TERMINAL_BREACH as rejection."""
-        # Convert SWIZZLE's TERMINAL_BREACH into Innovation OS decision
-        recovered_decision = translate_canonical_to_innovation_os(
-            GateOutcome.TERMINAL_BREACH,
-            "hash_x"
-        )
-        # Should map to REJECTED
-        assert recovered_decision == InnovationOSDecision.REJECTED.value
 
     def test_cycle_3_ghost_tools_attempts_fix(self):
         """Cycle 3: ghost_tools receives rejection, attempts fix."""
@@ -186,20 +148,6 @@ class TestCompositionGaps:
         adapter = SwizzleAdapter()
         assert adapter.invoke({"repo": "a"}, None) == adapter.invoke({"repo": "b", "commit": "c"}, None) == "escaped"
         assert adapter.invoke({}, "retry") == "banished"
-
-    def test_gap_innovation_os_needs_to_expose_decision_interface(self):
-        """Innovation OS makes decisions, but how does HERALD get them out?
-
-        Innovation OS has a lifecycle, but no canonical "decision" export format.
-        HERALD needs to hook into: Problem → Idea → Decision point.
-
-        The gap, asserted: the Innovation OS adapter decides from the input
-        outcome alone and never consults the subject.
-        """
-        from cns_composition.adapters import InnovationOSAdapter
-        adapter = InnovationOSAdapter()
-        assert adapter.invoke({"problem": "p1"}, None) == adapter.invoke({"problem": "p2"}, None) == "proposed"
-        assert adapter.invoke({"problem": "p1"}, "banished") == "approved"
 
     def test_gap_ghost_tools_needs_innovation_os_file_interface(self):
         """ghost_tools modifies code, but what IS "Innovation OS code to fix"?
@@ -303,20 +251,6 @@ class TestSubjectBinding:
             findings=(("det", "f.py", 1),),
         )
         # Same verdict, different subject → different hash
-        assert t1.subject_hash != t2.subject_hash
-
-    def test_innovation_os_outcome_binds_to_idea(self):
-        """Innovation OS outcome should not transplant to different idea."""
-        t1 = translate_innovation_os_to_canonical(
-            InnovationOSDecision.APPROVED.value,
-            problem_id="prob_1",
-            idea_id="idea_A",
-        )
-        t2 = translate_innovation_os_to_canonical(
-            InnovationOSDecision.APPROVED.value,
-            problem_id="prob_1",
-            idea_id="idea_B",
-        )
         assert t1.subject_hash != t2.subject_hash
 
     def test_ghost_tools_outcome_binds_to_file_state(self):

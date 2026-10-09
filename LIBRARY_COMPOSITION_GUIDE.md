@@ -13,10 +13,9 @@ The LibraryComposer enables scaling CNS governance across all 67 repositories by
 │                                                                   │
 │  Adapter Registry  │  Compatibility Graph  │  Translation Rules  │
 │  ─────────────────   ──────────────────────   ──────────────────   │
-│  SWIZZLE          │  SWIZZLE → ghost_tools │  Verdict→Decision   │
-│  ghost_tools      │  ghost_tools → WIZZLE │  Status→Decision    │
-│  WIZZLE           │  WIZZLE → Innovation  │  Forensics→Decision │
-│  Innovation OS    │  (+ all system pairs)  │  Decision→GateOut   │
+│  SWIZZLE          │  SWIZZLE → ghost_tools │  (none for the      │
+│  ghost_tools      │  ghost_tools → WIZZLE │   core systems)     │
+│  WIZZLE           │  (+ all system pairs)  │                     │
 │  [custom...]      │                        │  [+ any pair]       │
 │                   │                        │                     │
 └─────────────────────────────────────────────────────────────────┘
@@ -44,7 +43,6 @@ class SystemModel(str, Enum):
     GHOST_TOOLS_STATUS = "ghost_tools_status"
     GHOST_TOOLS_SEVERITY = "ghost_tools_severity"
     WIZZLE_FORENSICS = "wizzle_forensics"
-    INNOVATION_OS_DECISION = "innovation_os_decision"
     CNS_GATE_OUTCOME = "cns_gate_outcome"  # Canonical form
 ```
 
@@ -60,14 +58,14 @@ class MySystemAdapter(SystemAdapter):
         super().__init__(
             system_name="my_system",
             input_models={SystemModel.SWIZZLE_VERDICT, SystemModel.CNS_GATE_OUTCOME},
-            output_model=SystemModel.INNOVATION_OS_DECISION,
+            output_model=SystemModel.CNS_GATE_OUTCOME,
         )
     
     def invoke(self, subject, input_outcome=None):
         # subject: Dict[str, Any] - what we're analyzing
         # input_outcome: Optional[str] - previous step's outcome
         # Returns: outcome string in this system's native format
-        return "approved"
+        return "pass"
 ```
 
 ### Composition Path (Orchestration)
@@ -84,8 +82,8 @@ register_core_adapters(composer)
 register_core_translation_rules(composer)
 
 # Execute composition
-subject = {"repo": "innovation_os", "commit": "abc123"}
-composition_path = ["swizzle", "ghost_tools", "wizzle", "innovation_os"]
+subject = {"repo": "example_repo", "commit": "abc123"}
+composition_path = ["swizzle", "ghost_tools", "wizzle"]
 
 trace = composer.compose(composition_path, subject, cycle=1)
 
@@ -115,8 +113,8 @@ The orchestrator builds a compatibility graph based on system output models and 
 
 ```python
 # Find shortest path between any two systems
-path = composer.find_composition_path("swizzle", "innovation_os", max_depth=5)
-# → ["swizzle", "ghost_tools", "wizzle", "innovation_os"]
+path = composer.find_composition_path("swizzle", "wizzle", max_depth=5)
+# → ["swizzle", "ghost_tools", "wizzle"]
 
 # Execute along found path
 trace = composer.compose(path, subject, cycle=1)
@@ -124,22 +122,24 @@ trace = composer.compose(path, subject, cycle=1)
 
 ## Translation Rules
 
-Define how outcomes translate at system boundaries:
+Define how outcomes translate at system boundaries. The three core systems
+need none today (each accepts the previous system's output directly), so this
+is the pattern for a system that does:
 
 ```python
-# Verdict → Decision
-def translate_verdict_to_decision(verdict):
+# Verdict → Gate outcome
+def translate_verdict_to_gate(verdict):
     if verdict in ("banished", "dismissed"):
-        return "approved"
+        return "pass"
     elif verdict in ("escaped", "conjured"):
-        return "rejected"
+        return "terminal_breach"
     else:
-        return "branched"
+        return "retry"
 
 composer.register_translation(
     SystemModel.SWIZZLE_VERDICT,
-    SystemModel.INNOVATION_OS_DECISION,
-    translate_verdict_to_decision,
+    SystemModel.CNS_GATE_OUTCOME,
+    translate_verdict_to_gate,
 )
 ```
 
@@ -148,9 +148,9 @@ Translation only happens when:
 2. A translation rule is registered for that pair
 3. The step's previous outcome is being passed forward
 
-## Four-System Circle
+## Three-System Chain
 
-The reference implementation connects four core systems:
+The reference implementation connects three core systems:
 
 ```
 SWIZZLE (Verdict)
@@ -159,12 +159,12 @@ ghost_tools (Status)
    ↓
 WIZZLE (Forensics)
    ↓
-Innovation OS (Decision)
-   ↓
 CNS Gate (PASS/RETRY/TERMINAL_BREACH)
 ```
 
-Each link has translation rules defined to convert outcomes while preserving semantic meaning.
+Each system accepts the previous system's output model directly, so no
+translation rule is needed between them. The last output is canonicalised to
+a gate outcome by the composer.
 
 ### Verdict → Status
 
@@ -178,19 +178,12 @@ When ghost_tools findings feed into WIZZLE:
 - `CONFIRMED` → verified finding; check if it's intentional removal
 - `REASONED` → needs human review
 
-### Forensics → Decision
+### Forensics → Gate Outcome
 
-When WIZZLE's classification feeds into Innovation OS:
-- `REMOVED_FROM_LIBRARY` (intentional) → `REJECTED`
-- `RELOCATED_TO_TESTS` (safe) → `APPROVED`
-- `REGRESSION` → `REJECTED`
-
-### Decision → Gate Outcome
-
-Final translation to CNS canonical form:
-- `APPROVED` → `PASS`
-- `REJECTED` → `TERMINAL_BREACH`
-- `BRANCHED` → `RETRY` (try alternative path)
+Final canonicalisation of WIZZLE's classification:
+- `RELOCATED_TO_TESTS`, `INTENTIONAL_REMOVAL` → `PASS`
+- `REMOVED_FROM_LIBRARY`, `REGRESSION` → `TERMINAL_BREACH`
+- anything else (for example `UNKNOWN`) → `RETRY`
 
 ## Scaling to 67 Repos
 
@@ -284,7 +277,6 @@ trace = (
     builder.add_system("swizzle")
     .add_system("ghost_tools")
     .add_system("wizzle")
-    .add_system("innovation_os")
     .execute(subject, cycle=1)
 )
 ```
@@ -311,11 +303,10 @@ See composition execution as human-readable timeline:
 ```python
 print(trace.timeline())
 # Output:
-# Cycle 1: swizzle → ghost_tools → wizzle → innovation_os
+# Cycle 1: swizzle → ghost_tools → wizzle
 #   1. swizzle → escaped
 #   2. ghost_tools ← escaped → confirmed
 #   3. wizzle ← confirmed → removed_from_library
-#   4. innovation_os ← removed_from_library → rejected
 #   Final: terminal_breach
 ```
 

@@ -1,5 +1,12 @@
 # Composition Implementation Status
 
+> **Note (October 2026):** the Innovation OS adapter, its decision model
+> (`INNOVATION_OS_DECISION`) and the four translation rules that ran through
+> it were removed when innovation_os was retired. This report is kept as the
+> record of what was built and describes the state before that removal. The
+> core chain is now SWIZZLE, ghost_tools and WIZZLE, with no core translation
+> rules. See `LIBRARY_COMPOSITION_GUIDE.md` for the current shape.
+
 ## Completed Work
 
 ### 1. Core Architecture (COMPLETED)
