@@ -39,15 +39,11 @@ class SwizzleAdapter(SystemAdapter):
         Returns:
             Verdict: one of BANISHED/ESCAPED/MISNAMED/CONJURED/DISMISSED/UNSUMMONED
         """
-        # In real execution, this invokes SWIZZLE.run_warp() or run_all()
-        # For now, placeholder showing the interface
-
-        if input_outcome == "retry":
-            # Retest after fix
-            return "banished"  # defect was fixed; no longer found
-        else:
-            # Initial test
-            return "escaped"  # defect found but not by our planted test
+        # Fail closed: a placeholder verdict would pass or breach a loop
+        # without reading the subject. Refuse until a real run is wired in.
+        raise NotImplementedError(
+            "SWIZZLE adapter is not wired to a real run; refusing to return a verdict"
+        )
 
 
 class GhostToolsAdapter(SystemAdapter):
@@ -83,15 +79,11 @@ class GhostToolsAdapter(SystemAdapter):
         Returns:
             Status: one of CONFIRMED/REASONED/CONFIRMED_BY_REVIEW/REJECTED/SUPPRESSED
         """
-        # In real execution, this invokes ghost_buster.cli or mechanical scanner
-        # For now, placeholder
-
-        if input_outcome == "escaped":
-            # SWIZZLE found a defect; ghost_tools confirms it
-            return "confirmed"
-        else:
-            # Independent scan
-            return "reasoned"  # finding needs human review
+        # Fail closed: a placeholder status would confirm or breach findings
+        # without reading the subject. Refuse until a real scan is wired in.
+        raise NotImplementedError(
+            "ghost_tools adapter is not wired to a real scan; refusing to return a status"
+        )
 
 
 class WizzleAdapter(SystemAdapter):
@@ -124,15 +116,11 @@ class WizzleAdapter(SystemAdapter):
         Returns:
             Provenance: one of REMOVED_FROM_LIBRARY/RELOCATED_TO_TESTS/REGRESSION/UNKNOWN
         """
-        # In real execution, this runs WIZZLE's forensics test suite
-        # Checking git history, commit messages, and semantic context
-        # For now, placeholder
-
-        if input_outcome == "confirmed":
-            # Finding is confirmed; check if it's intentional or regression
-            return "removed_from_library"  # member was intentionally removed from production
-        else:
-            return "unknown"  # need more context
+        # Fail closed: a placeholder provenance would classify findings
+        # without checking history. Refuse until a real forensics run is wired in.
+        raise NotImplementedError(
+            "WIZZLE adapter is not wired to a real forensics run; refusing to return a provenance"
+        )
 
 
 def register_core_adapters(composer: Any) -> None:

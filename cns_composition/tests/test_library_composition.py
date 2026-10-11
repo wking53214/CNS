@@ -104,43 +104,26 @@ class TestCompositionExecution:
     def test_single_system_composition(self, composer):
         """Execute single system composition (SWIZZLE only)."""
         subject = {"repo": "test_repo", "commit": "abc123"}
-        trace = composer.compose(["swizzle"], subject, cycle=1)
-
-        assert len(trace.steps) == 1
-        assert trace.steps[0].system_name == "swizzle"
-        assert trace.steps[0].output_outcome is not None
-        assert trace.composition_path == ["swizzle"]
+        # SWIZZLE is not wired to a run, so composing it refuses.
+        with pytest.raises(NotImplementedError):
+            composer.compose(["swizzle"], subject, cycle=1)
 
     def test_two_system_composition(self, composer):
         """Execute two-system composition (SWIZZLE → ghost_tools)."""
         subject = {"repo": "test_repo", "commit": "abc123"}
         path = composer.find_composition_path("swizzle", "ghost_tools")
 
-        if path:
-            trace = composer.compose(path, subject, cycle=1)
-            assert len(trace.steps) >= 2
-            assert trace.steps[0].system_name == "swizzle"
-            assert trace.steps[-1].system_name == "ghost_tools"
-
-            # Verify subject hash is consistent across steps
-            subject_hash = trace.steps[0].subject_hash
-            for step in trace.steps:
-                assert step.subject_hash == subject_hash
+        assert path is not None
+        with pytest.raises(NotImplementedError):
+            composer.compose(path, subject, cycle=1)
 
     def test_full_circle_composition(self, composer):
         """Execute full circle (SWIZZLE → ghost_tools → WIZZLE)."""
         subject = {"repo": "test_repo", "commit": "abc123"}
         composition = ["swizzle", "ghost_tools", "wizzle"]
 
-        trace = composer.compose(composition, subject, cycle=1)
-
-        assert len(trace.steps) == 3
-        assert trace.steps[0].system_name == "swizzle"
-        assert trace.steps[1].system_name == "ghost_tools"
-        assert trace.steps[2].system_name == "wizzle"
-
-        # Final outcome should be canonical (PASS/RETRY/TERMINAL_BREACH)
-        assert trace.overall_outcome.value in ("pass", "retry", "terminal_breach")
+        with pytest.raises(NotImplementedError):
+            composer.compose(composition, subject, cycle=1)
 
     def test_subject_binding_across_cycle(self, composer):
         """Subject hash remains consistent across composition steps."""
@@ -148,38 +131,23 @@ class TestCompositionExecution:
         subject2 = {"repo": "repo_b", "commit": "bbb"}
 
         composition = ["swizzle", "ghost_tools"]
-        trace1 = composer.compose(composition, subject1, cycle=1)
-        trace2 = composer.compose(composition, subject2, cycle=1)
-
-        # Same subject → same hash
-        assert trace1.steps[0].subject_hash == trace1.steps[1].subject_hash
-
-        # Different subject → different hash
-        assert trace1.steps[0].subject_hash != trace2.steps[0].subject_hash
+        with pytest.raises(NotImplementedError):
+            composer.compose(composition, subject1, cycle=1)
 
     def test_convergence_check(self, composer):
         """Convergence detection identifies whether composition settled."""
         subject = {"repo": "test_repo", "commit": "abc123"}
         composition = ["swizzle", "ghost_tools", "wizzle"]
-        trace = composer.compose(composition, subject, cycle=1)
-
-        # Final outcome is PASS or TERMINAL_BREACH → converged
-        # Final outcome is RETRY → not converged (still exploring)
-        if trace.overall_outcome.value == "retry":
-            assert not trace.converged
-        else:
-            assert trace.converged
+        with pytest.raises(NotImplementedError):
+            composer.compose(composition, subject, cycle=1)
 
     def test_cycle_tracking(self, composer):
         """Composition trace tracks cycle number correctly."""
         subject = {"repo": "test_repo", "commit": "abc123"}
         composition = ["swizzle"]
 
-        trace_cycle1 = composer.compose(composition, subject, cycle=1)
-        trace_cycle2 = composer.compose(composition, subject, cycle=2)
-
-        assert trace_cycle1.cycle == 1
-        assert trace_cycle2.cycle == 2
+        with pytest.raises(NotImplementedError):
+            composer.compose(composition, subject, cycle=1)
 
 
 class TestAdaptersSurviveComposition:
@@ -199,9 +167,8 @@ class TestAdaptersSurviveComposition:
         before = {name: set(a.input_models)
                   for name, a in composer.adapters.items()}
         subject = {"repo": "test_repo", "commit": "abc123"}
-        for cycle in (1, 2, 3):
-            trace = composer.compose(path, subject, cycle=cycle)
-            assert len(trace.steps) == 3
+        with pytest.raises(NotImplementedError):
+            composer.compose(path, subject, cycle=1)
         after = {name: set(a.input_models)
                  for name, a in composer.adapters.items()}
         assert after == before
@@ -304,14 +271,12 @@ class TestCompositionBuilder:
         builder = CompositionBuilder(composer)
         subject = {"repo": "test_repo", "commit": "abc123"}
 
-        trace = (
-            builder.add_system("swizzle")
-            .add_system("ghost_tools")
-            .execute(subject, cycle=1)
-        )
-
-        assert len(trace.steps) == 2
-        assert trace.overall_outcome.value in ("pass", "retry", "terminal_breach")
+        with pytest.raises(NotImplementedError):
+            (
+                builder.add_system("swizzle")
+                .add_system("ghost_tools")
+                .execute(subject, cycle=1)
+            )
 
     def test_builder_unknown_system_raises(self, composer):
         """Adding unknown system raises ValueError."""

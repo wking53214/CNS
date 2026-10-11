@@ -141,13 +141,16 @@ class TestCompositionGaps:
         Innovation OS is a decision system, not code modification.
         What does "test Innovation OS" mean? What are the test cases?
 
-        The gap, asserted: the SWIZZLE adapter is a placeholder that never
-        reads its subject. When a real adapter lands, this fails.
+        The gap, asserted: the SWIZZLE adapter is not wired to a run, so it
+        refuses rather than returning a placeholder verdict. When a real
+        adapter lands, this fails.
         """
         from cns_composition.adapters import SwizzleAdapter
         adapter = SwizzleAdapter()
-        assert adapter.invoke({"repo": "a"}, None) == adapter.invoke({"repo": "b", "commit": "c"}, None) == "escaped"
-        assert adapter.invoke({}, "retry") == "banished"
+        with pytest.raises(NotImplementedError):
+            adapter.invoke({"repo": "a"}, None)
+        with pytest.raises(NotImplementedError):
+            adapter.invoke({}, "retry")
 
     def test_gap_ghost_tools_needs_innovation_os_file_interface(self):
         """ghost_tools modifies code, but what IS "Innovation OS code to fix"?
@@ -156,13 +159,15 @@ class TestCompositionGaps:
         Does ghost_tools patch innovation_os/*.py files?
         Does it understand the semantic meaning of lifecycle decisions?
 
-        The gap, asserted: the ghost_tools adapter never opens or reads the
-        file its subject names.
+        The gap, asserted: the ghost_tools adapter is not wired to a scan, so
+        it refuses rather than returning a placeholder status for any file.
         """
         from cns_composition.adapters import GhostToolsAdapter
         adapter = GhostToolsAdapter()
-        assert adapter.invoke({"file": "a.py"}, "escaped") == adapter.invoke({"file": "b.py"}, "escaped") == "confirmed"
-        assert adapter.invoke({"file": "a.py"}, None) == "reasoned"
+        with pytest.raises(NotImplementedError):
+            adapter.invoke({"file": "a.py"}, "escaped")
+        with pytest.raises(NotImplementedError):
+            adapter.invoke({"file": "b.py"}, None)
 
     def test_gap_no_cycle_termination_condition(self):
         """How many cycles until success? What is "success"?
