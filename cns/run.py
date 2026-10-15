@@ -79,14 +79,14 @@ class RunRecord:
         if missing:
             raise ValueError("a run record is missing " + ", ".join(missing))
         record = cls(
-            schema=str(data["schema"]),
-            contract=str(data["contract"]),
-            decision=str(data["decision"]),
-            reason=str(data["reason"]),
+            schema=_text(data, "schema"),
+            contract=_text(data, "contract"),
+            decision=_text(data, "decision"),
+            reason=_text(data, "reason"),
             converged=_flag(data, "converged"),
             finished=_flag(data, "finished"),
             put_back=_flag(data, "put_back"),
-            held_digest=str(data.get("held_digest") or ""),
+            held_digest=_text(data, "held_digest", required=False),
             unmeasured=_texts(data, "unmeasured"),
             notes=_texts(data, "notes"),
             observed=_texts(data, "observed"),
@@ -98,6 +98,16 @@ class RunRecord:
         if problems:
             raise ValueError("; ".join(problems))
         return record
+
+
+def _text(data: Mapping[str, Any], key: str, required: bool = True) -> str:
+    if key not in data or data[key] is None:
+        if required:
+            raise ValueError(f"{key} is missing or null, not text")
+        return ""
+    if not isinstance(data[key], str):
+        raise ValueError(f"{key} is {type(data[key]).__name__}, not text")
+    return str(data[key])
 
 
 def _flag(data: Mapping[str, Any], key: str) -> bool:

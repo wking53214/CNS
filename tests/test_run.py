@@ -89,3 +89,10 @@ def test_the_module_holds_no_state_and_reads_no_file():
                 for t in ([n.target] if isinstance(n, ast.AnnAssign) else n.targets) if isinstance(t, ast.Name)]
     assert all(name.startswith("__") and name.endswith("__") for name in assigned), assigned
     assert "open(" not in text and "import json" not in text and "pathlib" not in text
+
+
+def test_a_null_reason_is_refused_not_read_as_the_word_none():
+    with pytest.raises(ValueError, match="reason is missing or null, not text"):
+        RunRecord.from_dict(_good(reason=None))
+    with pytest.raises(ValueError, match="decision is int, not text"):
+        RunRecord.from_dict(_good(decision=3))
