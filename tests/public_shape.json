@@ -758,7 +758,70 @@
         }
       },
       "functions": {}
+    },
+    "cns.stack": {
+      "__all__": [
+        "StackPin",
+        "StackManifest"
+      ],
+      "classes": {
+        "StackManifest": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "schema",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "contract",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "repos",
+              "type": "Tuple[StackPin, ...]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "pin_for": "def(self, name: 'str') -> 'Optional[StackPin]'",
+            "problems": "def(self) -> 'Tuple[str, ...]'",
+            "to_dict": "def(self) -> 'Dict[str, object]'"
+          },
+          "slots": false
+        },
+        "StackPin": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "name",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "commit",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "pins": "def(self, actual: 'str') -> 'bool'",
+            "problems": "def(self) -> 'Tuple[str, ...]'"
+          },
+          "slots": false
+        }
+      },
+      "functions": {}
     }
   },
-  "version": "1.4.0"
+  "version": "1.5.0"
 }
