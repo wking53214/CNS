@@ -759,6 +759,97 @@
       },
       "functions": {}
     },
+    "cns.run": {
+      "__all__": [
+        "RunRecord"
+      ],
+      "classes": {
+        "RunRecord": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "schema",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "contract",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "decision",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "reason",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "converged",
+              "type": "bool"
+            },
+            {
+              "default": null,
+              "name": "finished",
+              "type": "bool"
+            },
+            {
+              "default": null,
+              "name": "put_back",
+              "type": "bool"
+            },
+            {
+              "default": "''",
+              "name": "held_digest",
+              "type": "str"
+            },
+            {
+              "default": "()",
+              "name": "unmeasured",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "()",
+              "name": "notes",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "()",
+              "name": "observed",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "factory:dict",
+              "name": "verdict",
+              "type": "Mapping[str, Any]"
+            },
+            {
+              "default": "factory:dict",
+              "name": "ghost_scan",
+              "type": "Mapping[str, Any]"
+            },
+            {
+              "default": "factory:dict",
+              "name": "versions",
+              "type": "Mapping[str, Any]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "problems": "def(self) -> 'Tuple[str, ...]'"
+          },
+          "slots": false
+        }
+      },
+      "functions": {}
+    },
     "cns.stack": {
       "__all__": [
         "StackPin",
@@ -823,5 +914,5 @@
       "functions": {}
     }
   },
-  "version": "1.5.0"
+  "version": "1.6.0"
 }

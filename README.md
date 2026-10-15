@@ -42,6 +42,7 @@ Protocol and the implementation stays in the repo that owns it.
 | `cns.caller` | `DynamicState`, `CallerState` | GSA-815, OBSERVE |
 | `cns.governance` | `ExecutionDomain`, `TrustLevel`, the `GovernanceError` family, `KernelMetadata`, `KernelComponent`, `IdentityContext`, `IntentCategory`, `QueueType`, `RoutingDecision` | GSA-815, OBSERVE (Ecology diverged) |
 | `cns.rowenum` | `RowEnum` | new in 1.0.0; the serialisation guarantee every enum above inherits |
+| `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it) |
 | `cns.stack` | `StackPin`, `StackManifest` | new in 1.5.0; which checkouts belong together, the join key the governance circuit (Warden) reads |
 
 The composition layer is a sibling package in this repository, not part of
@@ -94,7 +95,7 @@ copy. Your own tests are the check that can fail.
 Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
-and the circuit's manifest in `contracts/`). A raw commit SHA still
+and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract). A raw commit SHA still
 works, but a tag says which contract you are joining on.
 
 ## Versioning
