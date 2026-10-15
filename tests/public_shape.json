@@ -79,6 +79,208 @@
       },
       "functions": {}
     },
+    "cns.defect": {
+      "__all__": [
+        "DefectSeverity",
+        "DefectLifecycle",
+        "Defect"
+      ],
+      "classes": {
+        "Defect": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "summary",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "severity",
+              "type": "DefectSeverity"
+            },
+            {
+              "default": "<DefectLifecycle.IDENTIFIED: 'identified'>",
+              "name": "lifecycle",
+              "type": "DefectLifecycle"
+            },
+            {
+              "default": "None",
+              "name": "ghost_id",
+              "type": "Optional[str]"
+            },
+            {
+              "default": "None",
+              "name": "human_id",
+              "type": "Optional[str]"
+            },
+            {
+              "default": "()",
+              "name": "evidence",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "None",
+              "name": "file",
+              "type": "Optional[str]"
+            },
+            {
+              "default": "<EpistemicState.UNKNOWN: 'unknown'>",
+              "name": "epistemic",
+              "type": "EpistemicState"
+            },
+            {
+              "default": "None",
+              "name": "ghost_status",
+              "type": "Optional[str]"
+            },
+            {
+              "default": "None",
+              "name": "detector",
+              "type": "Optional[str]"
+            },
+            {
+              "default": "None",
+              "name": "line",
+              "type": "Optional[int]"
+            },
+            {
+              "default": "factory:dict",
+              "name": "attributes",
+              "type": "Mapping[str, str]"
+            }
+          ],
+          "frozen": false,
+          "kind": "dataclass",
+          "members": {
+            "identity": "property"
+          },
+          "slots": false
+        },
+        "DefectLifecycle": {
+          "bases": [
+            "RowEnum"
+          ],
+          "enum_members": [
+            [
+              "IDENTIFIED",
+              "identified"
+            ],
+            [
+              "PROPOSED",
+              "proposed"
+            ],
+            [
+              "AUTHORIZED",
+              "authorized"
+            ],
+            [
+              "MODIFIED",
+              "modified"
+            ],
+            [
+              "TESTED",
+              "tested"
+            ],
+            [
+              "ADVERSARIALLY_TESTED",
+              "adversarially_tested"
+            ],
+            [
+              "FIXED",
+              "fixed"
+            ],
+            [
+              "REJECTED",
+              "rejected"
+            ],
+            [
+              "DEFERRED",
+              "deferred"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        },
+        "DefectSeverity": {
+          "bases": [
+            "RowEnum"
+          ],
+          "enum_members": [
+            [
+              "CRITICAL",
+              "critical"
+            ],
+            [
+              "HIGH",
+              "high"
+            ],
+            [
+              "MEDIUM",
+              "medium"
+            ],
+            [
+              "LOW",
+              "low"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        }
+      },
+      "functions": {}
+    },
+    "cns.epistemic": {
+      "__all__": [
+        "EpistemicState"
+      ],
+      "classes": {
+        "EpistemicState": {
+          "bases": [
+            "RowEnum"
+          ],
+          "enum_members": [
+            [
+              "GUARANTEED",
+              "guaranteed"
+            ],
+            [
+              "VERIFIED",
+              "verified"
+            ],
+            [
+              "IMPLEMENTED",
+              "implemented"
+            ],
+            [
+              "DESIGNED",
+              "designed"
+            ],
+            [
+              "ASSUMED",
+              "assumed"
+            ],
+            [
+              "UNKNOWN",
+              "unknown"
+            ],
+            [
+              "NOT_IMPLEMENTED",
+              "not_implemented"
+            ],
+            [
+              "INTENTIONALLY_NOT_PROVIDED",
+              "intentionally_not_provided"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        }
+      },
+      "functions": {}
+    },
     "cns.gate": {
       "__all__": [
         "GatePosition",
@@ -850,6 +1052,206 @@
       },
       "functions": {}
     },
+    "cns.seat": {
+      "__all__": [
+        "FileEdit",
+        "Facts",
+        "Evidence",
+        "Verdict"
+      ],
+      "classes": {
+        "Evidence": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "target",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "scope",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "cycles",
+              "type": "Tuple[Tuple[int, str], ...]"
+            },
+            {
+              "default": null,
+              "name": "changed",
+              "type": "Tuple[Tuple[str, str], ...]"
+            },
+            {
+              "default": null,
+              "name": "judging_files_touched",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": null,
+              "name": "suite_before",
+              "type": "Optional[SuiteRun]"
+            },
+            {
+              "default": null,
+              "name": "suite_after",
+              "type": "Optional[SuiteRun]"
+            },
+            {
+              "default": null,
+              "name": "ghost_before",
+              "type": "Optional[Tuple[str, ...]]"
+            },
+            {
+              "default": null,
+              "name": "ghost_after",
+              "type": "Optional[Tuple[str, ...]]"
+            },
+            {
+              "default": null,
+              "name": "declined",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": null,
+              "name": "swizzle_proofs",
+              "type": "Optional[bool]"
+            },
+            {
+              "default": null,
+              "name": "attacks",
+              "type": "Optional[Tuple[Mapping[str, str], ...]]"
+            },
+            {
+              "default": null,
+              "name": "unmeasured",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "()",
+              "name": "notes",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "None",
+              "name": "assay",
+              "type": "Optional[Mapping[str, object]]"
+            },
+            {
+              "default": "None",
+              "name": "ghost_baseline_before",
+              "type": "Optional[Mapping[str, object]]"
+            },
+            {
+              "default": "None",
+              "name": "ghost_baseline_after",
+              "type": "Optional[Mapping[str, object]]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        },
+        "Facts": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "suite",
+              "type": "Optional[SuiteRun]"
+            },
+            {
+              "default": null,
+              "name": "remaining",
+              "type": "Tuple[Defect, ...]"
+            },
+            {
+              "default": null,
+              "name": "cycles",
+              "type": "int"
+            },
+            {
+              "default": "()",
+              "name": "unmeasured",
+              "type": "Tuple[str, ...]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        },
+        "FileEdit": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "path",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "kind",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "new",
+              "type": "str"
+            },
+            {
+              "default": "''",
+              "name": "old",
+              "type": "str"
+            },
+            {
+              "default": "False",
+              "name": "replace_all",
+              "type": "bool"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        },
+        "Verdict": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "decision",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "reasons",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "''",
+              "name": "judge",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {},
+          "slots": false
+        }
+      },
+      "functions": {}
+    },
     "cns.stack": {
       "__all__": [
         "StackPin",
@@ -912,7 +1314,74 @@
         }
       },
       "functions": {}
+    },
+    "cns.suite": {
+      "__all__": [
+        "SuiteRun"
+      ],
+      "classes": {
+        "SuiteRun": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "ran",
+              "type": "bool"
+            },
+            {
+              "default": "0",
+              "name": "passed",
+              "type": "int"
+            },
+            {
+              "default": "0",
+              "name": "failed",
+              "type": "int"
+            },
+            {
+              "default": "0",
+              "name": "errors",
+              "type": "int"
+            },
+            {
+              "default": "0",
+              "name": "skipped",
+              "type": "int"
+            },
+            {
+              "default": "''",
+              "name": "reason",
+              "type": "str"
+            },
+            {
+              "default": "0",
+              "name": "xfailed",
+              "type": "int"
+            },
+            {
+              "default": "0",
+              "name": "xpassed",
+              "type": "int"
+            },
+            {
+              "default": "None",
+              "name": "exit_code",
+              "type": "Optional[int]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "describe": "def(self) -> 'str'",
+            "green": "property"
+          },
+          "slots": false
+        }
+      },
+      "functions": {}
     }
   },
-  "version": "1.6.0"
+  "version": "1.7.0"
 }
