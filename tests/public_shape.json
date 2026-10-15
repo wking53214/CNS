@@ -1,5 +1,41 @@
 {
   "modules": {
+    "cns.attack": {
+      "__all__": [
+        "AttackResult"
+      ],
+      "classes": {
+        "AttackResult": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "scenario",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "severity",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "status",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "problems": "def(self) -> 'Tuple[str, ...]'"
+          },
+          "slots": false
+        }
+      },
+      "functions": {}
+    },
     "cns.caller": {
       "__all__": [
         "DynamicState",
