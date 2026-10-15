@@ -1,5 +1,41 @@
 {
   "modules": {
+    "cns.attack": {
+      "__all__": [
+        "AttackResult"
+      ],
+      "classes": {
+        "AttackResult": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "scenario",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "severity",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "status",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "problems": "def(self) -> 'Tuple[str, ...]'"
+          },
+          "slots": false
+        }
+      },
+      "functions": {}
+    },
     "cns.caller": {
       "__all__": [
         "DynamicState",
@@ -277,6 +313,67 @@
           ],
           "kind": "enum",
           "members": {}
+        }
+      },
+      "functions": {}
+    },
+    "cns.finding": {
+      "__all__": [
+        "Finding"
+      ],
+      "classes": {
+        "Finding": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "id",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "detector",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "severity",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "status",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "summary",
+              "type": "str"
+            },
+            {
+              "default": "''",
+              "name": "detail",
+              "type": "str"
+            },
+            {
+              "default": "factory:dict",
+              "name": "evidence",
+              "type": "Mapping[str, Any]"
+            },
+            {
+              "default": "factory:dict",
+              "name": "attributes",
+              "type": "Mapping[str, Any]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "problems": "def(self) -> 'Tuple[str, ...]'"
+          },
+          "slots": false
         }
       },
       "functions": {}
@@ -1383,5 +1480,5 @@
       "functions": {}
     }
   },
-  "version": "1.7.0"
+  "version": "1.8.0"
 }
