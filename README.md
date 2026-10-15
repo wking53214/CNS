@@ -47,6 +47,8 @@ Protocol and the implementation stays in the repo that owns it.
 | `cns.defect` | `Defect`, `DefectSeverity`, `DefectLifecycle` | new in 1.7.0; one defect as the scanner, governor and drafter share it |
 | `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return |
 | `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it) |
+| `cns.attack` | `AttackResult` | new in 1.8.0; one attack SWIZZLE reported against the governor (scenario, severity, status) |
+| `cns.finding` | `Finding` | new in 1.8.0; one defect Ghost Tools reported, as Warden, the Drafter and the Finisher read it |
 | `cns.stack` | `StackPin`, `StackManifest` | new in 1.5.0; which checkouts belong together, the join key the governance circuit (Warden) reads |
 
 The composition layer is a sibling package in this repository, not part of
@@ -99,7 +101,7 @@ copy. Your own tests are the check that can fail.
 Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
-and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`). A raw commit SHA still
+and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row). A raw commit SHA still
 works, but a tag says which contract you are joining on.
 
 ## Versioning
