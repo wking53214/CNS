@@ -317,6 +317,67 @@
       },
       "functions": {}
     },
+    "cns.finding": {
+      "__all__": [
+        "Finding"
+      ],
+      "classes": {
+        "Finding": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "id",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "detector",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "severity",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "status",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "summary",
+              "type": "str"
+            },
+            {
+              "default": "''",
+              "name": "detail",
+              "type": "str"
+            },
+            {
+              "default": "factory:dict",
+              "name": "evidence",
+              "type": "Mapping[str, Any]"
+            },
+            {
+              "default": "factory:dict",
+              "name": "attributes",
+              "type": "Mapping[str, Any]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "problems": "def(self) -> 'Tuple[str, ...]'"
+          },
+          "slots": false
+        }
+      },
+      "functions": {}
+    },
     "cns.gate": {
       "__all__": [
         "GatePosition",
