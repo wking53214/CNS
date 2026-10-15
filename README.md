@@ -42,6 +42,7 @@ Protocol and the implementation stays in the repo that owns it.
 | `cns.caller` | `DynamicState`, `CallerState` | GSA-815, OBSERVE |
 | `cns.governance` | `ExecutionDomain`, `TrustLevel`, the `GovernanceError` family, `KernelMetadata`, `KernelComponent`, `IdentityContext`, `IntentCategory`, `QueueType`, `RoutingDecision` | GSA-815, OBSERVE (Ecology diverged) |
 | `cns.rowenum` | `RowEnum` | new in 1.0.0; the serialisation guarantee every enum above inherits |
+| `cns.stack` | `StackPin`, `StackManifest` | new in 1.5.0; which checkouts belong together, the join key the governance circuit (Warden) reads |
 
 The composition layer is a sibling package in this repository, not part of
 `cns` and not shipped in the `cns` wheel. It is behaviour written against
@@ -57,6 +58,28 @@ Every class is extracted by syntax tree from its canonical source and
 verified structurally identical at extraction; the module docstrings
 name the source and the agreement.
 
+## The stack manifest
+
+`cns.stack` is the contract for a claim no single repository can make
+about itself: these checkouts, at these commits, are the whole. The
+governance circuit found the gap on 2026-10-14 when it ran on its own
+seven repositories and four could not be fully measured, each importing
+a sibling the scanner had not been shown. Warden 0.11.2 can be told the
+siblings (`--join`, `--stack-manifest`); this is the shape of what it is
+told, held here so every consumer reads it the same way.
+
+`StackPin(name, commit)` and `StackManifest(schema, contract, repos)` are
+rows with pure functions of themselves: `problems()` is the validation,
+`pin_for(name)` the case-blind lookup a stack folder uses, `to_dict()` the
+wire shape `{"schema": "warden-stack/1", "contract": "1", "repos":
+{name: commit}}`. Reading the file is I/O and stays in the consumer.
+
+The circuit's current pins live beside the package in
+`contracts/warden-stack.json`, outside the wheel, because a pin is state
+and the package holds none. `tests/test_stack.py` checks that file against
+the shape on every run. Warden reads it with `--cns PATH` (a checkout of
+this repository) in place of a file a person wrote.
+
 ## Consuming it
 
 Pin a tag, the way sentinel_os already pins Conservation_Kernel:
@@ -70,7 +93,8 @@ copy. Your own tests are the check that can fail.
 
 Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
-moved out of the package to `cns_composition`). A raw commit SHA still
+moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
+and the circuit's manifest in `contracts/`). A raw commit SHA still
 works, but a tag says which contract you are joining on.
 
 ## Versioning
