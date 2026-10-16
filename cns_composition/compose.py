@@ -199,12 +199,14 @@ class Composer:
 
         # ghost_tools status
         elif final_step.system == SystemName.GHOST_TOOLS:
-            if outcome == "confirmed":
+            # ghost_tools' own table (ghost_buster/cns_adapter.py): Status says how sure
+            # Ghost is that a finding is real.
+            if outcome in ("confirmed", "confirmed_by_review", "suppressed"):
                 return GateOutcome.PASS
-            elif outcome in ("reasoned", "rejected"):
-                return GateOutcome.TERMINAL_BREACH
-            elif outcome == "suppressed":
+            elif outcome == "reasoned":
                 return GateOutcome.RETRY
+            elif outcome == "rejected":
+                return GateOutcome.TERMINAL_BREACH
 
         # WIZZLE forensics
         elif final_step.system == SystemName.WIZZLE:

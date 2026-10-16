@@ -42,10 +42,10 @@ class GhostToolsStatus(str, Enum):
     tests/test_herald_composition.py, so a change on either side is a diff.
     """
     CONFIRMED = "confirmed"                      # deterministic detector → PASS
-    REASONED = "reasoned"                        # unverified semantic claim → TERMINAL_BREACH
+    REASONED = "reasoned"                        # unverified semantic claim: verify it → RETRY
     CONFIRMED_BY_REVIEW = "confirmed_by_review"  # a human verified it → PASS
     REJECTED = "rejected"                        # a human said no → TERMINAL_BREACH
-    SUPPRESSED = "suppressed"                    # known, accepted, tracked → RETRY
+    SUPPRESSED = "suppressed"                    # known, accepted into the baseline, not a live defect → PASS
 
 
 # ============================================================================
@@ -120,9 +120,9 @@ def translate_ghost_tools_to_canonical(
     mapping = {
         GhostToolsStatus.CONFIRMED.value: GateOutcome.PASS,
         GhostToolsStatus.CONFIRMED_BY_REVIEW.value: GateOutcome.PASS,
-        GhostToolsStatus.REASONED.value: GateOutcome.TERMINAL_BREACH,
+        GhostToolsStatus.REASONED.value: GateOutcome.RETRY,
         GhostToolsStatus.REJECTED.value: GateOutcome.TERMINAL_BREACH,
-        GhostToolsStatus.SUPPRESSED.value: GateOutcome.RETRY,
+        GhostToolsStatus.SUPPRESSED.value: GateOutcome.PASS,
     }
 
     outcome = mapping.get(status, GateOutcome.TERMINAL_BREACH)
@@ -169,7 +169,7 @@ def translate_canonical_to_ghost_tools(
 
     reverse_mapping = {
         GateOutcome.PASS: GhostToolsStatus.CONFIRMED.value,
-        GateOutcome.RETRY: GhostToolsStatus.SUPPRESSED.value,
+        GateOutcome.RETRY: GhostToolsStatus.REASONED.value,
         GateOutcome.TERMINAL_BREACH: GhostToolsStatus.REJECTED.value,
     }
 
