@@ -29,7 +29,7 @@ class SwizzleVerdict(str, Enum):
     ESCAPED = "escaped"        # nothing found → TERMINAL_BREACH
     CONJURED = "conjured"      # false positive → TERMINAL_BREACH
     DISMISSED = "dismissed"    # correct silence → PASS
-    UNSUMMONED = "unsummoned"  # test failure → TERMINAL_BREACH
+    UNSUMMONED = "unsummoned"  # SWIZZLE could not prove the warp: its own failure, not the scanner's → RETRY
 
 
 class GhostToolsStatus(str, Enum):
@@ -86,7 +86,7 @@ def translate_swizzle_to_canonical(
         SwizzleVerdict.ESCAPED.value: GateOutcome.TERMINAL_BREACH,
         SwizzleVerdict.CONJURED.value: GateOutcome.TERMINAL_BREACH,
         SwizzleVerdict.DISMISSED.value: GateOutcome.PASS,
-        SwizzleVerdict.UNSUMMONED.value: GateOutcome.TERMINAL_BREACH,
+        SwizzleVerdict.UNSUMMONED.value: GateOutcome.RETRY,
     }
 
     outcome = mapping.get(verdict, GateOutcome.TERMINAL_BREACH)
