@@ -6,9 +6,28 @@ for the LibraryComposer to orchestrate.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Set
+from enum import Enum
+from typing import Any, Callable, Dict, Optional, Set
 
 from .compose_library import SystemAdapter, SystemModel
+from .herald_passthrough import GhostToolsStatus, SwizzleVerdict
+
+#: A real run, supplied by the caller: the subject and the previous outcome in, the system's own outcome out.
+#: CNS imports no repository, so the run is handed in, the way CCC's record lookup is.
+Runner = Callable[[Dict[str, Any], Optional[str]], str]
+
+
+def _native(value: object, allowed: Set[str], who: str) -> str:
+    """The runner's answer, if it is in the system's own vocabulary. Anything else is refused, never mapped."""
+    if isinstance(value, Enum):
+        value = value.value
+    if not isinstance(value, str) or value not in allowed:
+        shown = repr(value[:40]) if isinstance(value, str) else type(value).__name__
+        raise ValueError(
+            f"{who} runner returned {shown}, which is not one of its outcomes; "
+            "refusing to invent an outcome"
+        )
+    return value
 
 
 class SwizzleAdapter(SystemAdapter):
@@ -18,12 +37,13 @@ class SwizzleAdapter(SystemAdapter):
     Produces Verdict outcomes: BANISHED/ESCAPED/MISNAMED/CONJURED/DISMISSED/UNSUMMONED
     """
 
-    def __init__(self):
+    def __init__(self, runner: Optional[Runner] = None):
         super().__init__(
             system_name="swizzle",
             input_models={SystemModel.CNS_GATE_OUTCOME},  # Can receive retry signals
             output_model=SystemModel.SWIZZLE_VERDICT,
         )
+        self._runner = runner
 
     def invoke(
         self,
@@ -41,9 +61,11 @@ class SwizzleAdapter(SystemAdapter):
         """
         # Fail closed: a placeholder verdict would pass or breach a loop
         # without reading the subject. Refuse until a real run is wired in.
-        raise NotImplementedError(
-            "SWIZZLE adapter is not wired to a real run; refusing to return a verdict"
-        )
+        if self._runner is None:
+            raise NotImplementedError(
+                "SWIZZLE adapter is not wired to a real run; refusing to return a verdict"
+            )
+        return _native(self._runner(subject, input_outcome), {v.value for v in SwizzleVerdict}, "SWIZZLE")
 
 
 class GhostToolsAdapter(SystemAdapter):
@@ -55,7 +77,7 @@ class GhostToolsAdapter(SystemAdapter):
     Produces Status outcomes by default, but can also emit Severity as separate signal.
     """
 
-    def __init__(self):
+    def __init__(self, runner: Optional[Runner] = None):
         super().__init__(
             system_name="ghost_tools",
             input_models={
@@ -64,6 +86,7 @@ class GhostToolsAdapter(SystemAdapter):
             },
             output_model=SystemModel.GHOST_TOOLS_STATUS,
         )
+        self._runner = runner
 
     def invoke(
         self,
@@ -81,9 +104,11 @@ class GhostToolsAdapter(SystemAdapter):
         """
         # Fail closed: a placeholder status would confirm or breach findings
         # without reading the subject. Refuse until a real scan is wired in.
-        raise NotImplementedError(
-            "ghost_tools adapter is not wired to a real scan; refusing to return a status"
-        )
+        if self._runner is None:
+            raise NotImplementedError(
+                "ghost_tools adapter is not wired to a real scan; refusing to return a status"
+            )
+        return _native(self._runner(subject, input_outcome), {v.value for v in GhostToolsStatus}, "ghost_tools")
 
 
 class WizzleAdapter(SystemAdapter):
