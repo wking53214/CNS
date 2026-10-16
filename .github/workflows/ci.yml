@@ -68,4 +68,16 @@ jobs:
           if "cns/py.typed" not in names:
               sys.exit("FAIL: cns/py.typed is missing from the wheel")
           print("OK: cns/py.typed ships")
+          # Link imports cns_composition from an installed cns. Without it in
+          # the wheel that import fails on any pinned install, and nothing in
+          # this repository's own tests can see it because they run in place.
+          for needed in ("cns_composition/__init__.py", "cns_composition/gate_chain.py",
+                         "cns_composition/ccc_admission.py", "cns_composition/triad_admission.py",
+                         "cns_composition/resubmission.py"):
+              if needed not in names:
+                  sys.exit(f"FAIL: {needed} is missing from the wheel")
+          leaked = [n for n in names if "/tests/" in n or n.startswith("tests/")]
+          if leaked:
+              sys.exit(f"FAIL: tests ship in the wheel: {leaked}")
+          print("OK: cns_composition ships and its tests do not")
           PY

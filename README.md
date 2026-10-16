@@ -52,8 +52,9 @@ Protocol and the implementation stays in the repo that owns it.
 | `cns.stack` | `StackPin`, `StackManifest` | new in 1.5.0; which checkouts belong together, the join key the governance circuit (Warden) reads |
 
 The composition layer is a sibling package in this repository, not part of
-`cns` and not shipped in the `cns` wheel. It is behaviour written against
-`cns.gate`, so the purity test would reject it inside the package:
+`cns`. It ships in the same wheel as a second top-level package, because other
+repositories import it (Link does), and `cns` never imports it. It is behaviour
+written against `cns.gate`, so the purity test would reject it inside the package:
 
 | package | modules | role |
 |---|---|---|

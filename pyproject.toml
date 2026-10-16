@@ -15,10 +15,13 @@ dependencies = []
 dev = ["pytest>=7", "mypy>=1.8"]
 
 [tool.setuptools.packages.find]
-# The wheel is the shapes package only. cns_composition is a sibling
-# package in this repository (behaviour over cns.gate) and is deliberately
-# not shipped with it.
-include = ["cns", "cns.*"]
+# The wheel carries two packages. `cns` is the shapes package and stays
+# shapes-only. `cns_composition` is a sibling (behaviour over cns.gate) that
+# used to be left out on purpose; Link imports it, and with it missing a
+# pinned install of this repository could not run Link at all. It ships beside
+# `cns`, never inside it, and its tests do not ship.
+include = ["cns", "cns.*", "cns_composition", "cns_composition.*"]
+exclude = ["cns_composition.tests", "cns_composition.tests.*"]
 
 # PEP 561. Without this marker a consumer's mypy or pyright treats the whole
 # package as untyped and silently ignores every annotation in it, which for a
