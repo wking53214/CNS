@@ -137,16 +137,10 @@ class Composer:
 
         Output: Verdict (BANISHED/ESCAPED/MISNAMED/CONJURED/DISMISSED/UNSUMMONED)
         """
-        # In real execution, this would invoke SWIZZLE's run_warp or run_all
-        # For now, return a stub that captures the interface
-        verdict = "escaped"  # placeholder; would be determined by actual SWIZZLE run
-
-        return CompositionStep(
-            system=SystemName.SWIZZLE,
-            input_outcome=input_outcome,
-            output_outcome=verdict,
-            subject_hash=subject_hash,
-            metadata={"subject": subject, "retest": input_outcome is not None},
+        # Fail closed: a placeholder verdict would pass or breach a loop
+        # without reading the subject. Refuse until a real run is wired in.
+        raise NotImplementedError(
+            "SWIZZLE step is not wired to a real run; refusing to return a verdict"
         )
 
     def _invoke_ghost_tools(
@@ -162,16 +156,10 @@ class Composer:
 
         Output: Status (or abstracted to common gate language)
         """
-        # In real execution, this would invoke ghost_buster.cli
-        # For now, return a stub
-        status = "confirmed"  # placeholder
-
-        return CompositionStep(
-            system=SystemName.GHOST_TOOLS,
-            input_outcome=input_outcome,
-            output_outcome=status,
-            subject_hash=subject_hash,
-            metadata={"subject": subject, "scan_type": "mechanical"},
+        # Fail closed: a placeholder status would confirm or breach findings
+        # without reading the subject. Refuse until a real scan is wired in.
+        raise NotImplementedError(
+            "ghost_tools step is not wired to a real scan; refusing to return a status"
         )
 
     def _invoke_wizzle(
@@ -187,15 +175,10 @@ class Composer:
 
         Output: Forensics verdict
         """
-        # In real execution, this would run WIZZLE's forensics tests
-        forensics_verdict = "removed_from_library"  # placeholder
-
-        return CompositionStep(
-            system=SystemName.WIZZLE,
-            input_outcome=input_outcome,
-            output_outcome=forensics_verdict,
-            subject_hash=subject_hash,
-            metadata={"subject": subject, "forensics_layer": True},
+        # Fail closed: a placeholder provenance would classify findings
+        # without checking history. Refuse until a real forensics run is wired in.
+        raise NotImplementedError(
+            "WIZZLE step is not wired to a real forensics run; refusing to return a provenance"
         )
 
     def _canonicalize_final_outcome(self, final_step: CompositionStep) -> GateOutcome:
