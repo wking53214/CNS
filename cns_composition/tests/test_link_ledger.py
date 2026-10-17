@@ -73,6 +73,8 @@ def test_a_good_ledger_is_read_in_order(tmp_path):
     {"schema": "cns-links/1", "repos": {"A": {"hub": False}}},
     {"schema": "cns-links/1", "repos": {"A": {"aka": "triad"}}},
     {"schema": "cns-links/1", "repos": {"A": {"aka": ["ab"]}}},
+    {"schema": "cns-links/1", "repos": {"A": {"to_cns": "x.py", "private": False}}},
+    {"schema": "cns-links/1", "repos": {"A": {"from_cns": "y", "private": True}}},
 ])
 def test_a_ledger_that_is_not_the_documented_shape_is_refused(tmp_path, data):
     path = tmp_path / "l.json"
@@ -354,3 +356,36 @@ def test_what_makes_a_json_file_a_proof_is_its_content_not_its_name(cns, stack):
     write(stack, "RUSTY/renamed.json", json.dumps(VECTORS))
     assert L.repo_side_problem(stack, "RUSTY", "package.json", cns) is not None
     assert L.repo_side_problem(stack, "RUSTY", "renamed.json", cns) is None
+
+
+# ------------------------------------------------------------ private repositories
+
+def test_a_private_repo_without_a_checkout_is_not_checked_and_is_named(cns, stack, tmp_path, capsys):
+    write(cns, "contracts/hidden.json", json.dumps({"repos": {"Hidden": "b" * 40}}))
+    path = ledger_file(tmp_path, {"Hidden": {"to_cns": "h/conn.py", "from_cns": "contracts/hidden.json", "private": True},
+                                  "JUDGE": {"to_cns": "judge/conn.py", "from_cns": "contracts/pins.json"}})
+    assert L.main(["--ledger", str(path), "--cns", str(cns), "--stack", str(stack)]) == 0
+    out = capsys.readouterr().out
+    assert "2 two_way" in out
+    assert out.strip().splitlines()[-1] == "link_ledger: not verified here (private, no checkout): Hidden"
+
+
+def test_the_same_repo_without_private_is_a_problem(cns, stack):
+    write(cns, "contracts/hidden.json", json.dumps({"repos": {"Hidden": "b" * 40}}))
+    links = [L.Link("Hidden", "h/conn.py", "contracts/hidden.json")]
+    assert any("no checkout" in p for p in L.problems(links, cns, stack))
+    private = L.problems([L.Link("Hidden", "h/conn.py", "contracts/hidden.json", private=True)], cns, stack)
+    assert not [p for p in private if p.startswith("Hidden")]
+
+
+def test_a_private_repo_with_a_checkout_is_checked_like_any_other(cns, stack):
+    good = L.Link("JUDGE", "judge/conn.py", "contracts/pins.json", private=True)
+    bad = L.Link("JUDGE", "judge/talks.py", "contracts/pins.json", private=True)
+    assert L.problems([good], cns, stack) == []
+    assert any("does not import cns" in p for p in L.problems([bad], cns, stack))
+    assert L.unverified([good], stack) == []
+
+
+def test_without_a_stack_nothing_is_unverified_because_nothing_was_asked(cns, tmp_path):
+    assert L.unverified([L.Link("Hidden", "h/conn.py", "x", private=True)], None) == []
+    assert L.unverified([L.Link("Hidden", "h/conn.py", "x", private=True)], tmp_path / "nope") == []

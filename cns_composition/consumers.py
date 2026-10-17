@@ -80,6 +80,9 @@ REQUIRED: Mapping[str, Imports] = {
     "interconnected_zeta": {"cns.gate": ()},
     "interconnected_beta": {"cns.gate": ()},
     "interconnected_delta": {"cns.gate": ()},
+    # Private repositories: the links workflow cannot clone them, so `drift` skips them when there is no checkout.
+    "ATS": {"cns.gate": ()},
+    "Resume_OS": {"cns.gate": ()},
 }
 
 _OURS = ("cns", "cns_composition")
@@ -139,15 +142,19 @@ def missing(required: Optional[Mapping[str, Imports]] = None) -> List[str]:
     return out
 
 
-def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None) -> List[str]:
-    """Where `REQUIRED` no longer matches the source in `stack`, for each registered repository that is there."""
+def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None,
+          private: Tuple[str, ...] = ()) -> List[str]:
+    """Where `REQUIRED` no longer matches the source in `stack`, for each registered repository that is there.
+
+    A repository named in `private` (the ledger's private ones) may have no checkout; it is skipped then."""
     stack = Path(stack)
     out: List[str] = []
     for repo, registered in (REQUIRED if required is None else required).items():
         folder = next((p for p in sorted(stack.iterdir())
                        if p.is_dir() and not p.is_symlink() and p.name.casefold() == repo.casefold()), None)
         if folder is None:
-            out.append(f"{repo} is registered but has no checkout in {str(stack)!r}")
+            if repo.casefold() not in {p.casefold() for p in private}:
+                out.append(f"{repo} is registered but has no checkout in {str(stack)!r}")
             continue
         actual = scan(folder)
         for module in sorted(set(actual) | set(registered)):
@@ -178,7 +185,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not args.stack.is_dir():
             print(f"consumers: the stack folder {str(args.stack)!r} does not exist", file=sys.stderr)
             return 2
-        problems += drift(args.stack)
+        from cns_composition.link_ledger import LedgerError, read_ledger
+        try:
+            private = tuple(k.repo for k in read_ledger(Path(__file__).resolve().parents[1] / "contracts" / "cns-links.json")
+                            if k.private)
+        except LedgerError:
+            private = ()
+        problems += drift(args.stack, private=private)
     for line in problems:
         print(f"consumers: {line}", file=sys.stderr)
     if not problems:
