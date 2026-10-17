@@ -130,12 +130,20 @@
       "to_cns": "ure_engine/cns_connector.py",
       "from_cns": "cns_composition/repo_gates.py"
     },
-    "ATS": {},
+    "ATS": {
+      "to_cns": "ats_cns_connector.py",
+      "from_cns": "cns_composition/consumers.py",
+      "private": true
+    },
     "CCCb": {
       "to_cns": "cccb/cns_connector.py",
       "from_cns": "cns_composition/consumers.py"
     },
-    "Resume_OS": {},
+    "Resume_OS": {
+      "to_cns": "resume_os_cns_connector.py",
+      "from_cns": "cns_composition/consumers.py",
+      "private": true
+    },
     "experimental": {
       "to_cns": "src/governance/cns_connector.py",
       "from_cns": "cns_composition/consumers.py"

@@ -80,6 +80,9 @@ REQUIRED: Mapping[str, Imports] = {
     "interconnected_zeta": {"cns.gate": ()},
     "interconnected_beta": {"cns.gate": ()},
     "interconnected_delta": {"cns.gate": ()},
+    # Private repositories: the links workflow cannot clone them, so `drift` skips them when there is no checkout.
+    "ATS": {"cns.gate": ()},
+    "Resume_OS": {"cns.gate": ()},
 }
 
 _OURS = ("cns", "cns_composition")
