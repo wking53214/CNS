@@ -90,6 +90,31 @@ and the package holds none. `tests/test_stack.py` checks that file against
 the shape on every run. Warden reads it with `--cns PATH` (a checkout of
 this repository) in place of a file a person wrote.
 
+### Keeping the pins true
+
+Warden refuses a stack whose checkout is at any commit but the pinned one, so every merge to any of the seven
+circuit repositories used to make the manifest wrong until someone edited it. Two programs beside the package
+(behaviour, so not inside it) and one workflow now do that:
+
+```
+python -m cns_composition.repin --stack DIR [--check]      # move the pins to the HEAD of each checkout in DIR
+python -m cns_composition.circuit_canary --stack DIR --cns .   # run the whole circuit; exit 0 only on ACCEPT
+```
+
+`repin` only moves commits. It never adds or removes a repository, never touches `schema` or `contract`,
+refuses a dirty or unreadable checkout, and writes the format the committed file already has, so an unchanged
+stack gives an unchanged file. `circuit_canary` builds a throwaway repository and passes only on a clean
+ACCEPT; a refusal over a stale pin is a failure that names the pin.
+
+`.github/workflows/repin.yml` runs both every six hours and on demand. The canary runs every time, so a red run
+means a merge to one of the seven broke the others. When a pin moved and the circuit still ends ACCEPT it opens
+or updates one pull request (branch `auto/repin`) that changes nothing but the commits. A person merges it.
+The job that runs the other repositories' code has a read-only token; the job that can write runs none of it
+and re-checks the manifest before using it. One setting is needed once: Settings > Actions > General >
+"Allow GitHub Actions to create and approve pull requests". A pull request opened with the workflow's own
+token does not start `ci.yml`; the canary has already run the circuit on that exact manifest. Adding a
+repository to the manifest also needs a checkout step in the workflow, and a test fails until both are done.
+
 ## Consuming it
 
 Pin a tag, the way sentinel_os already pins Conservation_Kernel:

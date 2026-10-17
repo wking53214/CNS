@@ -1,0 +1,189 @@
+# Keeps contracts/warden-stack.json true without a person editing it.
+#
+# The manifest says which commits of the seven circuit repositories belong together, and Warden refuses a stack
+# that is at any other commit. So every merge to any of the seven made it wrong until somebody edited it by
+# hand. This workflow does the editing, but only after proving the new combination works:
+#
+#   canary   checks out the main of all seven, moves the pins to their heads (cns_composition.repin), then
+#            runs the whole circuit (cns_composition.circuit_canary). It runs every time, so a red run also
+#            means "something merged to one of the seven broke the others".
+#   propose  only when a pin moved AND the canary said ACCEPT: opens or updates one pull request,
+#            branch auto/repin, that changes nothing but the commits in the manifest.
+#
+# A person merges that pull request. Nothing here pushes to main.
+#
+# TRUST. The canary job runs code from the other six repositories, so it gets a read-only token and nothing else.
+# The propose job can write, and runs no code from them: it takes the manifest the canary produced and
+# re-checks it (same schema, same contract, same repository names, every pin a full commit) before using it.
+# Worst case for a compromised repository is a wrong commit id in a pull request that a person has to merge.
+#
+# ONE-TIME SETTING. Repository Settings > Actions > General > "Allow GitHub Actions to create and approve pull
+# requests" must be on. If it is not, the branch is still pushed and the job summary carries the link to open
+# the pull request by hand.
+#
+# KNOWN LIMIT. A pull request opened with the workflow's own token does not start other workflows, so ci.yml
+# does not run on it. The change is one JSON file and the canary has already run the circuit on it.
+#
+# ADDING A REPOSITORY. List it in the manifest and add a checkout step below. tests/test_repin_workflow.py fails
+# until both are done.
+name: repin
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: repin
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: canary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.repin.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: hub
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ghost_tools
+          path: stack/ghost_tools
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/SWIZZLE
+          path: stack/SWIZZLE
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ASSAY
+          path: stack/ASSAY
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/DRAFTER
+          path: stack/DRAFTER
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/JUDGE
+          path: stack/JUDGE
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/BURNISH
+          path: stack/BURNISH
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/WARDEN
+          path: stack/WARDEN
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Move the pins to the heads of the seven checkouts
+        id: repin
+        working-directory: hub
+        env:
+          PYTHONPATH: ${{ github.workspace }}/hub
+        run: |
+          python -m cns_composition.repin --stack ../stack --manifest contracts/warden-stack.json | tee ../repin.txt
+          if git diff --quiet -- contracts/warden-stack.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run the whole circuit on that combination
+        working-directory: hub
+        env:
+          PYTHONPATH: ${{ github.workspace }}/hub
+        run: python -m cns_composition.circuit_canary --stack ../stack --cns .
+      - name: Keep the re-pinned manifest for the proposal
+        if: steps.repin.outputs.changed == 'true'
+        run: |
+          mkdir proposed
+          cp hub/contracts/warden-stack.json proposed/warden-stack.json
+          cp repin.txt proposed/repin.txt
+      - uses: actions/upload-artifact@v4
+        if: steps.repin.outputs.changed == 'true'
+        with:
+          name: proposed
+          path: proposed/
+          if-no-files-found: error
+
+  propose:
+    name: propose
+    needs: canary
+    # Only from the default branch: a manual run from any other branch still runs the canary, but proposes nothing.
+    if: needs.canary.outputs.changed == 'true' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: proposed
+          path: proposed
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Re-check what the canary produced
+        run: |
+          python - <<'PY'
+          import json, re
+          old = json.load(open("contracts/warden-stack.json"))
+          new = json.load(open("proposed/warden-stack.json"))
+          assert new["schema"] == old["schema"], "the schema changed"
+          assert new["contract"] == old["contract"], "the contract changed"
+          assert list(new["repos"]) == list(old["repos"]), "the set of repositories changed"
+          assert all(re.fullmatch(r"[0-9a-f]{40}", v) for v in new["repos"].values()), "a pin is not a full commit"
+          assert set(new) == set(old), "a top-level field was added or removed"
+          PY
+          cp proposed/warden-stack.json contracts/warden-stack.json
+      - name: The manifest still passes the tests that read it
+        run: |
+          pip install -e ".[dev]"
+          python -m pytest tests/test_stack.py -q
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.repository.default_branch }}
+          SITE: ${{ github.server_url }}/${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B auto/repin
+          git add contracts/warden-stack.json
+          git commit -m "Re-pin the circuit manifest to the current main heads"
+          git push --force origin auto/repin
+          {
+            echo "The circuit canary ran the whole circuit on these commits and it ended ACCEPT ($RUN_URL)."
+            echo
+            echo '```'
+            cat proposed/repin.txt
+            echo '```'
+            echo
+            echo "Changes nothing but the commits in contracts/warden-stack.json. Merge it before the next merge to any of the seven repositories."
+          } > body.md
+          if gh pr list --head auto/repin --state open --json number --jq '.[0].number' | grep -q .; then
+            gh pr edit auto/repin --body-file body.md
+          elif ! gh pr create --base "$BASE" --head auto/repin \
+                 --title "Re-pin the circuit manifest to the current main heads" --body-file body.md; then
+            {
+              echo "The branch auto/repin was pushed but the pull request could not be created."
+              echo "Turn on 'Allow GitHub Actions to create and approve pull requests' in Settings > Actions > General,"
+              echo "or open it by hand: $SITE/compare/auto/repin?expand=1"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
