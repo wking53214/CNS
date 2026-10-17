@@ -58,16 +58,20 @@
       "to_cns": "sentinel_os/twin_custody.py"
     },
     "Conservation_Kernel": {
-      "to_cns": "src/conservation_kernel/cns_connector.py"
+      "to_cns": "src/conservation_kernel/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
     },
     "GEMS": {
-      "to_cns": "src/gems/cns_connector.py"
+      "to_cns": "src/gems/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
     },
     "fortress-kernel": {
-      "to_cns": "fortress_cns_connector.py"
+      "to_cns": "fortress_cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
     },
     "DIT": {
-      "to_cns": "src/dit/cns_connector.py"
+      "to_cns": "src/dit/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
     },
     "ZTS": {
       "to_cns": "src/zts/cns/adapter.py"
@@ -79,13 +83,15 @@
       "to_cns": "cns_connector.py"
     },
     "PERCEIVE": {
-      "to_cns": "src/perceive/cns_connector.py"
+      "to_cns": "src/perceive/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
     },
     "GSA-815": {
       "to_cns": "observe_perceive_core.py"
     },
     "Governance_Gateway": {
-      "to_cns": "src/governance_gateway/cns_connector.py"
+      "to_cns": "src/governance_gateway/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
     },
     "Ecology": {},
     "GSA": {},
