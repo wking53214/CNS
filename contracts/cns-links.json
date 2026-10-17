@@ -1,0 +1,114 @@
+{
+  "schema": "cns-links/1",
+  "repos": {
+    "CNS": {
+      "hub": true
+    },
+    "ghost_tools": {
+      "to_cns": "ghost_buster/cns_adapter.py",
+      "from_cns": "contracts/warden-stack.json"
+    },
+    "SWIZZLE": {
+      "to_cns": "swizzle/cns_adapter.py",
+      "from_cns": "contracts/warden-stack.json"
+    },
+    "ASSAY": {
+      "to_cns": "assay_production/cns_connector.py",
+      "from_cns": "contracts/warden-stack.json"
+    },
+    "DRAFTER": {
+      "to_cns": "drafter/seat.py",
+      "from_cns": "contracts/warden-stack.json"
+    },
+    "JUDGE": {
+      "to_cns": "judge/cns_connector.py",
+      "from_cns": "contracts/warden-stack.json"
+    },
+    "BURNISH": {
+      "to_cns": "burnish/cli.py",
+      "from_cns": "contracts/warden-stack.json"
+    },
+    "WARDEN": {
+      "to_cns": "warden/suite.py",
+      "from_cns": "contracts/warden-stack.json"
+    },
+    "CCC": {
+      "to_cns": "ccc/cns_connector.py",
+      "from_cns": "cns_composition/ccc_admission.py"
+    },
+    "Triad-42": {
+      "from_cns": "cns_composition/triad_admission.py",
+      "aka": [
+        "triad"
+      ]
+    },
+    "WATCHER_MCU": {
+      "to_cns": "watcher/evidence.py"
+    },
+    "Link": {
+      "to_cns": "link/admission.py"
+    },
+    "HERALD": {
+      "to_cns": "herald/cns_connector.py"
+    },
+    "composition-engine": {
+      "to_cns": "src/composition_engine/cns_integration.py"
+    },
+    "sentinel_os": {
+      "to_cns": "sentinel_os/twin_custody.py"
+    },
+    "Conservation_Kernel": {
+      "to_cns": "src/conservation_kernel/cns_connector.py"
+    },
+    "GEMS": {
+      "to_cns": "src/gems/cns_connector.py"
+    },
+    "fortress-kernel": {
+      "to_cns": "fortress_cns_connector.py"
+    },
+    "DIT": {
+      "to_cns": "src/dit/cns_connector.py"
+    },
+    "ZTS": {
+      "to_cns": "src/zts/cns/adapter.py"
+    },
+    "OBSERVE": {
+      "to_cns": "cns_connector.py"
+    },
+    "observe-perceive": {
+      "to_cns": "cns_connector.py"
+    },
+    "PERCEIVE": {
+      "to_cns": "src/perceive/cns_connector.py"
+    },
+    "GSA-815": {
+      "to_cns": "observe_perceive_core.py"
+    },
+    "Governance_Gateway": {
+      "to_cns": "src/governance_gateway/cns_connector.py"
+    },
+    "Ecology": {},
+    "GSA": {},
+    "STACK-Kernel": {},
+    "TIE": {},
+    "DGK": {},
+    "URE": {},
+    "ATS": {},
+    "CCCb": {},
+    "Resume_OS": {},
+    "experimental": {},
+    "interconnected_alpha": {},
+    "interconnected_beta": {},
+    "interconnected_delta": {},
+    "interconnected_zeta": {},
+    "WATCHER": {
+      "exempt": "empty repository: no files"
+    },
+    "synapsis": {
+      "exempt": "retired: the source is kept in the Graveyard repository"
+    },
+    "p3-2-governance-research": {
+      "exempt": "research documents only: no code to connect"
+    }
+  }
+}
