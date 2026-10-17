@@ -40,3 +40,8 @@ def test_a_repository_it_cannot_read_is_skipped_with_a_warning_and_the_token_is_
 def test_it_also_runs_the_consumers_check_against_the_same_checkouts():
     assert "python -m cns_composition.consumers --stack ../stack" in WORKFLOW
     assert "cns_composition/consumers.py" in WORKFLOW.split("\npermissions:", 1)[0]
+
+
+def test_it_also_checks_the_vendored_digest_vectors_against_the_same_checkouts():
+    assert "python -m cns_composition.digest_vectors --stack ../stack" in WORKFLOW
+    assert "contracts/digest-vectors.json" in WORKFLOW.split("\npermissions:", 1)[0]

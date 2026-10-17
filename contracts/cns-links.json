@@ -108,7 +108,10 @@
     },
     "Ecology": {},
     "GSA": {},
-    "STACK-Kernel": {},
+    "STACK-Kernel": {
+      "to_cns": "crates/stack-sentinel/tests/fixtures/cns-digest-vectors.json",
+      "from_cns": "cns_composition/digest_vectors.py"
+    },
     "TIE": {},
     "DGK": {
       "to_cns": "dgk/cns_connector.py",
