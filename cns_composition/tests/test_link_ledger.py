@@ -314,3 +314,43 @@ def test_a_module_whose_name_merely_contains_the_bridged_module_does_not_count(c
     write(stack, "Link/link/a.py", "import triad42_extra\nfrom mytriad42 import x\nfrom cns.gate import Gate\n")
     write(stack, "Triad-42/triad42/__init__.py", "")
     assert any("does not import triad42" in p for p in L.problems(bridge_links(), cns, stack))
+
+
+# ------------------------------------------------------------ a repository that vendors CNS's digest vectors
+
+VECTORS = {"schema": "cns-digest-vectors/1", "vectors": [{"name": "a", "content": {"x": 1}, "digest": "0" * 64}]}
+
+
+def vendor(cns, stack, data=VECTORS, rel="crates/x/tests/fixtures/v.json", name="RUSTY"):
+    write(cns, "contracts/digest-vectors.json", json.dumps(VECTORS))
+    write(stack, f"{name}/{rel}", data if isinstance(data, str) else json.dumps(data))
+    return rel
+
+
+def test_an_exact_copy_of_the_digest_vectors_proves_a_repo_that_cannot_import_python(cns, stack):
+    rel = vendor(cns, stack)
+    assert L.repo_side_problem(stack, "rusty", rel, cns) is None
+    assert L.problems([L.Link("RUSTY", rel), L.Link("JUDGE")], cns, stack) == []
+
+
+def test_a_copy_that_differs_or_is_unreadable_does_not_prove_it(cns, stack):
+    stale = {**VECTORS, "vectors": []}
+    rel = vendor(cns, stack, stale)
+    assert "not an exact copy" in L.repo_side_problem(stack, "RUSTY", rel, cns)
+    rel = vendor(cns, stack, "{")
+    assert "not readable JSON" in L.repo_side_problem(stack, "RUSTY", rel, cns)
+
+
+def test_the_copy_is_compared_with_the_cns_checkout_so_it_needs_one(cns, stack):
+    rel = vendor(cns, stack)
+    assert "needs the CNS checkout" in L.repo_side_problem(stack, "RUSTY", rel)
+    (cns / "contracts" / "digest-vectors.json").unlink()
+    assert "not an exact copy" in L.repo_side_problem(stack, "RUSTY", rel, cns)
+
+
+def test_what_makes_a_json_file_a_proof_is_its_content_not_its_name(cns, stack):
+    write(cns, "contracts/digest-vectors.json", json.dumps(VECTORS))
+    write(stack, "RUSTY/package.json", json.dumps({"name": "unrelated"}))
+    write(stack, "RUSTY/renamed.json", json.dumps(VECTORS))
+    assert L.repo_side_problem(stack, "RUSTY", "package.json", cns) is not None
+    assert L.repo_side_problem(stack, "RUSTY", "renamed.json", cns) is None
