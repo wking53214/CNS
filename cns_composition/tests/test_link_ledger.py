@@ -222,3 +222,95 @@ def test_a_proof_that_climbs_out_of_the_checkout_is_refused_even_when_the_file_e
 def test_a_json_file_in_the_shapes_package_is_not_a_proof(cns):
     write(cns, "cns/pins.json", json.dumps({"repos": {"JUDGE": "a" * 40}}))
     assert "must be a JSON file under contracts/" in L.cns_side_problem(cns, "JUDGE", "cns/pins.json")
+
+
+# ------------------------------------------------------------ bridged repositories
+
+def pin_bridge(cns):
+    write(cns, "contracts/bridge.json", json.dumps({"repos": {"Link": "a" * 40, "Triad-42": "b" * 40}}))
+    return cns
+
+
+def bridge_links(**over):
+    bridge = L.Link("Link", "link/a.py", "contracts/bridge.json")
+    triad = L.Link("Triad-42", None, "cns_composition/triad.py", aka=("triad",), via=("Link", "triad42"))
+    return [bridge, L.Link(**{**triad.__dict__, **over})]
+
+
+def test_a_repo_with_a_bridge_and_a_cns_side_proof_is_bridged_not_two_way():
+    assert L.status(bridge_links()[1]) == "bridged"
+    assert L.status(L.Link("a", "x", "y", via=("B", "m"))) == "two_way"
+    assert L.status(L.Link("a", None, None, via=("B", "m"))) == "none"
+
+
+def test_the_ledger_reads_a_via_and_refuses_a_malformed_one(tmp_path):
+    good = {"schema": "cns-links/1", "repos": {"T": {"from_cns": "x", "via": {"repo": "Link", "module": "triad42"}}}}
+    path = tmp_path / "l.json"
+    path.write_text(json.dumps(good))
+    assert L.read_ledger(path)[0].via == ("Link", "triad42")
+    for bad in ("Link", {"repo": "Link"}, {"repo": "Link", "module": ""}, {"repo": "Link", "module": "m", "x": 1}, []):
+        good["repos"]["T"]["via"] = bad
+        path.write_text(json.dumps(good))
+        with pytest.raises(L.LedgerError):
+            L.read_ledger(path)
+
+
+def test_a_true_bridge_has_no_problem_and_counts_apart_from_two_way(cns, stack):
+    pin_bridge(cns)
+    write(cns, "cns_composition/triad.py", "def admit_triad(x):\n    return x\n")
+    write(stack, "Link/link/a.py", "from cns.gate import Gate\nfrom triad42.ccc_handoff import hand_off\n")
+    write(stack, "Triad-42/triad42/__init__.py", "")
+    links = bridge_links() + [L.Link("JUDGE")]   # the stack fixture also holds a JUDGE checkout
+    assert L.problems(links, cns, stack) == []
+    assert L.counts(links) == {"two_way": 1, "bridged": 1, "none": 1}
+
+
+def test_a_bridge_whose_source_does_not_import_the_module_is_reported(cns, stack):
+    pin_bridge(cns)
+    write(stack, "Link/link/a.py", "from cns.gate import Gate\n")
+    write(stack, "Triad-42/triad42/__init__.py", "")
+    out = L.problems(bridge_links(), cns, stack)
+    assert any("Link's source does not import triad42" in p for p in out)
+
+
+def test_only_non_test_source_of_the_bridge_counts(cns, stack):
+    pin_bridge(cns)
+    write(stack, "Link/link/a.py", "from cns.gate import Gate\n")
+    write(stack, "Link/tests/test_a.py", "import triad42\n")
+    write(stack, "Link/test_b.py", "import triad42\n")
+    write(stack, "Triad-42/triad42/__init__.py", "")
+    assert any("does not import triad42" in p for p in L.problems(bridge_links(), cns, stack))
+
+
+def test_a_bridge_must_exist_and_must_itself_be_two_way(cns):
+    pin_bridge(cns)
+    assert any("not in the ledger" in p for p in L.problems(bridge_links()[1:], cns))
+    half = [L.Link("Link", "link/a.py"), bridge_links()[1]]
+    assert any("Link, which is to_cns, not two_way" in p for p in L.problems(half, cns))
+
+
+def test_a_bridged_repo_needs_a_cns_side_proof_and_must_not_also_claim_its_own_to_cns(cns):
+    pin_bridge(cns)
+    assert any("via needs a from_cns proof" in p for p in L.problems(bridge_links(from_cns=None), cns))
+    assert any("remove the via" in p for p in L.problems(bridge_links(to_cns="x.py"), cns))
+
+
+def test_a_missing_bridge_checkout_is_reported_with_a_stack(cns, stack):
+    pin_bridge(cns)
+    write(stack, "Triad-42/triad42/__init__.py", "")
+    assert any("bridge Link has no checkout" in p for p in L.problems(bridge_links(), cns, stack))
+
+
+def test_require_two_way_accepts_a_bridged_repo(cns, tmp_path):
+    pin_bridge(cns)
+    path = ledger_file(tmp_path, {
+        "Link": {"to_cns": "x.py", "from_cns": "contracts/bridge.json"},
+        "Triad-42": {"from_cns": "contracts/bridge.json", "via": {"repo": "Link", "module": "triad42"}}})
+    assert L.main(["--ledger", str(path), "--cns", str(cns), "--require-two-way"]) == 0
+
+
+def test_a_module_whose_name_merely_contains_the_bridged_module_does_not_count(cns, stack):
+    pin_bridge(cns)
+    write(stack, "Link/link/a.py", "import triad42_extra\nfrom mytriad42 import x\nfrom cns.gate import Gate\n")
+    write(stack, "Triad-42/triad42/__init__.py", "")
+    assert any("does not import triad42" in p for p in L.problems(bridge_links(), cns, stack))
