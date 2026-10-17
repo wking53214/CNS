@@ -37,8 +37,7 @@ def test_a_run_whose_stages_agree_has_no_problems_and_a_root():
 
 @pytest.mark.parametrize("over, expect", [
     ({"decision_keys": ("septic_shock", "ghost_key")}, "key(s) alpha did not detect as present: ghost_key"),
-    ({"decision_locks": ("sepsis_lock", "invented_lock")}, "lock(s) zeta did not report open: invented_lock"),
-    ({"decision_locks": ("sepsis_lock",), "open_locks": ("abnormal_vitals_lock",)}, "did not report open: sepsis_lock"),
+    ({"decision_locks": ("sepsis_lock", "invented_lock")}, "lock(s) zeta never evaluated: invented_lock"),
     ({"decision_entity_id": "patient_2"}, "the Decision is about 'patient_2'"),
     ({"entity_id": ""}, "the run is about ''"),
     ({"ledger_decision_digest": d("another decision")}, "drifted apart"),
@@ -51,6 +50,12 @@ def test_a_run_whose_stages_agree_has_no_problems_and_a_root():
 def test_each_seam_that_does_not_hold_is_named(over, expect):
     found = problems(record(**over))
     assert any(expect in p for p in found), found
+
+
+def test_a_decision_may_rest_on_a_lock_that_is_closed():
+    """A discharge cites the locks its rule required to be closed. Citing a lock zeta evaluated is enough."""
+    r = record(open_locks=(), decision_keys=(), decision_locks=("sepsis_lock", "abnormal_vitals_lock"))
+    assert problems(r) == []
 
 
 def test_root_refuses_a_run_that_does_not_hang_together():
