@@ -34,7 +34,7 @@ def test_nothing_from_the_event_is_spliced_into_a_shell():
 
 def test_every_repository_the_chains_use_is_checked_out():
     declared = set(re.findall(r"repository: \$\{\{ github\.repository_owner \}\}/(\S+)", WORKFLOW))
-    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", *SPINE}
+    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", *SPINE}
 
 
 def test_the_full_chain_names_only_repositories_whose_gate_ends_cns_declares():
