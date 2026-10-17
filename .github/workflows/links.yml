@@ -9,6 +9,9 @@
 # while its ledger row claims no repo-side proof, and a failure the day it does: the checker, not this file,
 # decides.
 #
+# The second step is the other direction: cns_composition.consumers lists what each repository takes from CNS,
+# fails if CNS stopped providing any of it, and fails if a repository's source has moved away from the list.
+#
 # It runs on a schedule because a connection can be removed in another repository without touching this one, and
 # on any pull request here that changes the ledger or the checker.
 name: links
@@ -21,6 +24,7 @@ on:
     paths:
       - contracts/cns-links.json
       - cns_composition/link_ledger.py
+      - cns_composition/consumers.py
       - .github/workflows/links.yml
 
 permissions: {}
@@ -66,3 +70,8 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: python -m cns_composition.link_ledger --stack ../stack
+      - name: CNS still provides what the repositories take from it, and the list still matches their source
+        working-directory: hub
+        env:
+          PYTHONPATH: ${{ github.workspace }}/hub
+        run: python -m cns_composition.consumers --stack ../stack

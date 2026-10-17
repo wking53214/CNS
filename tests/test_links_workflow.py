@@ -35,3 +35,8 @@ def test_nothing_from_the_event_or_from_other_repositories_is_run_or_spliced_int
 
 def test_a_repository_it_cannot_read_is_skipped_with_a_warning_and_the_token_is_masked():
     assert "::warning::" in WORKFLOW and "::add-mask::" in WORKFLOW
+
+
+def test_it_also_runs_the_consumers_check_against_the_same_checkouts():
+    assert "python -m cns_composition.consumers --stack ../stack" in WORKFLOW
+    assert "cns_composition/consumers.py" in WORKFLOW.split("\npermissions:", 1)[0]
