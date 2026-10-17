@@ -106,13 +106,22 @@
       "to_cns": "src/governance_gateway/cns_connector.py",
       "from_cns": "cns_composition/repo_gates.py"
     },
-    "Ecology": {},
-    "GSA": {},
+    "Ecology": {
+      "to_cns": "ecology_cns_connector.py",
+      "from_cns": "cns_composition/consumers.py"
+    },
+    "GSA": {
+      "to_cns": "gsa_cns_connector.py",
+      "from_cns": "cns_composition/consumers.py"
+    },
     "STACK-Kernel": {
       "to_cns": "crates/stack-sentinel/tests/fixtures/cns-digest-vectors.json",
       "from_cns": "cns_composition/digest_vectors.py"
     },
-    "TIE": {},
+    "TIE": {
+      "to_cns": "src/tie/cns_connector.py",
+      "from_cns": "cns_composition/consumers.py"
+    },
     "DGK": {
       "to_cns": "dgk/cns_connector.py",
       "from_cns": "cns_composition/repo_gates.py"
@@ -122,7 +131,10 @@
       "from_cns": "cns_composition/repo_gates.py"
     },
     "ATS": {},
-    "CCCb": {},
+    "CCCb": {
+      "to_cns": "cccb/cns_connector.py",
+      "from_cns": "cns_composition/consumers.py"
+    },
     "Resume_OS": {},
     "experimental": {},
     "interconnected_alpha": {
