@@ -2,12 +2,12 @@
   "schema": "warden-stack/1",
   "contract": "1",
   "repos": {
-    "ghost_tools": "dd1b8039a9b32fe41cfa2823228ab3a03c394d0f",
-    "SWIZZLE": "9eb2a10ed1a05f3d15041c68f08b9c1c8c8c036f",
-    "ASSAY": "4da3919f19a04cb59b45c6d07d55229c923e5126",
-    "DRAFTER": "cd4235e063ffc281e3f156ec951f4f603dea85b5",
-    "JUDGE": "506fbe60a2e033c296e704e12ab6e935cbc6bd09",
-    "BURNISH": "a814159947f73040099ccec0df877998a02e285b",
-    "WARDEN": "2cf0eeccf839f88d624deb133fe1cb4b16a99009"
+    "ghost_tools": "288cefa7608cace8be0f91cabcc305930466d84b",
+    "SWIZZLE": "04b72b197b703e7e64be62039509c1c9e6c3bf20",
+    "ASSAY": "5aafbf3b45c68d0948574ff4364cde614890839e",
+    "DRAFTER": "189d3bd90f9cdb9625d35f718d26f6809cbcc652",
+    "JUDGE": "9d8f70ef0f7015fe9cc354f1532e3c860c7e896b",
+    "BURNISH": "34a8c8b6fb72a83f531b6d3f7806f996b6fa6316",
+    "WARDEN": "ec551d8e10f82b6e3e681593a97011ae517d360b"
   }
 }
