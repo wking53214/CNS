@@ -4,7 +4,7 @@ WHY THIS EXISTS
 
 Each repository that connects to CNS ships a gate and says, in its own connector, which end of a decision it
 belongs to: the Governance_Gateway is an admission door (ALPHA), DIT judges text on its way out (OMEGA),
-Conservation_Kernel and fortress-kernel have a gate at each end, PERCEIVE lets the caller choose. `run_chain`
+Conservation_Kernel, fortress-kernel and HERALD have a gate at each end, PERCEIVE lets the caller choose. `run_chain`
 runs any gates it is given, and it already refuses a gate whose own `position` disagrees with its slot. What
 it cannot know is what a repository PROMISED. A gate that quietly moves to the other end in a later release
 still agrees with itself, and a chain built from it is wrong without any check noticing.
@@ -46,6 +46,7 @@ ENDS: Mapping[str, FrozenSet[GatePosition]] = {
     "Conservation_Kernel": frozenset({_A, _O}),   # root admission at ALPHA, a transformation at OMEGA
     "fortress-kernel": frozenset({_A, _O}),       # numeric_safety and mandate at ALPHA, invariants and audit_chain at OMEGA
     "PERCEIVE": frozenset({_A, _O}),              # the caller picks the end
+    "HERALD": frozenset({_A, _O}),                # the source gate at ALPHA, the confidence gate at OMEGA
 }
 
 #: A step: the repository the gate came from, the gate, and the candidate it judges.
