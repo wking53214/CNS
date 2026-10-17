@@ -112,7 +112,10 @@ or updates one pull request (branch `auto/repin`) that changes nothing but the c
 The canary needs `pytest` and an installed `cns` in the interpreter (the workflow installs them; the canary says so if they are missing). The job that runs the other repositories' code has a read-only token; the job that can write runs none of it
 and re-checks the manifest before using it. One setting is needed once: Settings > Actions > General >
 "Allow GitHub Actions to create and approve pull requests". A pull request opened with the workflow's own
-token does not start `ci.yml`; the canary has already run the circuit on that exact manifest. Adding a
+token does not start `ci.yml`; the canary has already run the circuit on that exact manifest. A third job, `pins`, runs `python -m cns_composition.seat_pins --stack DIR`: it reads every repository's
+`pyproject.toml` as text and fails when two repositories pin the same package at different direct URLs or refs
+(JUDGE, DRAFTER and BURNISH all pin Warden, and pip refuses to install them together if one moves alone; a pin
+that merely lags the checkout it names is only a note). It is independent of the other two jobs. Adding a
 repository to the manifest also needs a checkout step in the workflow, and a test fails until both are done.
 
 ## Consuming it

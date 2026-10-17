@@ -7,6 +7,9 @@
 #   canary   checks out the main of all seven, moves the pins to their heads (cns_composition.repin), then
 #            runs the whole circuit (cns_composition.circuit_canary). It runs every time, so a red run also
 #            means "something merged to one of the seven broke the others".
+#   pins     separately, checks that the repositories pin each shared package identically (JUDGE, DRAFTER and
+#            BURNISH all pin Warden; pip refuses them together if one moves alone). Red on a disagreement,
+#            and independent of the other two jobs.
 #   propose  only when a pin moved AND the canary said ACCEPT: opens or updates one pull request,
 #            branch auto/repin, that changes nothing but the commits in the manifest.
 #
@@ -123,6 +126,62 @@ jobs:
           name: proposed
           path: proposed/
           if-no-files-found: error
+
+  pins:
+    name: pins
+    runs-on: ubuntu-latest
+    # Read-only, and independent of the canary: a disagreement here is a red run of its own and must not hold
+    # back a re-pin proposal. It reads the repositories' pyproject.toml files as text and runs none of their code.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: hub
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ghost_tools
+          path: stack/ghost_tools
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/SWIZZLE
+          path: stack/SWIZZLE
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ASSAY
+          path: stack/ASSAY
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/DRAFTER
+          path: stack/DRAFTER
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/JUDGE
+          path: stack/JUDGE
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/BURNISH
+          path: stack/BURNISH
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/WARDEN
+          path: stack/WARDEN
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Every repository pins a shared package the same way
+        working-directory: hub
+        env:
+          PYTHONPATH: ${{ github.workspace }}/hub
+        run: python -m cns_composition.seat_pins --stack ../stack
 
   propose:
     name: propose
