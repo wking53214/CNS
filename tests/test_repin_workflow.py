@@ -154,3 +154,31 @@ def test_the_recheck_accepts_an_unchanged_manifest(tmp_path):
 def test_the_recheck_refuses_anything_but_a_commit_move(tmp_path, edit, why):
     done = recheck(tmp_path, MANIFEST, edit(moved(MANIFEST)))
     assert done.returncode != 0 and why in done.stderr
+
+
+# ---------------------------------------------------------------------------
+# The pins job: repositories that pin one package must pin it identically, or pip cannot install them together.
+# ---------------------------------------------------------------------------
+
+def test_the_pins_job_can_only_read_and_is_independent_of_the_other_jobs():
+    block = job("pins")
+    assert re.search(r"(?m)^    permissions:\n      contents: read$", block)
+    assert "write" not in block and "needs:" not in block
+    assert "needs: pins" not in job("propose") and "pins" not in job("propose").split("steps:")[0]
+
+
+def test_the_pins_job_runs_the_check_on_the_stack():
+    assert "python -m cns_composition.seat_pins --stack ../stack" in job("pins")
+
+
+@pytest.mark.parametrize("name", sorted(MANIFEST["repos"]))
+def test_the_pins_job_sees_every_repository_the_manifest_pins(name):
+    block = job("pins")
+    assert f"repository: ${{{{ github.repository_owner }}}}/{name}\n" in block
+    assert f"path: stack/{name}\n" in block
+
+
+def test_the_pins_job_keeps_no_credential_and_runs_no_code_from_the_stack():
+    block = job("pins")
+    assert block.count("persist-credentials: false") == block.count("actions/checkout@")
+    assert "pip install" not in block and "circuit_canary" not in block
