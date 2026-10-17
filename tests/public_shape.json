@@ -1,5 +1,56 @@
 {
   "modules": {
+    "cns.assay": {
+      "__all__": [
+        "AssaySummary"
+      ],
+      "classes": {
+        "AssaySummary": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "schema",
+              "type": "str"
+            },
+            {
+              "default": null,
+              "name": "all_claims_hold",
+              "type": "bool"
+            },
+            {
+              "default": null,
+              "name": "status",
+              "type": "str"
+            },
+            {
+              "default": "factory:dict",
+              "name": "claims",
+              "type": "Mapping[str, Any]"
+            },
+            {
+              "default": "factory:dict",
+              "name": "entries",
+              "type": "Mapping[str, Any]"
+            },
+            {
+              "default": "()",
+              "name": "failures",
+              "type": "Tuple[Mapping[str, Any], ...]"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "problems": "def(self) -> 'Tuple[str, ...]'"
+          },
+          "slots": false
+        }
+      },
+      "functions": {}
+    },
     "cns.attack": {
       "__all__": [
         "AttackResult"
@@ -1480,5 +1531,5 @@
       "functions": {}
     }
   },
-  "version": "1.8.0"
+  "version": "1.9.0"
 }
