@@ -52,14 +52,16 @@ Protocol and the implementation stays in the repo that owns it.
 | `cns.stack` | `StackPin`, `StackManifest` | new in 1.5.0; which checkouts belong together, the join key the governance circuit (Warden) reads |
 
 The composition layer is a sibling package in this repository, not part of
-`cns` and not shipped in the `cns` wheel. It is behaviour written against
-`cns.gate`, so the purity test would reject it inside the package:
+`cns`. It ships in the same wheel as a second top-level package, because other
+repositories import it (Link does), and `cns` never imports it. It is behaviour
+written against `cns.gate`, so the purity test would reject it inside the package:
 
 | package | modules | role |
 |---|---|---|
-| `cns_composition` | `compose`, `compose_library`, `adapters`, `herald_passthrough` | orchestrators, adapters and outcome translation over `cns.gate`; tests in `cns_composition/tests` |
+| `cns_composition` | `compose`, `compose_library`, `adapters`, `herald_passthrough` | orchestrators, adapters and outcome translation over `cns.gate`; tests in `cns_composition/tests`. The SWIZZLE and ghost_tools adapters run nothing of their own: they take the real run as a function from the caller and refuse without one |
 | `cns_composition` | `ccc_admission` | rule 2 of the Triad governance design, no CCC record, no use: the door Triad output passes through. CNS asks CCC through a one-method lookup CCC supplies (`ccc.record_status.MachineRecords`) and refuses anything CCC does not hold with exactly that text |
 | `cns_composition` | `resubmission` | makes RETRY mean "come back changed": an ALPHA gate that passes first and changed submissions, allows an unchanged resubmission up to a cap (default 3 in a row) and refuses it after, and refuses a return to an earlier version as oscillation. Ported from innovation_os `retry_guard` |
+| `cns_composition` | `gate_chain` | runs the gates the repositories ship (ghost_tools, SWIZZLE, ASSAY, the Judge, and any object with a `name`, a `position` and a `check`) on real candidates and resolves them with `cns.gate.resolve`. Every ALPHA gate runs, OMEGA runs only if they all passed, a gate that raises or answers at the wrong end is a recorded breach, a misplaced gate is refused before anything runs. `LibraryComposer` is not used because it canonicalizes only the last step. CNS imports no repository |
 
 Every class is extracted by syntax tree from its canonical source and
 verified structurally identical at extraction; the module docstrings

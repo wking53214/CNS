@@ -296,12 +296,14 @@ class LibraryComposer:
 
         # ghost_tools status
         elif model == SystemModel.GHOST_TOOLS_STATUS:
-            if outcome == "confirmed":
+            # ghost_tools' own table (ghost_buster/cns_adapter.py): Status says how sure
+            # Ghost is that a finding is real.
+            if outcome in ("confirmed", "confirmed_by_review", "suppressed"):
                 return GateOutcome.PASS
-            elif outcome in ("reasoned", "rejected"):
+            elif outcome == "rejected":
                 return GateOutcome.TERMINAL_BREACH
             else:
-                return GateOutcome.RETRY
+                return GateOutcome.RETRY  # reasoned, and any status not listed
 
         # ghost_tools severity (meta)
         elif model == SystemModel.GHOST_TOOLS_SEVERITY:
