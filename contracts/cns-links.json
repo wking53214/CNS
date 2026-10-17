@@ -110,7 +110,10 @@
     "GSA": {},
     "STACK-Kernel": {},
     "TIE": {},
-    "DGK": {},
+    "DGK": {
+      "to_cns": "dgk/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
+    },
     "URE": {
       "to_cns": "ure_engine/cns_connector.py",
       "from_cns": "cns_composition/repo_gates.py"

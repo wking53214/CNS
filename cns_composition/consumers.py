@@ -69,6 +69,7 @@ REQUIRED: Mapping[str, Imports] = {
     },
     # Optional connectors that load cns.gate on demand: the module is all an import can show, and CNS's own
     # gate tests cover the names (subject_digest, GateResult, GateOutcome, GatePosition, GateChain) they use.
+    "DGK": {"cns.gate": ()},
     "URE": {"cns.gate": ()},
     "interconnected_alpha": {"cns.gate": ()},
     "interconnected_zeta": {"cns.gate": ()},
