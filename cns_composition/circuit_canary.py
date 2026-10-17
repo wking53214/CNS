@@ -33,10 +33,15 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 __all__ = ["CanaryResult", "run_canary", "main"]
 
+#: What the interpreter must be able to import on its own. The throwaway repository's tests need pytest, and the
+#: instruments Warden starts (SWIZZLE's attacks among them) do not inherit PYTHONPATH, so `cns` has to be installed
+#: as a package, not merely reachable. Found by the first run on GitHub: without pytest the circuit ends
+#: SUITE_RED, and without an installed cns the Judge says INSUFFICIENT, neither of which names the cause.
+_NEEDED = ("pytest", "cns")
 #: The checkouts whose packages Warden imports as seats. Matched without regard to case, as Warden matches a stack.
 _IMPORTED = ("WARDEN", "JUDGE", "DRAFTER", "BURNISH")
 _TIMEOUT_SECONDS = 1800
@@ -84,6 +89,18 @@ def _git(folder: Path, *args: str) -> None:
                    capture_output=True, text=True, check=True, timeout=60)
 
 
+def _missing_modules(python: str, modules: Sequence[str] = _NEEDED) -> List[str]:
+    """Which of `modules` this interpreter cannot import with no PYTHONPATH, as an instrument would see it."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    missing: List[str] = []
+    for name in modules:
+        done = subprocess.run([python, "-c", f"import {name}"],  # nosec B603 - fixed list, name from a constant
+                              capture_output=True, text=True, env=env, timeout=60, check=False)
+        if done.returncode != 0:
+            missing.append(name)
+    return missing
+
+
 def _make_target(root: Path) -> Path:
     target = root / "target"
     for rel, text in _TARGET.items():
@@ -109,6 +126,14 @@ def run_canary(stack: Path, cns: Path, *, python: Optional[str] = None,
             return _fail("CANARY_ERROR", f"the stack folder has no {name} checkout")
         paths.append(str(found))
     paths.append(str(cns))
+    try:
+        missing = _missing_modules(python or sys.executable)
+    except (OSError, subprocess.SubprocessError) as err:
+        return _fail("CANARY_ERROR", f"the interpreter could not be started: {type(err).__name__}")
+    if missing:
+        return _fail("CANARY_ERROR",
+                     f"this interpreter cannot import {', '.join(missing)} without PYTHONPATH, and the circuit's "
+                     "instruments do not inherit PYTHONPATH; install them (pip install pytest . from a CNS checkout)")
     env: Dict[str, str] = {**os.environ, "PYTHONPATH": os.pathsep.join(paths)}
     with tempfile.TemporaryDirectory(prefix="circuit-canary-") as tmp:
         try:

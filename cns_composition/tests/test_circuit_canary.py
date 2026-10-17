@@ -12,6 +12,8 @@ import pytest
 
 from cns_composition import circuit_canary as cc
 
+REAL_MISSING_MODULES = cc._missing_modules      # the autouse fixture below replaces it for the other cases
+
 FAKE_CLI = '''\
 import json, os, sys
 print(os.environ["FAKE_RUN"] if os.environ.get("FAKE_RUN") else "")
@@ -20,6 +22,12 @@ raise SystemExit(int(os.environ.get("FAKE_RC", "0")))
 '''
 
 RECORD = {"schema": "cns.run/1", "decision": "ACCEPT", "reason": "", "converged": True, "put_back": False}
+
+
+@pytest.fixture(autouse=True)
+def interpreter_is_ready(monkeypatch):
+    """The cases below are about what Warden answers; the interpreter check has its own tests."""
+    monkeypatch.setattr(cc, "_missing_modules", lambda python, modules=cc._NEEDED: [])
 
 
 @pytest.fixture
@@ -142,3 +150,46 @@ def test_the_cli_exit_codes(stack, tmp_path, capsys, monkeypatch):
     monkeypatch.setenv("FAKE_RC", "1")
     assert cc.main(["--stack", str(stack), "--cns", str(tmp_path / "cns")]) == 1
     assert "REJECT: red" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# The interpreter check. Found by the first run on GitHub, where a clean Python had neither pytest (the
+# throwaway repository's suite then ends SUITE_RED) nor an installed cns (the Judge then says INSUFFICIENT
+# because SWIZZLE's attacks cannot start). Neither message names the cause; this does.
+# ---------------------------------------------------------------------------
+
+def test_modules_the_interpreter_can_import_are_not_reported_missing():
+    import sys
+    assert REAL_MISSING_MODULES(sys.executable, ("json", "os")) == []
+
+
+def test_modules_it_cannot_import_are_named():
+    import sys
+    assert REAL_MISSING_MODULES(sys.executable, ("json", "no_such_module_xyz")) == ["no_such_module_xyz"]
+
+
+def test_pythonpath_is_not_counted_as_being_able_to_import(tmp_path, monkeypatch):
+    """An instrument does not inherit PYTHONPATH, so a module reachable only through it is missing."""
+    import sys
+    (tmp_path / "only_on_the_path.py").write_text("")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    assert REAL_MISSING_MODULES(sys.executable, ("only_on_the_path",)) == ["only_on_the_path"]
+
+
+def test_an_interpreter_that_cannot_import_what_the_circuit_needs_fails_with_the_cause(stack, tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "_missing_modules", lambda python, modules=cc._NEEDED: ["pytest", "cns"])
+    result = run(stack, tmp_path)
+    assert not result.ok and result.decision == "CANARY_ERROR"
+    assert "pytest, cns" in result.reason and "PYTHONPATH" in result.reason
+
+
+def test_the_check_runs_before_warden_is_started(stack, tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "_missing_modules", lambda python, modules=cc._NEEDED: ["cns"])
+    (stack / "WARDEN" / "warden" / "cli.py").write_text("raise SystemExit('warden must not start')\n")
+    assert "warden must not start" not in run(stack, tmp_path).reason
+
+
+def test_an_interpreter_that_does_not_exist_is_a_failure_not_a_crash(stack, tmp_path, monkeypatch):
+    monkeypatch.undo()
+    result = cc.run_canary(stack, tmp_path / "cns", python=str(tmp_path / "no-such-python"))
+    assert not result.ok and result.decision == "CANARY_ERROR" and "could not be started" in result.reason
