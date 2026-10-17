@@ -5,6 +5,8 @@
 # The seven pins below equal contracts/warden-stack.json (tests/test_install_stack.py holds them to it).
 # watcher-mcu is not in the manifest: Warden does not verify it, it reads Warden's run record afterwards.
 # Its pin here is the commit that was tested with these seven.
+# Running Warden on a target also needs pytest in the same environment (it runs the target's own suite):
+#   .venv/bin/pip install 'pytest>=8'
 # Every entry that needs CNS pins the same CNS commit (v1.8.0), because pip treats a tag URL and a commit
 # URL as two different sources and refuses to resolve them together.
 cns @ git+https://github.com/wking53214/CNS.git@5252ceebe98185f7be81212d988055ccf9884568  # v1.8.0
