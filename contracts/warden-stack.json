@@ -2,7 +2,7 @@
   "schema": "warden-stack/1",
   "contract": "1",
   "repos": {
-    "ghost_tools": "2409ea2b70442a855abe49950dc870dc6117acfc",
+    "ghost_tools": "0d6fb782544a9b8b9f3f275240c420277ce5b786",
     "SWIZZLE": "4a7679e6bba282bdebd79bb3f594996e7d0b877f",
     "ASSAY": "75e3e0248394bb490d73315ae560600774ffdd43",
     "DRAFTER": "c99a08c17816e0e2f791fbc5c178cd818df4c0b7",
