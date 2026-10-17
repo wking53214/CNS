@@ -100,6 +100,18 @@ def test_a_registered_repository_with_no_checkout_is_reported(tmp_path):
     assert "has no checkout" in C.drift(tmp_path, {"Link": {"cns.gate": ()}})[0]
 
 
+def test_a_private_repository_may_have_no_checkout_and_any_other_may_not(tmp_path):
+    registry = {"Hidden": {"cns.gate": ()}, "Link": {"cns.gate": ()}}
+    out = C.drift(tmp_path, registry, private=("hidden",))
+    assert len(out) == 1 and out[0].startswith("Link")
+
+
+def test_a_private_repository_with_a_checkout_is_still_compared(tmp_path):
+    write(tmp_path, "Hidden/h/a.py", "from cns.gate import Gate\n")
+    out = C.drift(tmp_path, {"Hidden": {"cns.gate": ()}}, private=("Hidden",))
+    assert len(out) == 1 and "now takes Gate" in out[0]
+
+
 # ------------------------------------------------------------ the command
 
 def test_the_command_is_healthy_against_the_registry_alone(capsys):

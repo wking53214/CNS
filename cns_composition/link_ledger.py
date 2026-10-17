@@ -32,6 +32,11 @@ CNS) says so with `via`: the bridge repository and the module of this repository
 non-test source really imports that module. `bridged` is counted apart from `two_way` so nobody mistakes the
 one for the other, and `--require-two-way` accepts both.
 
+A repository whose source cannot be cloned with the checker's default token (a private repository) says
+`"private": true`. With `--stack` and a checkout, its to_cns proof is checked like any other. Without a
+checkout the proof is not checked and the run says so by name, because a claim nobody can check is not the same
+as a claim that was checked. A private repository must still name a to_cns proof.
+
 A repository is `two_way` with both, `to_cns` or `from_cns` with one, `none` with neither. A repository that
 cannot be connected (empty, retired, documents only) says why under `exempt` and is left out of the count.
 
@@ -54,7 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-__all__ = ["LEDGER_SCHEMA", "Link", "LedgerError", "read_ledger", "status", "problems", "counts", "main"]
+__all__ = ["LEDGER_SCHEMA", "Link", "LedgerError", "read_ledger", "status", "problems", "unverified", "counts", "main"]
 
 LEDGER_SCHEMA = "cns-links/1"
 _MAX_BYTES = 2_000_000
@@ -77,6 +82,7 @@ class Link:
     hub: bool = False
     aka: Tuple[str, ...] = ()
     via: Optional[Tuple[str, str]] = None   # (bridge repository, module of this repository the bridge imports)
+    private: bool = False                   # its source cannot be cloned with the default token
 
 
 def status(link: Link) -> str:
@@ -103,7 +109,7 @@ def read_ledger(path: Path) -> List[Link]:
         raise LedgerError(f"the ledger {str(path)!r} cannot be read as JSON: {type(err).__name__}") from err
     if not isinstance(data, dict) or data.get("schema") != LEDGER_SCHEMA or not isinstance(data.get("repos"), dict):
         raise LedgerError(f'the ledger must be an object with "schema": "{LEDGER_SCHEMA}" and a "repos" object')
-    known = {"to_cns", "from_cns", "exempt", "hub", "aka", "via"}
+    known = {"to_cns", "from_cns", "exempt", "hub", "aka", "via", "private"}
     links: List[Link] = []
     for name, entry in data["repos"].items():
         if not isinstance(entry, dict):
@@ -116,6 +122,10 @@ def read_ledger(path: Path) -> List[Link]:
                 raise LedgerError(f"{name!r}: {key} must be a non-empty string or absent")
         if entry.get("hub") not in (None, True):
             raise LedgerError(f"{name!r}: hub may only be true")
+        if entry.get("private") not in (None, True):
+            raise LedgerError(f"{name!r}: private may only be true")
+        if entry.get("private") and not entry.get("to_cns"):
+            raise LedgerError(f"{name!r}: private needs a to_cns proof; it only excuses a missing checkout")
         aka = entry.get("aka", [])
         if not isinstance(aka, list) or not all(isinstance(a, str) and len(a.strip()) >= 3 for a in aka):
             raise LedgerError(f"{name!r}: aka must be a list of names of at least three characters")
@@ -126,7 +136,7 @@ def read_ledger(path: Path) -> List[Link]:
                 raise LedgerError(f'{name!r}: via must be {{"repo": ..., "module": ...}}')
             via = (via["repo"], via["module"])
         links.append(Link(name, entry.get("to_cns"), entry.get("from_cns"), entry.get("exempt"),
-                          bool(entry.get("hub")), tuple(aka), via))
+                          bool(entry.get("hub")), tuple(aka), via, bool(entry.get("private"))))
     return links
 
 
@@ -313,6 +323,13 @@ def repo_side_problem(stack: Path, repo: str, evidence: str, cns_root: Optional[
     return f"to_cns proof {evidence!r} must be a Python file, a dependency file or the vendored digest vectors"
 
 
+def unverified(links: Sequence[Link], stack: Optional[Path]) -> List[Link]:
+    """The private repositories whose to_cns proof could not be checked because the stack has no checkout."""
+    if stack is None or not Path(stack).is_dir():
+        return []
+    return [k for k in links if k.private and k.to_cns and _folder(Path(stack), k.repo) is None]
+
+
 def problems(links: Sequence[Link], cns_root: Path, stack: Optional[Path] = None) -> List[str]:
     """Every claim in the ledger the files do not support, and every mismatch with the stack folder."""
     out: List[str] = []
@@ -337,7 +354,7 @@ def problems(links: Sequence[Link], cns_root: Path, stack: Optional[Path] = None
             if not link.from_cns:
                 out.append(f"{link.repo}: via needs a from_cns proof; the bridge carries the repository to CNS, "
                            "CNS must still carry something back")
-        if link.to_cns and stack is not None:
+        if link.to_cns and stack is not None and link not in unverified(links, stack):
             why = repo_side_problem(Path(stack), link.repo, link.to_cns, Path(cns_root))
             if why:
                 out.append(f"{link.repo}: {why}")
@@ -379,6 +396,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             if status(link) not in ("two_way", "bridged", "exempt", "hub"):
                 found.append(f"{link.repo} is {status(link)}, not two_way")
     print("link_ledger: " + ", ".join(f"{n} {k}" for k, n in sorted(tally.items())))
+    skipped = unverified(links, args.stack)
+    if skipped:
+        print("link_ledger: not verified here (private, no checkout): " + ", ".join(k.repo for k in skipped))
     if found:
         for line in found:
             print(f"link_ledger: {line}", file=sys.stderr)
