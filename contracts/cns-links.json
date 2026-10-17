@@ -43,16 +43,19 @@
       ]
     },
     "WATCHER_MCU": {
-      "to_cns": "watcher/evidence.py"
+      "to_cns": "watcher/evidence.py",
+      "from_cns": "cns_composition/watcher_oath.py"
     },
     "Link": {
       "to_cns": "link/admission.py"
     },
     "HERALD": {
-      "to_cns": "herald/cns_connector.py"
+      "to_cns": "herald/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
     },
     "composition-engine": {
-      "to_cns": "src/composition_engine/cns_integration.py"
+      "to_cns": "src/composition_engine/cns_integration.py",
+      "from_cns": "cns_composition/fallback_parity.py"
     },
     "sentinel_os": {
       "to_cns": "sentinel_os/twin_custody.py"
