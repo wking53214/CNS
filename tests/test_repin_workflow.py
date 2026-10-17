@@ -65,6 +65,15 @@ def test_the_canary_runs_the_circuit_every_time_not_only_when_a_pin_moved():
     assert "circuit_canary" in step and "if:" not in step
 
 
+def test_the_canary_installs_pytest_and_cns_before_it_runs_the_circuit():
+    """The first run on GitHub ended SUITE_RED on a clean Python: the throwaway repository's tests need pytest, and
+    the instruments do not inherit PYTHONPATH, so cns has to be installed, not just reachable."""
+    block = job("canary")
+    install = block.index("python -m pip install pytest ./hub")
+    assert install < block.index("cns_composition.repin")
+    assert install < block.index("cns_composition.circuit_canary")
+
+
 @pytest.mark.parametrize("name", sorted(MANIFEST["repos"]))
 def test_every_repository_the_manifest_pins_is_checked_out_into_the_stack(name):
     block = job("canary")
