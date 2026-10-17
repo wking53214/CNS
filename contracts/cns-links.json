@@ -47,7 +47,8 @@
       "from_cns": "cns_composition/watcher_oath.py"
     },
     "Link": {
-      "to_cns": "link/admission.py"
+      "to_cns": "link/admission.py",
+      "from_cns": "cns_composition/consumers.py"
     },
     "HERALD": {
       "to_cns": "herald/cns_connector.py",
@@ -58,7 +59,8 @@
       "from_cns": "cns_composition/fallback_parity.py"
     },
     "sentinel_os": {
-      "to_cns": "sentinel_os/twin_custody.py"
+      "to_cns": "sentinel_os/twin_custody.py",
+      "from_cns": "cns_composition/consumers.py"
     },
     "Conservation_Kernel": {
       "to_cns": "src/conservation_kernel/cns_connector.py",
@@ -77,20 +79,24 @@
       "from_cns": "cns_composition/repo_gates.py"
     },
     "ZTS": {
-      "to_cns": "src/zts/cns/adapter.py"
+      "to_cns": "src/zts/cns/adapter.py",
+      "from_cns": "cns_composition/consumers.py"
     },
     "OBSERVE": {
-      "to_cns": "cns_connector.py"
+      "to_cns": "cns_connector.py",
+      "from_cns": "cns_composition/consumers.py"
     },
     "observe-perceive": {
-      "to_cns": "cns_connector.py"
+      "to_cns": "cns_connector.py",
+      "from_cns": "cns_composition/consumers.py"
     },
     "PERCEIVE": {
       "to_cns": "src/perceive/cns_connector.py",
       "from_cns": "cns_composition/repo_gates.py"
     },
     "GSA-815": {
-      "to_cns": "observe_perceive_core.py"
+      "to_cns": "observe_perceive_core.py",
+      "from_cns": "cns_composition/consumers.py"
     },
     "Governance_Gateway": {
       "to_cns": "src/governance_gateway/cns_connector.py",
