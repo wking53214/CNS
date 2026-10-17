@@ -59,8 +59,7 @@
       "from_cns": "cns_composition/repo_gates.py"
     },
     "composition-engine": {
-      "to_cns": "src/composition_engine/cns_integration.py",
-      "from_cns": "cns_composition/fallback_parity.py"
+      "exempt": "retired: folded into CNS (cns_composition.super_gate); the source stays in the repository's git history"
     },
     "sentinel_os": {
       "to_cns": "sentinel_os/twin_custody.py",
