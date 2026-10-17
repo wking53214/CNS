@@ -4,6 +4,8 @@
 #                        cns_composition.repo_gates. Six scenarios, each with the outcome it must produce.
 # chains/spine_run.py    interconnected alpha, zeta, beta and delta run for real, then checked at their seams by
 #                        cns_composition.spine_trace. Seven scenarios.
+# chains/ecology_answer.py  an Ecology answer record judged by DIT's gates through cns_composition.repo_gates, the
+#                        verdicts bound to the answer text and tied to Ecology's record by its answer hash. Five scenarios.
 #
 # Each script exits 1 when a scenario differs from what it states, so this goes red the day a repository changes in a
 # way that breaks a chain: the failure points at the scenario, and the repositories' own suites cannot see it.
@@ -77,6 +79,11 @@ jobs:
           repository: ${{ github.repository_owner }}/interconnected_delta
           path: stack/interconnected_delta
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/Ecology
+          path: stack/Ecology
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -90,3 +97,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/interconnected_alpha:${{ github.workspace }}/stack/interconnected_zeta:${{ github.workspace }}/stack/interconnected_beta:${{ github.workspace }}/stack/interconnected_delta
         run: python hub/chains/spine_run.py
+      - name: An Ecology answer, judged by DIT
+        env:
+          PYTHONPATH: ${{ github.workspace }}/stack/Ecology:${{ github.workspace }}/stack/DIT/src
+        run: python hub/chains/ecology_answer.py
