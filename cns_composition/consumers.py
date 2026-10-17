@@ -73,6 +73,7 @@ REQUIRED: Mapping[str, Imports] = {
     "CCCb": {"cns.gate": ()},
     "Ecology": {"cns.gate": ()},
     "GSA": {"cns.gate": ()},
+    "experimental": {"cns.gate": ()},
     "DGK": {"cns.gate": ()},
     "URE": {"cns.gate": ()},
     "interconnected_alpha": {"cns.gate": ()},

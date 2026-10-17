@@ -136,7 +136,10 @@
       "from_cns": "cns_composition/consumers.py"
     },
     "Resume_OS": {},
-    "experimental": {},
+    "experimental": {
+      "to_cns": "src/governance/cns_connector.py",
+      "from_cns": "cns_composition/consumers.py"
+    },
     "interconnected_alpha": {
       "to_cns": "alpha/cns_connector.py",
       "from_cns": "cns_composition/spine_trace.py"
