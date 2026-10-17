@@ -85,3 +85,10 @@ def test_the_ecology_script_states_every_fact_each_scenario_must_produce_and_exi
     for fact in ("outcome", "omega_ran", "blocked_by", "verdicts_unbound", "verdicts_bind_presented_text",
                  "record_pins_judged_text", "ecology_digest_moved", "ecology_verified"):
         assert f'"{fact}"' in text
+
+
+def test_the_full_chain_decides_through_the_super_gate_and_includes_a_left_out_gate():
+    """The one control point is the thing under test: a decision made without it would not notice a gate left out."""
+    text = FULL.read_text(encoding="utf-8")
+    assert "SuperGate" in text and "run_repo_chain" not in text
+    assert "a gate is left out of the request" in text and "leave_out=" in text
