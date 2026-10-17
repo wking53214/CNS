@@ -108,18 +108,39 @@
     },
     "Ecology": {},
     "GSA": {},
-    "STACK-Kernel": {},
+    "STACK-Kernel": {
+      "to_cns": "crates/stack-sentinel/tests/fixtures/cns-digest-vectors.json",
+      "from_cns": "cns_composition/digest_vectors.py"
+    },
     "TIE": {},
-    "DGK": {},
-    "URE": {},
+    "DGK": {
+      "to_cns": "dgk/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
+    },
+    "URE": {
+      "to_cns": "ure_engine/cns_connector.py",
+      "from_cns": "cns_composition/repo_gates.py"
+    },
     "ATS": {},
     "CCCb": {},
     "Resume_OS": {},
     "experimental": {},
-    "interconnected_alpha": {},
-    "interconnected_beta": {},
-    "interconnected_delta": {},
-    "interconnected_zeta": {},
+    "interconnected_alpha": {
+      "to_cns": "alpha/cns_connector.py",
+      "from_cns": "cns_composition/spine_trace.py"
+    },
+    "interconnected_beta": {
+      "to_cns": "beta/cns_connector.py",
+      "from_cns": "cns_composition/spine_trace.py"
+    },
+    "interconnected_delta": {
+      "to_cns": "delta/cns_connector.py",
+      "from_cns": "cns_composition/spine_trace.py"
+    },
+    "interconnected_zeta": {
+      "to_cns": "zeta/cns_connector.py",
+      "from_cns": "cns_composition/spine_trace.py"
+    },
     "WATCHER": {
       "exempt": "empty repository: no files"
     },

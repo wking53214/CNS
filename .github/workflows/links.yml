@@ -25,6 +25,8 @@ on:
       - contracts/cns-links.json
       - cns_composition/link_ledger.py
       - cns_composition/consumers.py
+      - cns_composition/digest_vectors.py
+      - contracts/digest-vectors.json
       - .github/workflows/links.yml
 
 permissions: {}
@@ -75,3 +77,8 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: python -m cns_composition.consumers --stack ../stack
+      - name: Repositories that vendor CNS's digest vectors have not fallen behind
+        working-directory: hub
+        env:
+          PYTHONPATH: ${{ github.workspace }}/hub
+        run: python -m cns_composition.digest_vectors --stack ../stack

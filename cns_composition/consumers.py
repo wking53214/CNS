@@ -67,6 +67,14 @@ REQUIRED: Mapping[str, Imports] = {
     "observe-perceive": {
         "cns.gate": ("Gate", "GateChain", "GateOutcome", "GatePosition", "resolve", "subject_digest", "unbound"),
     },
+    # Optional connectors that load cns.gate on demand: the module is all an import can show, and CNS's own
+    # gate tests cover the names (subject_digest, GateResult, GateOutcome, GatePosition, GateChain) they use.
+    "DGK": {"cns.gate": ()},
+    "URE": {"cns.gate": ()},
+    "interconnected_alpha": {"cns.gate": ()},
+    "interconnected_zeta": {"cns.gate": ()},
+    "interconnected_beta": {"cns.gate": ()},
+    "interconnected_delta": {"cns.gate": ()},
 }
 
 _OURS = ("cns", "cns_composition")

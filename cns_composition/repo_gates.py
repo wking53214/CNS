@@ -47,6 +47,8 @@ ENDS: Mapping[str, FrozenSet[GatePosition]] = {
     "fortress-kernel": frozenset({_A, _O}),       # numeric_safety and mandate at ALPHA, invariants and audit_chain at OMEGA
     "PERCEIVE": frozenset({_A, _O}),              # the caller picks the end
     "HERALD": frozenset({_A, _O}),                # the source gate at ALPHA, the confidence gate at OMEGA
+    "DGK": frozenset({_A}),                       # perimeter rules and health limits judge a request before anything commits
+    "URE": frozenset({_A, _O}),                   # omega by default (the state the work left), alpha on request
 }
 
 #: A step: the repository the gate came from, the gate, and the candidate it judges.

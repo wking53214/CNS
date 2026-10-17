@@ -12,8 +12,10 @@ WHAT COUNTS AS EACH DIRECTION
 
   to_cns    The repository's own code or dependency list uses CNS: a Python file that imports `cns` or
             `cns_composition` (a lazy `importlib.import_module("cns...")` counts), or a dependency line in a
-            pyproject.toml / requirements file that names `cns` or `cns_composition`. The proof is a path inside
-            that repository, read with `--stack`.
+            pyproject.toml / requirements file that names `cns` or `cns_composition`. A repository that cannot
+            import Python proves it by vendoring CNS's `contracts/digest-vectors.json` exactly (STACK-Kernel's
+            Rust reproduction checks itself against that file). The proof is a path inside that repository,
+            read with `--stack`.
   from_cns  CNS carries behaviour or a pin for the repository. CNS imports no repository (it is stdlib-only by
             rule), so this cannot be an import. The proof is a path inside CNS that is either
               - a JSON file under `contracts/` whose `repos` object names the repository (a pin the circuit
@@ -278,7 +280,7 @@ def _folder(stack: Path, name: str) -> Optional[Path]:
     return None
 
 
-def repo_side_problem(stack: Path, repo: str, evidence: str) -> Optional[str]:
+def repo_side_problem(stack: Path, repo: str, evidence: str, cns_root: Optional[Path] = None) -> Optional[str]:
     """Why `evidence` does not show `repo` using CNS, or None when it does."""
     folder = _folder(stack, repo)
     if folder is None:
@@ -291,6 +293,15 @@ def repo_side_problem(stack: Path, repo: str, evidence: str) -> Optional[str]:
         if tree is not None and _imports_cns(tree):
             return None
         return f"to_cns proof {evidence!r} does not import cns or cns_composition"
+    if path.suffix == ".json":
+        if cns_root is None:
+            return f"to_cns proof {evidence!r} is a vendored copy of CNS's digest vectors, which needs the CNS checkout to compare"
+        want = _inside(Path(cns_root), "contracts/digest-vectors.json")
+        try:
+            same = want is not None and json.loads(path.read_text(encoding="utf-8")) == json.loads(want.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return f"to_cns proof {evidence!r} is not readable JSON"
+        return None if same else f"to_cns proof {evidence!r} is not an exact copy of CNS's contracts/digest-vectors.json"
     if path.name in _DEPENDENCY_FILES or path.name.startswith("requirements"):
         try:
             text = path.read_text(encoding="utf-8")
@@ -299,7 +310,7 @@ def repo_side_problem(stack: Path, repo: str, evidence: str) -> Optional[str]:
         if _DEPENDENCY.search(text):
             return None
         return f"to_cns proof {evidence!r} does not declare cns as a dependency"
-    return f"to_cns proof {evidence!r} must be a Python file or a dependency file"
+    return f"to_cns proof {evidence!r} must be a Python file, a dependency file or the vendored digest vectors"
 
 
 def problems(links: Sequence[Link], cns_root: Path, stack: Optional[Path] = None) -> List[str]:
@@ -327,7 +338,7 @@ def problems(links: Sequence[Link], cns_root: Path, stack: Optional[Path] = None
                 out.append(f"{link.repo}: via needs a from_cns proof; the bridge carries the repository to CNS, "
                            "CNS must still carry something back")
         if link.to_cns and stack is not None:
-            why = repo_side_problem(Path(stack), link.repo, link.to_cns)
+            why = repo_side_problem(Path(stack), link.repo, link.to_cns, Path(cns_root))
             if why:
                 out.append(f"{link.repo}: {why}")
     if stack is not None:
