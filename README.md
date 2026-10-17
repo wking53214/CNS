@@ -33,6 +33,12 @@ A class earns a place here by being a shape at least two repos already
 share. A behaviour never does; the CNS carries its interface as a
 Protocol and the implementation stays in the repo that owns it.
 
+One exception is recorded, not hidden. `cns.assay` (`AssaySummary`, 1.9.0) has one
+writer and one reader, both ASSAY, because ASSAY's answer-key summary is the shape it
+already publishes and reads back through this row. It stays because removing it would
+break ASSAY's main. It does not meet the two-repo rule, so the next shape added to CNS
+must. Revisit this entry when a second repository reads the summary.
+
 ## What is here
 
 | module | shapes | extracted from |
