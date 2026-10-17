@@ -24,6 +24,12 @@ WHAT COUNTS AS EACH DIRECTION
 
 A repository that CNS knows by another name in code (Triad-42 is `triad`) lists it under `aka`.
 
+A repository built to import nothing (Triad-42 is the example: a bridge, Link, is the one place that joins it to
+CNS) says so with `via`: the bridge repository and the module of this repository the bridge imports. It is
+`bridged` when it has a from_cns proof and a bridge that is itself `two_way` and, with `--stack`, whose
+non-test source really imports that module. `bridged` is counted apart from `two_way` so nobody mistakes the
+one for the other, and `--require-two-way` accepts both.
+
 A repository is `two_way` with both, `to_cns` or `from_cns` with one, `none` with neither. A repository that
 cannot be connected (empty, retired, documents only) says why under `exempt` and is left out of the count.
 
@@ -68,6 +74,7 @@ class Link:
     exempt: Optional[str] = None
     hub: bool = False
     aka: Tuple[str, ...] = ()
+    via: Optional[Tuple[str, str]] = None   # (bridge repository, module of this repository the bridge imports)
 
 
 def status(link: Link) -> str:
@@ -77,6 +84,8 @@ def status(link: Link) -> str:
         return "exempt"
     if link.to_cns and link.from_cns:
         return "two_way"
+    if link.via and link.from_cns and not link.to_cns:
+        return "bridged"
     if link.to_cns:
         return "to_cns"
     if link.from_cns:
@@ -92,7 +101,7 @@ def read_ledger(path: Path) -> List[Link]:
         raise LedgerError(f"the ledger {str(path)!r} cannot be read as JSON: {type(err).__name__}") from err
     if not isinstance(data, dict) or data.get("schema") != LEDGER_SCHEMA or not isinstance(data.get("repos"), dict):
         raise LedgerError(f'the ledger must be an object with "schema": "{LEDGER_SCHEMA}" and a "repos" object')
-    known = {"to_cns", "from_cns", "exempt", "hub", "aka"}
+    known = {"to_cns", "from_cns", "exempt", "hub", "aka", "via"}
     links: List[Link] = []
     for name, entry in data["repos"].items():
         if not isinstance(entry, dict):
@@ -108,8 +117,14 @@ def read_ledger(path: Path) -> List[Link]:
         aka = entry.get("aka", [])
         if not isinstance(aka, list) or not all(isinstance(a, str) and len(a.strip()) >= 3 for a in aka):
             raise LedgerError(f"{name!r}: aka must be a list of names of at least three characters")
+        via = entry.get("via")
+        if via is not None:
+            if not (isinstance(via, dict) and set(via) == {"repo", "module"}
+                    and all(isinstance(v, str) and v.strip() for v in via.values())):
+                raise LedgerError(f'{name!r}: via must be {{"repo": ..., "module": ...}}')
+            via = (via["repo"], via["module"])
         links.append(Link(name, entry.get("to_cns"), entry.get("from_cns"), entry.get("exempt"),
-                          bool(entry.get("hub")), tuple(aka)))
+                          bool(entry.get("hub")), tuple(aka), via))
     return links
 
 
@@ -192,6 +207,47 @@ def _imports_cns(tree: ast.AST) -> bool:
     return False
 
 
+def imports_module(folder: Path, root: str) -> bool:
+    """Whether non-test Python under `folder` imports the top-level module `root`."""
+    for path in sorted(Path(folder).rglob("*.py")):
+        rel = path.relative_to(folder).parts
+        if (any(p.startswith(".") or p in ("tests", "test", "node_modules", "site-packages") for p in rel)
+                or rel[-1].startswith("test_") or rel[-1].endswith("_test.py") or rel[-1] == "conftest.py"
+                or path.is_symlink() or not path.is_file() or path.stat().st_size > _MAX_BYTES):
+            continue
+        tree = _tree(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import) and any(a.name.split(".")[0] == root for a in node.names):
+                return True
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module \
+                    and node.module.split(".")[0] == root:
+                return True
+    return False
+
+
+def bridge_problem(links: Sequence[Link], link: Link, stack: Optional[Path]) -> Optional[str]:
+    """Why `link`'s bridge does not carry it to CNS, or None when it does."""
+    if link.via is None:
+        return None
+    bridge_name, module = link.via
+    bridge = next((x for x in links if x.repo.casefold() == bridge_name.casefold()), None)
+    if bridge is None:
+        return f"via names {bridge_name}, which is not in the ledger"
+    if status(bridge) != "two_way":
+        return f"via names {bridge_name}, which is {status(bridge)}, not two_way; a bridge must itself be connected both ways"
+    if link.to_cns:
+        return "has its own to_cns proof and a via; it is two_way by itself, so remove the via"
+    if stack is not None and Path(stack).is_dir():
+        folder = _folder(Path(stack), bridge_name)
+        if folder is None:
+            return f"bridge {bridge_name} has no checkout in the stack folder, so the bridge cannot be checked"
+        if not imports_module(folder, module):
+            return f"bridge {bridge_name}'s source does not import {module}"
+    return None
+
+
 def cns_side_problem(cns_root: Path, repo: str, evidence: str, aka: Sequence[str] = ()) -> Optional[str]:
     """Why `evidence` does not show CNS carrying `repo`, or None when it does."""
     top = Path(evidence).parts[0] if Path(evidence).parts else ""
@@ -263,6 +319,13 @@ def problems(links: Sequence[Link], cns_root: Path, stack: Optional[Path] = None
             why = cns_side_problem(Path(cns_root), link.repo, link.from_cns, link.aka)
             if why:
                 out.append(f"{link.repo}: {why}")
+        if link.via:
+            why = bridge_problem(links, link, stack)
+            if why:
+                out.append(f"{link.repo}: {why}")
+            if not link.from_cns:
+                out.append(f"{link.repo}: via needs a from_cns proof; the bridge carries the repository to CNS, "
+                           "CNS must still carry something back")
         if link.to_cns and stack is not None:
             why = repo_side_problem(Path(stack), link.repo, link.to_cns)
             if why:
@@ -302,7 +365,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     tally = counts(links)
     if args.require_two_way:
         for link in links:
-            if status(link) not in ("two_way", "exempt", "hub"):
+            if status(link) not in ("two_way", "bridged", "exempt", "hub"):
                 found.append(f"{link.repo} is {status(link)}, not two_way")
     print("link_ledger: " + ", ".join(f"{n} {k}" for k, n in sorted(tally.items())))
     if found:
