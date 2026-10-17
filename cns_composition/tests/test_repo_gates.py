@@ -34,6 +34,7 @@ def test_the_doors_stand_at_alpha_the_judges_at_omega_and_two_repos_have_both():
     assert ends_of("DIT") == {O} and ends_of("GEMS") == {O}
     assert ends_of("Conservation_Kernel") == {A, O} and ends_of("fortress-kernel") == {A, O}
     assert ends_of("PERCEIVE") == {A, O} and ends_of("HERALD") == {A, O}
+    assert ends_of("URE") == {A, O}
 
 
 def test_an_unknown_repository_has_no_ends():
@@ -71,7 +72,7 @@ def test_a_door_filed_as_a_judge_is_refused_and_every_wrong_gate_is_named_at_onc
     assert "gems (GEMS declares omega, not alpha)" in text
 
 
-@pytest.mark.parametrize("repo", ["Conservation_Kernel", "fortress-kernel", "PERCEIVE", "HERALD"])
+@pytest.mark.parametrize("repo", ["Conservation_Kernel", "fortress-kernel", "PERCEIVE", "HERALD", "URE"])
 def test_a_repository_with_both_ends_may_seat_a_gate_at_each(repo):
     low, high = FakeGate("low", A), FakeGate("high", O)
     run = run_repo_chain([(repo, low, 1), (repo, high, 2)])
