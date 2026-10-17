@@ -4,8 +4,8 @@ WHY THIS EXISTS
 
 `cns.gate.subject_digest` is the one definition of "what this verdict was bound to", and it is shared so that two
 repositories can check each other's verdicts. A repository that works without CNS installed has to carry its
-own stand-in for when CNS is absent. composition-engine does: its `cns_integration` falls back to a local
-`subject_digest`. A stand-in that digests differently is worse than none: a verdict bound without CNS never
+own stand-in for when CNS is absent. composition-engine did (it is retired; the source is in its git history): its
+`cns_integration` fell back to a local `subject_digest`. A stand-in that digests differently is worse than none: a verdict bound without CNS never
 verifies with CNS, and nothing says so until two repositories disagree. Measured on 2026-10-17, composition-engine's
 fallback agreed with CNS on none of seven sample mappings (it hashes JSON; CNS hashes a length-prefixed encoding).
 
