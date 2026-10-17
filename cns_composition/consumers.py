@@ -69,6 +69,11 @@ REQUIRED: Mapping[str, Imports] = {
     },
     # Optional connectors that load cns.gate on demand: the module is all an import can show, and CNS's own
     # gate tests cover the names (subject_digest, GateResult, GateOutcome, GatePosition, GateChain) they use.
+    "TIE": {"cns.gate": ()},
+    "CCCb": {"cns.gate": ()},
+    "Ecology": {"cns.gate": ()},
+    "GSA": {"cns.gate": ()},
+    "experimental": {"cns.gate": ()},
     "DGK": {"cns.gate": ()},
     "URE": {"cns.gate": ()},
     "interconnected_alpha": {"cns.gate": ()},
@@ -78,7 +83,9 @@ REQUIRED: Mapping[str, Imports] = {
 }
 
 _OURS = ("cns", "cns_composition")
-_SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "site-packages", "__pycache__", "build", "dist"}
+#: Folders that are not the repository's own running code. `archive` holds preserved records (GSA keeps an old
+#: file there that imports cns.governance on purpose); a record is not a consumer.
+_SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "site-packages", "__pycache__", "build", "dist", "archive"}
 _MAX_BYTES = 2_000_000
 
 

@@ -59,6 +59,7 @@ def test_scan_ignores_tests_vendored_trees_relative_imports_and_files_it_cannot_
     write(tmp_path, "test_b.py", "from cns.gate import AlsoOnlyInTests\n")
     write(tmp_path, "conftest.py", "from cns.gate import Fixture\n")
     write(tmp_path, ".venv/lib/x.py", "from cns.gate import Vendored\n")
+    write(tmp_path, "archive/old.py", "from cns.governance import PreservedRecord\n")
     write(tmp_path, "broken.py", "from cns.gate import (\n")
     write(tmp_path, "docs.py", '"""from cns.gate import Mentioned"""\n')
     write(tmp_path, "star.py", "from cns.gate import *\n")

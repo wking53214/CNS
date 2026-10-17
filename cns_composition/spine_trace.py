@@ -7,7 +7,7 @@ interconnected_alpha detects Keys, interconnected_zeta evaluates Locks over them
 turns lock states into a Decision, interconnected_delta records the Decision in a hash-chained ledger.
 Each now offers a CNS binding for its own output (a digest of exactly what it produced), and each is
 tested alone. Nothing checked the seams: that the Decision cites only Keys that were detected, only
-Locks that were open, belongs to the entity the run was about, and is the Decision the ledger recorded.
+Locks that were evaluated, belongs to the entity the run was about, and is the Decision the ledger recorded.
 delta even carries its own copy of how a Decision is described for binding, because beta's was not
 available to it when it was written, so the two descriptions could drift apart unnoticed.
 
@@ -22,8 +22,9 @@ WHAT IT CHECKS
   - alpha, zeta and beta agree about one entity (beta names it; alpha and zeta results do not carry it,
     so the caller states it once);
   - the Decision's keys are a subset of the Keys alpha detected as present;
-  - the Decision's locks are a subset of the Locks zeta reported open, and every open Lock is one zeta
-    evaluated;
+  - the Decision's locks are a subset of the Locks zeta evaluated, and every open Lock is one zeta evaluated.
+    A Decision cites the Locks its rule required, and a rule may require a Lock to be CLOSED (a discharge
+    rests on the absence of trouble), so "open" is not the test; "evaluated" is;
   - beta's digest of the Decision equals delta's digest of the Decision it recorded.
 
 WHAT IT DOES NOT CHECK
@@ -99,9 +100,9 @@ def problems(record: SpineRecord) -> List[str]:
     absent = sorted(set(record.decision_keys) - set(record.keys_present))
     if absent:
         out.append(f"the Decision cites key(s) alpha did not detect as present: {', '.join(absent)}")
-    unopened = sorted(set(record.decision_locks) - set(record.open_locks))
-    if unopened:
-        out.append(f"the Decision cites lock(s) zeta did not report open: {', '.join(unopened)}")
+    unevaluated = sorted(set(record.decision_locks) - set(record.lock_result_digests))
+    if unevaluated:
+        out.append(f"the Decision cites lock(s) zeta never evaluated: {', '.join(unevaluated)}")
     unknown = sorted(set(record.open_locks) - set(record.lock_result_digests))
     if unknown:
         out.append(f"zeta reports open lock(s) it has no result for: {', '.join(unknown)}")

@@ -1,0 +1,92 @@
+# Runs the real chains: gates and stages from separate repositories, composed through CNS, on the default branches.
+#
+# chains/full_chain.py   Governance_Gateway and DGK at ALPHA, DIT and URE at OMEGA, through
+#                        cns_composition.repo_gates. Six scenarios, each with the outcome it must produce.
+# chains/spine_run.py    interconnected alpha, zeta, beta and delta run for real, then checked at their seams by
+#                        cns_composition.spine_trace. Seven scenarios.
+#
+# Each script exits 1 when a scenario differs from what it states, so this goes red the day a repository changes in a
+# way that breaks a chain: the failure points at the scenario, and the repositories' own suites cannot see it.
+#
+# TRUST. This runs code from other repositories, so the token is read-only and nothing here can write. The same model
+# as the circuit canary in repin.yml. It runs on a schedule, by hand, and on pull requests here that touch the chains
+# or the modules they exercise.
+name: chains
+
+on:
+  schedule:
+    - cron: "53 5 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - chains/**
+      - cns_composition/repo_gates.py
+      - cns_composition/spine_trace.py
+      - .github/workflows/chains.yml
+
+permissions: {}
+
+jobs:
+  chains:
+    name: chains
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: hub
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/Governance_Gateway
+          path: stack/Governance_Gateway
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/DGK
+          path: stack/DGK
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/DIT
+          path: stack/DIT
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/URE
+          path: stack/URE
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/interconnected_alpha
+          path: stack/interconnected_alpha
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/interconnected_zeta
+          path: stack/interconnected_zeta
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/interconnected_beta
+          path: stack/interconnected_beta
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/interconnected_delta
+          path: stack/interconnected_delta
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install CNS
+        run: python -m pip install ./hub
+      - name: Four repositories, one chain
+        env:
+          PYTHONPATH: ${{ github.workspace }}/stack/Governance_Gateway/src:${{ github.workspace }}/stack/DGK:${{ github.workspace }}/stack/DIT/src:${{ github.workspace }}/stack/URE
+        run: python hub/chains/full_chain.py
+      - name: The decision spine, end to end
+        env:
+          PYTHONPATH: ${{ github.workspace }}/stack/interconnected_alpha:${{ github.workspace }}/stack/interconnected_zeta:${{ github.workspace }}/stack/interconnected_beta:${{ github.workspace }}/stack/interconnected_delta
+        run: python hub/chains/spine_run.py
