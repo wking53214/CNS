@@ -78,6 +78,13 @@ def test_the_ecology_script_seats_only_dit_and_dit_declares_the_end_it_is_seated
     assert "require_complete=False" in text
 
 
+def test_the_ecology_chain_decides_through_the_super_gate_and_includes_a_left_out_gate():
+    """As for the full chain: a decision made without the one control point would not notice a gate left out."""
+    text = ECOLOGY.read_text(encoding="utf-8")
+    assert "SuperGate" in text and "run_repo_chain" not in text
+    assert "a DIT gate is left out of the request" in text and "leave_out=" in text
+
+
 def test_the_ecology_script_states_every_fact_each_scenario_must_produce_and_exits_nonzero_when_it_does_not():
     text = ECOLOGY.read_text(encoding="utf-8")
     ast.parse(text)
