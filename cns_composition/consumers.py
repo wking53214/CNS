@@ -59,6 +59,7 @@ REQUIRED: Mapping[str, Imports] = {
     },
     "ZTS": {
         "cns": (),
+        "cns.gate": ("subject_digest",),
         "cns.governance": ("IdentityContext",),
     },
     "OBSERVE": {
@@ -73,6 +74,7 @@ REQUIRED: Mapping[str, Imports] = {
     "CCCb": {"cns.gate": ()},
     "Ecology": {"cns.gate": ()},
     "GSA": {"cns.gate": ()},
+    "Triad-42": {"cns.gate": ()},
     "experimental": {"cns.gate": ()},
     "DGK": {"cns.gate": ()},
     "URE": {"cns.gate": ()},
