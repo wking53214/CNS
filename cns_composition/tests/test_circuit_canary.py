@@ -183,6 +183,12 @@ def test_an_interpreter_that_cannot_import_what_the_circuit_needs_fails_with_the
     assert "pytest, cns" in result.reason and "PYTHONPATH" in result.reason
 
 
+def test_the_interpreter_check_covers_what_assay_needs_to_run_every_claim():
+    """ASSAY fails a claim it cannot run, so a missing numpy or matplotlib ends the circuit INCONCLUSIVE with a reason
+    that does not name them. The check names them first."""
+    assert {"numpy", "matplotlib"} <= set(cc._NEEDED)
+
+
 def test_the_check_runs_before_warden_is_started(stack, tmp_path, monkeypatch):
     monkeypatch.setattr(cc, "_missing_modules", lambda python, modules=cc._NEEDED: ["cns"])
     (stack / "WARDEN" / "warden" / "cli.py").write_text("raise SystemExit('warden must not start')\n")
