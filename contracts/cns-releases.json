@@ -1,0 +1,65 @@
+{
+  "schema": "cns-releases/1",
+  "about": "Every CNS release a repository might pin: its tag, the commit the tag points at, and the version the package at that commit declares. cns_composition.cns_versions reads a pin by tag or by full commit and looks it up here. Add a row when a release is tagged and move current. Raise floor as repositories move; when floor equals current's version, every repository must be on the current release.",
+  "current": "v1.9.0",
+  "floor": "1.4.0",
+  "releases": [
+    {
+      "ref": "v0.1.0",
+      "commit": "9f8f3fed8c33d7bd299c715e1416bed9bcbd0a1c",
+      "version": "0.1.0"
+    },
+    {
+      "ref": "v0.2.0",
+      "commit": "4ffcaaacb48c12eaaf822949ce1c08a1ef6e91e0",
+      "version": "0.2.0"
+    },
+    {
+      "ref": "v1.0.0",
+      "commit": "01e9522387265445bbad2d8edc24eea05dd36b7a",
+      "version": "1.0.0"
+    },
+    {
+      "ref": "v1.4.0",
+      "commit": "3b465dbcc1a6a4ab6f1040f93d44483196abd737",
+      "version": "1.4.0"
+    },
+    {
+      "ref": "v1.5.0",
+      "commit": "f212c00e43cfad76d641a8d04523ad12f789de2a",
+      "version": "1.5.0"
+    },
+    {
+      "ref": "v1.5.1",
+      "commit": "da9ab8c8c47097b38ad9792dec23fed45d31ae3f",
+      "version": "1.4.0",
+      "note": "the tag points at a commit older than v1.5.0 whose package says 1.4.0, so its version here is 1.4.0"
+    },
+    {
+      "ref": "v1.6.0",
+      "commit": "0a4d385b8ec48f11522ced33761b6f0ac28eaa97",
+      "version": "1.6.0"
+    },
+    {
+      "ref": "v1.7.0",
+      "commit": "84ee0f491b06a2b746c374e76b14d1952addebd7",
+      "version": "1.7.0"
+    },
+    {
+      "ref": "v1.8.0",
+      "commit": "5252ceebe98185f7be81212d988055ccf9884568",
+      "version": "1.8.0"
+    },
+    {
+      "ref": "v1.9.0",
+      "commit": "da18e411743d4e3b0e783105394d845fb1c16746",
+      "version": "1.9.0"
+    },
+    {
+      "ref": "e638e084467354e1d1bd37fa172686c1ae9230be",
+      "commit": "e638e084467354e1d1bd37fa172686c1ae9230be",
+      "version": "1.8.0",
+      "note": "a commit that is not a tag, pinned by Link; kept so the pin can be read, to be replaced by a tag"
+    }
+  ]
+}
