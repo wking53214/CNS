@@ -115,7 +115,7 @@ ACCEPT; a refusal over a stale pin is a failure that names the pin.
 `.github/workflows/repin.yml` runs both every six hours and on demand. The canary runs every time, so a red run
 means a merge to one of the seven broke the others. When a pin moved and the circuit still ends ACCEPT it opens
 or updates one pull request (branch `auto/repin`) that changes nothing but the commits. A person merges it.
-The canary needs `pytest` and an installed `cns` in the interpreter (the workflow installs them; the canary says so if they are missing). The job that runs the other repositories' code has a read-only token; the job that can write runs none of it
+The canary needs `pytest`, `numpy`, `matplotlib` and an installed `cns` in the interpreter (the workflow installs them; the canary says so if they are missing). The job that runs the other repositories' code has a read-only token; the job that can write runs none of it
 and re-checks the manifest before using it. One setting is needed once: Settings > Actions > General >
 "Allow GitHub Actions to create and approve pull requests". A pull request opened with the workflow's own
 token does not start `ci.yml`; the canary has already run the circuit on that exact manifest. A third job, `pins`, runs `python -m cns_composition.seat_pins --stack DIR`: it reads every repository's
