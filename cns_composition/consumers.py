@@ -59,6 +59,7 @@ REQUIRED: Mapping[str, Imports] = {
     },
     "ZTS": {
         "cns": (),
+        "cns.gate": ("subject_digest",),
         "cns.governance": ("IdentityContext",),
     },
     "OBSERVE": {
