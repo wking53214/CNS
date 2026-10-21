@@ -3,7 +3,7 @@
 Ecology answers only from evidence. What it emits is an answer record: the question, the answer text, and the
 excerpts that passed its containment check (`ecology_cns_connector.answer_content`). DIT judges generated text at the
 OMEGA end, and the answer is generated text, so DIT's gates (from its own CNS connector, through
-`cns_composition.repo_gates.run_repo_chain`) are run over the record's `answer`.
+`cns_composition.super_gate.SuperGate`) are run over the record's `answer`.
 
 WHAT IS BOUND, AND WHAT IS NOT. DIT binds its verdict to the text it judged: subject "payload", digest of
 {"text": text}. Ecology binds a record: digest of the question hash, the answer hash and each cited excerpt. These are
@@ -12,8 +12,8 @@ bound to the answer text, and the Ecology record is tied to that text by Ecology
 very text DIT judged). A verdict on an answer says nothing about the question or the evidence; the scenarios state that
 as an outcome rather than leaving it implied.
 
-DIT has only the outcome end, so the chain runs with `require_complete=False`: CNS's own finding about DIT, stated and
-not worked around. Ecology ships no gate and HERALD's gates judge a SourceDocument and a CandidateClaim, neither of
+DIT has only the outcome end, so the roster is built with `require_complete=False`: CNS's own finding about DIT, stated and
+not worked around. The roster is held once, so a DIT gate left out of the request is a TERMINAL_BREACH and not a skipped gate. Ecology ships no gate and HERALD's gates judge a SourceDocument and a CandidateClaim, neither of
 which an Ecology answer is, so neither takes part.
 
 The answers are fixtures with the record's shape, not output of a run of the engine (which needs a model and a corpus
@@ -36,14 +36,15 @@ from pathlib import Path
 from typing import Callable, Dict, List, Tuple
 
 from cns.gate import GateOutcome
-from cns_composition.repo_gates import Lazy, run_repo_chain
+from cns_composition.gate_chain import Lazy
+from cns_composition.super_gate import SuperGate
 from dit.cns_connector import CnsGate as DitGate
 from dit.cns_connector import payload_digest
 from dit.gates import GSA_V13_STACK, build_stack
 from dit.rules import default_rules
 from ecology_cns_connector import answer_content, answer_digest
 
-PASS, RETRY = GateOutcome.PASS.value, GateOutcome.RETRY.value
+PASS, RETRY, BREACH = GateOutcome.PASS.value, GateOutcome.RETRY.value, GateOutcome.TERMINAL_BREACH.value
 
 #: What DIT's connector labels the text it judged (its default).
 DIT_SUBJECT = "payload"
@@ -64,19 +65,20 @@ def record(answer: str, sources: list) -> Dict[str, object]:
     return {"query": QUERY, "answer": answer, "sources": sources}
 
 
-def judge(rec: Dict[str, object]):
-    """DIT's default stack over the record's answer text, through the repository-checked chain."""
-    steps = [("DIT", DitGate(gate), Lazy(lambda text=rec["answer"]: text)) for gate in build_stack(default_rules(), GSA_V13_STACK)]
-    return run_repo_chain(steps, require_complete=False)
+def judge(rec: Dict[str, object], leave_out: str = ""):
+    """DIT's default stack over the record's answer text, decided on the whole roster by the super gate."""
+    gates = [DitGate(gate) for gate in build_stack(default_rules(), GSA_V13_STACK)]
+    candidates = {f"DIT:{gate.name}": Lazy(lambda text=rec["answer"]: text) for gate in gates if f"DIT:{gate.name}" != leave_out}
+    return SuperGate([("DIT", gate) for gate in gates], require_complete=False).decide(candidates).run
 
 
 def sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-def observe(judged: Dict[str, object], presented: Dict[str, object]) -> Dict[str, object]:
+def observe(judged: Dict[str, object], presented: Dict[str, object], leave_out: str = "") -> Dict[str, object]:
     """Judge `judged`, then present those verdicts as if they were about `presented`."""
-    run = judge(judged)
+    run = judge(judged, leave_out)
     shown = payload_digest(presented["answer"])
     return {
         "outcome": run.outcome.value,
@@ -121,6 +123,9 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("no supporting evidence: the engine's own non-answer is unverified in Ecology and DIT retries it for lacking a figure",
      lambda: {**observe(record(NON_ANSWER, []), record(NON_ANSWER, [])), "engine_returns_this_text": engine_returns_non_answer()},
      {**HELD, "outcome": RETRY, "blocked_by": ["causality"], "ecology_verified": False, "engine_returns_this_text": True}),
+    ("a DIT gate is left out of the request: the roster refuses it as a breach, and that verdict binds no text",
+     lambda: observe(record(CLEAN, EVIDENCE), record(CLEAN, EVIDENCE), leave_out="DIT:identity"),
+     {"outcome": BREACH, "omega_ran": True, "blocked_by": ["identity"], "verdicts_bind_presented_text": False}),
 ]
 
 
