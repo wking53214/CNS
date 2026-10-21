@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 CONTRACTS = Path(__file__).resolve().parents[1] / "contracts"
-LINE = re.compile(r"^(?P<dist>[A-Za-z0-9_.-]+) @ git\+https://github\.com/wking53214/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?@(?P<sha>[0-9a-f]{40})\b")
+LINE = re.compile(r"^(?P<dist>[A-Za-z0-9_.-]+) @ git\+https://github\.com/wking53214/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?@(?P<sha>[0-9a-f]{40}|v\d+\.\d+\.\d+)\b")
 
 
 def _entries() -> dict[str, tuple[str, str]]:
@@ -28,6 +28,6 @@ def test_every_manifest_repository_is_installed_at_the_commit_the_manifest_names
         assert by_repo.get(name.casefold()) == commit, f"{name} is not installed at {commit}"
 
 
-def test_cns_is_installed_once_at_a_full_commit():
+def test_cns_is_installed_once_by_the_release_tag_the_circuit_repositories_spell():
     cns = [(repo, sha) for repo, sha in _entries().values() if repo.casefold() == "cns"]
-    assert len(cns) == 1 and len(cns[0][1]) == 40
+    assert len(cns) == 1 and re.fullmatch(r"v\d+\.\d+\.\d+", cns[0][1])

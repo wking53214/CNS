@@ -5,19 +5,18 @@
 # The seven pins below equal contracts/warden-stack.json (tests/test_install_stack.py holds them to it).
 # watcher-mcu is not in the manifest: Warden does not verify it, it reads Warden's run record afterwards.
 # Its pin here is the commit that was tested with these seven.
-# Warden is installed at 9d9a71d, the commit the satellites pin. Its branch may be a tooling-only commit
-# ahead of that; a stack folder for `warden tagteam --cns` must hold Warden at the manifest commit.
 #
 # Running Warden on a target also needs pytest in the same environment (it runs the target's own suite):
-#     .venv/bin/pip install 'pytest>=8' numpy==2.5.4 matplotlib==3.11.2   # ASSAY grades Ghost with numpy and matplotlib
-# Every entry that needs CNS pins the same CNS commit (v1.8.0), because pip treats a tag URL and a commit
-# URL as two different sources and refuses to resolve them together.
-cns @ git+https://github.com/wking53214/CNS.git@5252ceebe98185f7be81212d988055ccf9884568  # v1.8.0
-ghost-tools @ git+https://github.com/wking53214/ghost_tools@5d7a38638b12a75b25c84ab3652e4774acb9aa10  # 1.10.1
-swizzle @ git+https://github.com/wking53214/SWIZZLE.git@8166c47f321ecfb66b8efa72c1deac5d954e8e48  # 0.8.1
-assay @ git+https://github.com/wking53214/ASSAY.git@4c415567d1c1cb2c1a9e8f343a7a11a5064258c8  # 0.11.1
-warden @ git+https://github.com/wking53214/Warden.git@9d9a71d1bc3195f0abd9aee8fe553cc09838b684  # 0.13.2
-judge @ git+https://github.com/wking53214/JUDGE.git@50f90f47660916d99deeb11370dd57bf85922dbe  # 0.4.3
-drafter @ git+https://github.com/wking53214/DRAFTER.git@fb9d3aa1551f4e7090f1c71a119f9646812b3637  # 0.2.3
-burnish @ git+https://github.com/wking53214/BURNISH.git@057f3ee90f8c24419cd690f1fcd72c1c886922e6  # 0.3.3
-watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@7c15300cab196c2cc1e2f70ee37787f106b540d9  # 0.3.1
+#     .venv/bin/pip install 'pytest>=8' "numpy==2.4.6; python_version < '3.12'" "numpy==2.5.4; python_version >= '3.12'" matplotlib==3.11.2
+# (ASSAY grades Ghost with numpy and matplotlib; numpy 2.5 needs Python 3.12 or newer, hence the two markers.)
+# Every entry that needs CNS pins it the same way, the tag v1.9.0 (the commit da18e411743d4e3b0e783105394d845fb1c16746),
+# because pip treats a tag URL and a commit URL as two different sources and refuses to resolve them together.
+cns @ git+https://github.com/wking53214/CNS.git@v1.9.0
+ghost-tools @ git+https://github.com/wking53214/ghost_tools@c2ada82d2f6c0404074a668ba749c7872743aad9  # 1.10.5
+swizzle @ git+https://github.com/wking53214/SWIZZLE.git@6bd88f3a6e9de1f83e64f401e13cbcb5233499fc  # 0.8.4
+assay @ git+https://github.com/wking53214/ASSAY.git@54248beb5a36600f69de7c816cb2271dda20a879  # 0.11.2
+warden @ git+https://github.com/wking53214/Warden.git@0c1ea567f0b69586cfd735f82260774aec9552bb  # 0.13.6
+judge @ git+https://github.com/wking53214/JUDGE.git@cf71fb468d483e868834c8c06b650a5d60726967  # 0.4.7
+drafter @ git+https://github.com/wking53214/DRAFTER.git@467dacf100802329de13bdde9de573c2a162345e  # 0.2.7
+burnish @ git+https://github.com/wking53214/BURNISH.git@ab6a19ca174ccb2821c46a780635ee6e9ed53883  # 0.3.8
+watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@27e0e4edc4a832599fc2f9d5c1a3226d2eee9bfd  # 0.3.5
