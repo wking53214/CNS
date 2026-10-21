@@ -96,7 +96,9 @@ jobs:
       - name: Install what the circuit needs on this interpreter
         # pytest runs the throwaway repository's suite. cns must be installed, not just on PYTHONPATH: the
         # instruments Warden starts do not inherit PYTHONPATH. Found by the first run, which ended SUITE_RED.
-        run: python -m pip install pytest ./hub
+        # numpy and matplotlib: ASSAY treats a claim it cannot run as a failure, and one claim needs them. Without
+        # them Warden ends INCONCLUSIVE ("ASSAY's answer key could not be used to grade Ghost").
+        run: python -m pip install pytest numpy matplotlib ./hub
       - name: Move the pins to the heads of the seven checkouts
         id: repin
         working-directory: hub

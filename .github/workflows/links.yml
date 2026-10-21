@@ -12,6 +12,10 @@
 # The second step is the other direction: cns_composition.consumers lists what each repository takes from CNS,
 # fails if CNS stopped providing any of it, and fails if a repository's source has moved away from the list.
 #
+# The fourth step is the version: cns_composition.cns_versions reads every repository's CNS pin and fails on one the
+# release table does not know or one below its floor. A connection that exists against an old CNS is not the same as
+# a connection to this one; the ledger alone cannot tell them apart.
+#
 # It runs on a schedule because a connection can be removed in another repository without touching this one, and
 # on any pull request here that changes the ledger or the checker.
 name: links
@@ -27,6 +31,8 @@ on:
       - cns_composition/consumers.py
       - cns_composition/digest_vectors.py
       - contracts/digest-vectors.json
+      - cns_composition/cns_versions.py
+      - contracts/cns-releases.json
       - .github/workflows/links.yml
 
 permissions: {}
@@ -82,3 +88,8 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: python -m cns_composition.digest_vectors --stack ../stack
+      - name: Every repository pins a CNS release the table knows, at or above the floor
+        working-directory: hub
+        env:
+          PYTHONPATH: ${{ github.workspace }}/hub
+        run: python -m cns_composition.cns_versions --stack ../stack

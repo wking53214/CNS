@@ -65,11 +65,12 @@ def test_the_canary_runs_the_circuit_every_time_not_only_when_a_pin_moved():
     assert "circuit_canary" in step and "if:" not in step
 
 
-def test_the_canary_installs_pytest_and_cns_before_it_runs_the_circuit():
+def test_the_canary_installs_what_the_circuit_needs_before_it_runs_it():
     """The first run on GitHub ended SUITE_RED on a clean Python: the throwaway repository's tests need pytest, and
-    the instruments do not inherit PYTHONPATH, so cns has to be installed, not just reachable."""
+    the instruments do not inherit PYTHONPATH, so cns has to be installed, not just reachable. ASSAY fails a claim it
+    cannot run, and one claim needs numpy and matplotlib: without them the run ended INCONCLUSIVE."""
     block = job("canary")
-    install = block.index("python -m pip install pytest ./hub")
+    install = block.index("python -m pip install pytest numpy matplotlib ./hub")
     assert install < block.index("cns_composition.repin")
     assert install < block.index("cns_composition.circuit_canary")
 

@@ -45,3 +45,9 @@ def test_it_also_runs_the_consumers_check_against_the_same_checkouts():
 def test_it_also_checks_the_vendored_digest_vectors_against_the_same_checkouts():
     assert "python -m cns_composition.digest_vectors --stack ../stack" in WORKFLOW
     assert "contracts/digest-vectors.json" in WORKFLOW.split("\npermissions:", 1)[0]
+
+
+def test_it_also_holds_every_repositorys_cns_pin_to_the_release_floor():
+    assert "python -m cns_composition.cns_versions --stack ../stack" in WORKFLOW
+    triggers = WORKFLOW.split("\npermissions:", 1)[0]
+    assert "contracts/cns-releases.json" in triggers and "cns_composition/cns_versions.py" in triggers

@@ -40,8 +40,9 @@ __all__ = ["CanaryResult", "run_canary", "main"]
 #: What the interpreter must be able to import on its own. The throwaway repository's tests need pytest, and the
 #: instruments Warden starts (SWIZZLE's attacks among them) do not inherit PYTHONPATH, so `cns` has to be installed
 #: as a package, not merely reachable. Found by the first run on GitHub: without pytest the circuit ends
-#: SUITE_RED, and without an installed cns the Judge says INSUFFICIENT, neither of which names the cause.
-_NEEDED = ("pytest", "cns")
+#: SUITE_RED, and without an installed cns the Judge says INSUFFICIENT, neither of which names the cause. numpy and
+#: matplotlib are for ASSAY: a claim it cannot run is a failure, so without them Warden ends INCONCLUSIVE.
+_NEEDED = ("pytest", "cns", "numpy", "matplotlib")
 #: The checkouts whose packages Warden imports as seats. Matched without regard to case, as Warden matches a stack.
 _IMPORTED = ("WARDEN", "JUDGE", "DRAFTER", "BURNISH")
 _TIMEOUT_SECONDS = 1800
@@ -133,7 +134,7 @@ def run_canary(stack: Path, cns: Path, *, python: Optional[str] = None,
     if missing:
         return _fail("CANARY_ERROR",
                      f"this interpreter cannot import {', '.join(missing)} without PYTHONPATH, and the circuit's "
-                     "instruments do not inherit PYTHONPATH; install them (pip install pytest . from a CNS checkout)")
+                     "instruments do not inherit PYTHONPATH; install them (pip install pytest numpy matplotlib . from a CNS checkout)")
     env: Dict[str, str] = {**os.environ, "PYTHONPATH": os.pathsep.join(paths)}
     with tempfile.TemporaryDirectory(prefix="circuit-canary-") as tmp:
         try:
