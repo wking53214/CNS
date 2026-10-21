@@ -37,14 +37,11 @@
       "from_cns": "cns_composition/ccc_admission.py"
     },
     "Triad-42": {
+      "to_cns": "triad42/cns_connector.py",
       "from_cns": "cns_composition/triad_admission.py",
       "aka": [
         "triad"
-      ],
-      "via": {
-        "repo": "Link",
-        "module": "triad42"
-      }
+      ]
     },
     "WATCHER_MCU": {
       "to_cns": "watcher/evidence.py",
