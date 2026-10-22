@@ -28,8 +28,8 @@ def test_the_readme_tells_a_consumer_to_pin_the_tag_form_the_circuit_uses():
 
 
 def test_the_stack_install_the_readme_gives_names_a_file_that_exists():
-    paths = re.findall(r"pip install -r (\S+)", README)
-    assert paths == ["contracts/install-stack.txt"]
+    paths = re.findall(r"pip install -r ([\w./-]+)", README)
+    assert paths and set(paths) == {"contracts/install-stack.txt"}
     assert all((ROOT / p).is_file() for p in paths)
 
 

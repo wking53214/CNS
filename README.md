@@ -124,6 +124,14 @@ token does not start `ci.yml`; the canary has already run the circuit on that ex
 that merely lags the checkout it names is only a note). The job is independent of the other two. `seat_pins` and `cns_versions` follow a stack folder that is a symlink, as `repin` does, say how many repositories they read, and exit 2 when a repository the manifest names was not read. Adding a
 repository to the manifest also needs a checkout step in the workflow, and a test fails until both are done.
 
+`.github/workflows/stack.yml` is the check that all of this works together as a consumer would get it. On pushes and
+pull requests to `main` and the horsemen branch, and weekly, it installs the circuit with
+`pip install -r contracts/install-stack.txt` on Python 3.12, runs `pip check`, asserts exactly one `cns` distribution
+is installed, checks out the repositories `contracts/warden-stack.json` names at the commits it names, and runs
+`seat_pins`, `cns_versions`, `repin --check` and `circuit_canary` on them. It reads the repository list from the
+manifest, so a new repository needs no edit there; `tests/test_stack_workflow.py` holds it to the manifest and runs its
+checkout step against local fixtures.
+
 ## Consuming it
 
 Pin a tag, the way sentinel_os already pins Conservation_Kernel. In a requirements file or a
