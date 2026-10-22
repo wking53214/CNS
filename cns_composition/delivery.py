@@ -17,9 +17,9 @@ WHAT IT DOES
 
 `deliver(code, program)` is the last thing a command does. It flushes stdout; if stdout is closed or the flush
 fails (a broken pipe, a full device, any OSError), it says so on stderr and returns 2 in place of 0. A non-zero
-code is kept, since the failure it reports went to stderr and was delivered. After a failed flush stdout is
-detached from the interpreter so the shutdown flush cannot fail a second time; nothing is written anywhere to
-achieve that, in particular not to a device node.
+code is kept, since the failure it reports went to stderr and was delivered. After a failed flush the stream's
+descriptor is parked on a pipe of our own and stdout is detached from the interpreter, so the shutdown flush
+cannot fail a second time; no device node is opened or written to achieve that.
 
 `write_file(path, text)` writes to a temporary name in the same folder and renames it into place. The
 destination must be absent or a regular file, checked before the write and again just before the rename; a
@@ -59,12 +59,34 @@ def deliver(code: int, program: str) -> int:
     try:
         stream.flush()
     except OSError as err:
-        # BrokenPipeError (the reader is gone), ENOSPC (a full device), EIO: the report did not arrive. Detach
-        # stdout so the interpreter's own flush at exit does not raise the same error again (exit 120).
+        # BrokenPipeError (the reader is gone), ENOSPC (a full device), EIO: the report did not arrive. Park the
+        # descriptor and detach stdout, so the interpreter's own flush at exit cannot fail a second time.
+        _park(stream)
         sys.stdout = sys.__stdout__ = None  # type: ignore[assignment]
         _say(program, f"the report could not be delivered ({type(err).__name__})")
         return code or UNDELIVERED
     return code
+
+
+_parked: list = []
+
+
+def _park(stream: object) -> None:
+    """Point the stream's file descriptor at a pipe of our own whose reader stays open for the life of the
+    process. The bytes the failed flush left behind then go somewhere a write succeeds, so the flush the
+    interpreter runs at exit succeeds too: without this, Python 3.12 and older exit 120 with a traceback, and
+    3.13 reports the failed finalization even when sys.stdout is None. No device node is opened or written."""
+    try:
+        fd = stream.fileno()  # type: ignore[attr-defined]
+    except (OSError, ValueError, AttributeError):
+        return
+    try:
+        reader, writer = os.pipe()
+        os.dup2(writer, fd)
+        os.close(writer)
+    except OSError:
+        return
+    _parked.append(reader)
 
 
 def _say(program: str, what: str) -> None:
