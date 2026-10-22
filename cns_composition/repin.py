@@ -37,7 +37,10 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from cns.stack import StackManifest, StackPin
 
-__all__ = ["RepinError", "read_heads", "repin_text", "changes", "main"]
+__all__ = ["RepinError", "DEFAULT_MANIFEST", "stack_folders", "manifest_names", "unread", "read_heads", "repin_text",
+           "changes", "main"]
+
+DEFAULT_MANIFEST = Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
 
 #: Environment for git: no prompts, no system config, and the same scrub the scanners use.
 _GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_OPTIONAL_LOCKS": "0"}
@@ -65,6 +68,29 @@ def _git(folder: Path, *args: str) -> str:
     if done.returncode != 0:
         raise RepinError(f"{str(folder)!r} is not a readable git checkout")
     return done.stdout.strip()
+
+
+def stack_folders(stack: Path) -> List[Path]:
+    """The immediate subfolders of a stack folder. A symlink to a folder counts, as it does for `read_heads`, so
+    `repin`, `seat_pins` and `cns_versions` all see the same set of repositories."""
+    return sorted(p for p in Path(stack).iterdir() if p.is_dir())
+
+
+def manifest_names(path: Optional[Path] = None) -> List[str]:
+    """The repository names a manifest pins, in its order. Raises RepinError if it cannot be read as a manifest."""
+    path = Path(path) if path else DEFAULT_MANIFEST
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as err:
+        raise RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
+    _, manifest = _load(text)
+    return [p.name for p in manifest.repos]
+
+
+def unread(names: Sequence[str], read: Sequence[str]) -> List[str]:
+    """The manifest names that no folder name in `read` matches (without regard to case, as Warden matches them)."""
+    seen = {r.casefold() for r in read}
+    return [n for n in names if n.casefold() not in seen]
 
 
 def _folder_for(stack: Path, name: str) -> Path:

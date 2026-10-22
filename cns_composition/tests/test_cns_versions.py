@@ -188,15 +188,86 @@ def test_the_committed_table_is_held_to_the_cns_package_itself():
 
 # ------------------------------------------------------------ the command
 
+def manifest_for(tmp_path, *names):
+    """A manifest that names the given repositories, kept outside the stack folder."""
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps({"schema": "warden-stack/1", "contract": "1", "repos": {n: "f" * 40 for n in names}}),
+                    encoding="utf-8")
+    return str(path)
+
+
 def test_the_command_exits_zero_one_and_two(tmp_path, capsys):
     table = tmp_path / "t.json"
     table.write_text(json.dumps(table_dict()), encoding="utf-8")
+    manifest = manifest_for(tmp_path, "A", "B", "C")
     stack = tmp_path / "stack"
     put(stack, "A", "pyproject.toml", pin("v1.9.0"))
     put(stack, "B", "pyproject.toml", "[project]\nname = 'b'\n")
-    assert cv.main(["--stack", str(stack), "--table", str(table)]) == 0
+    assert cv.main(["--stack", str(stack), "--table", str(table), "--manifest", manifest_for(tmp_path, "A", "B")]) == 0
     assert "no direct CNS pin in: B" in capsys.readouterr().out
     put(stack, "C", "pyproject.toml", pin("main"))
-    assert cv.main(["--stack", str(stack), "--table", str(table)]) == 1
+    assert cv.main(["--stack", str(stack), "--table", str(table), "--manifest", manifest]) == 1
     assert "not a release" in capsys.readouterr().err
-    assert cv.main(["--stack", str(tmp_path / "missing"), "--table", str(table)]) == 2
+    assert cv.main(["--stack", str(tmp_path / "missing"), "--table", str(table), "--manifest", manifest]) == 2
+
+
+# ---------------------------------------------------------------- symlinked stack folders, and how many were read
+
+def run_cli(tmp_path, stack, *names):
+    table = tmp_path / "t.json"
+    table.write_text(json.dumps(table_dict()), encoding="utf-8")
+    return cv.main(["--stack", str(stack), "--table", str(table), "--manifest", manifest_for(tmp_path, *names)])
+
+
+def test_a_stack_folder_that_is_a_symlink_is_read_like_any_other(tmp_path):
+    stack, real = tmp_path / "stack", tmp_path / "real"
+    put(stack, "A", "pyproject.toml", f"[project]\ndependencies = [{pin('v1.9.0')}]\n")
+    put(real, "B", "pyproject.toml", f"[project]\ndependencies = [{pin('v1.8.0')}]\n")
+    (stack / "B").symlink_to(real / "B", target_is_directory=True)
+    assert sorted((p.repo, p.ref) for p in cv.read_pins(stack)) == [("A", "v1.9.0"), ("B", "v1.8.0")]
+
+
+def test_the_run_says_how_many_repositories_it_read(tmp_path, capsys):
+    stack, real = tmp_path / "stack", tmp_path / "real"
+    put(stack, "A", "pyproject.toml", f"[project]\ndependencies = [{pin('v1.9.0')}]\n")
+    put(real, "B", "pyproject.toml", "[project]\nname = 'b'\n")
+    (stack / "B").symlink_to(real / "B", target_is_directory=True)
+    assert run_cli(tmp_path, stack, "A", "B") == 0
+    assert "read 2 repositories (2 of 2 named by the manifest)" in capsys.readouterr().out
+
+
+def test_a_repository_the_manifest_names_but_nothing_read_fails_the_run(tmp_path, capsys):
+    stack = tmp_path / "stack"
+    put(stack, "A", "pyproject.toml", f"[project]\ndependencies = [{pin('v1.9.0')}]\n")
+    done = run_cli(tmp_path, stack, "A", "B")
+    out = capsys.readouterr()
+    assert done != 0
+    assert "read 1 repositories, but the manifest names 2" in out.err and "from: B" in out.err
+    assert "all at or above the floor" not in out.out
+
+
+def test_a_dangling_symlink_or_an_empty_folder_is_not_a_read_repository(tmp_path, capsys):
+    stack = tmp_path / "stack"
+    put(stack, "A", "pyproject.toml", f"[project]\ndependencies = [{pin('v1.9.0')}]\n")
+    (stack / "D").symlink_to(tmp_path / "absent-folder-for-this-test", target_is_directory=True)
+    (stack / "B").mkdir()
+    assert not (tmp_path / "absent-folder-for-this-test").exists()
+    assert run_cli(tmp_path, stack, "A", "D", "B") != 0
+    assert "from: D, B" in capsys.readouterr().err
+
+
+def test_a_pin_problem_is_still_reported_when_a_repository_is_also_unread(tmp_path, capsys):
+    stack = tmp_path / "stack"
+    put(stack, "A", "pyproject.toml", f"[project]\ndependencies = [{pin('main')}]\n")
+    assert run_cli(tmp_path, stack, "A", "B") != 0
+    err = capsys.readouterr().err
+    assert "not a release" in err and "from: B" in err
+
+
+def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_seven(tmp_path, capsys):
+    stack = tmp_path / "stack"
+    put(stack, "A", "pyproject.toml", f"[project]\ndependencies = [{pin('v1.9.0')}]\n")
+    table = tmp_path / "t.json"
+    table.write_text(json.dumps(table_dict()), encoding="utf-8")
+    assert cv.main(["--stack", str(stack), "--table", str(table)]) != 0
+    assert "the manifest names 7" in capsys.readouterr().err

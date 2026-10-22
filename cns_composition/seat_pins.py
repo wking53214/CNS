@@ -21,6 +21,12 @@ A pin that lags the stack: a full-commit pin that is not the HEAD of the checkou
 `df16da8` and WARDEN is at `2cf0eec`). Pins are meant to lag until someone moves them on purpose, and all three
 agreeing is what matters. A tag pin cannot be compared with a commit, so it is not reported.
 
+HOW MANY IT READ
+
+A stack folder may be a symlink to a checkout, as `repin` already allows, and it is read like any other. The run says
+how many repositories it read, and fails (exit 2) when a repository the manifest names was not read: with one of the
+seven missing, "every pin agrees" would be a claim about six.
+
 The files are read as text and never executed.
 """
 
@@ -31,7 +37,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from cns_composition import repin
 
@@ -60,11 +66,18 @@ def _normalise(name: str) -> str:
 
 def read_pins(stack: Path) -> List[Pin]:
     """Every direct-URL pin in the pyproject.toml of each immediate subfolder of `stack`."""
+    return scan(stack)[0]
+
+
+def scan(stack: Path) -> Tuple[List[Pin], List[str]]:
+    """(every direct-URL pin, the names of the folders whose pyproject.toml was read). A folder that is a symlink to
+    a folder is read, as `repin` reads it."""
     stack = Path(stack)
     if not stack.is_dir():
         raise repin.RepinError(f"the stack folder {str(stack)!r} does not exist")
     pins: List[Pin] = []
-    for folder in sorted(p for p in stack.iterdir() if p.is_dir() and not p.is_symlink()):
+    read: List[str] = []
+    for folder in repin.stack_folders(stack):
         path = folder / "pyproject.toml"
         if not path.is_file() or path.is_symlink():
             continue
@@ -72,12 +85,13 @@ def read_pins(stack: Path) -> List[Pin]:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as err:
             raise repin.RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
+        read.append(folder.name)
         for match in _DIRECT.finditer(text):
             url, _, ref = match.group("target").rpartition("@")
             if not url or not ref:
                 continue
             pins.append(Pin(folder.name, _normalise(match.group("pkg")), url, ref))
-    return pins
+    return pins, read
 
 
 def agreement_problems(pins: Sequence[Pin]) -> List[str]:
@@ -123,9 +137,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         prog="python -m cns_composition.seat_pins",
         description="Fail if two repositories in a stack folder pin the same package differently.")
     parser.add_argument("--stack", required=True, type=Path, help="a folder holding one checkout per repository")
+    parser.add_argument("--manifest", type=Path, default=repin.DEFAULT_MANIFEST,
+                        help="the manifest whose repositories must all be read (default: contracts/warden-stack.json)")
     args = parser.parse_args(argv)
     try:
-        pins = read_pins(args.stack)
+        names = repin.manifest_names(args.manifest)
+        pins, read = scan(args.stack)
         problems = agreement_problems(pins)
         notes = lag_notes(args.stack, pins)
     except repin.RepinError as err:
@@ -133,13 +150,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     for note in notes:
         print(f"note: {note}")
+    for problem in problems:
+        print(f"seat_pins: {problem}", file=sys.stderr)
+    missing = repin.unread(names, read)
+    if missing:
+        print(f"seat_pins: read {len(read)} repositories, but the manifest names {len(names)} and no pyproject.toml "
+              f"was read from: {', '.join(missing)}. It is missing, not a folder, or has no pyproject.toml of its "
+              "own, so no agreement can be claimed", file=sys.stderr)
+        return 2
     if problems:
-        for problem in problems:
-            print(f"seat_pins: {problem}", file=sys.stderr)
         return 1
     shared = sorted({p.package for p in pins})
-    print(f"seat_pins: every shared pin agrees ({len(pins)} pin(s) across {len({p.repo for p in pins})} "
-          f"repositories: {', '.join(shared)})")
+    print(f"seat_pins: read {len(read)} repositories ({len(names)} of {len(names)} named by the manifest); every "
+          f"shared pin agrees ({len(pins)} pin(s) across {len({p.repo for p in pins})} repositories: "
+          f"{', '.join(shared)})")
     return 0
 
 

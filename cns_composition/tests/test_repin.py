@@ -201,3 +201,27 @@ def test_a_checkouts_own_git_config_cannot_run_a_program(stack):
     git(stack / "alpha", "config", "core.fsmonitor", f"touch {marker}")
     repin.read_heads(stack, ["alpha"])
     assert not marker.exists()
+
+
+def test_a_symlinked_stack_folder_is_read_and_listed_the_same_way(stack, tmp_path):
+    """repin, seat_pins and cns_versions share `stack_folders`, so a checkout reached by a symlink is in all three."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    real = make_repo(elsewhere, "Gamma")
+    (stack / "Gamma").symlink_to(real, target_is_directory=True)
+    assert [p.name for p in repin.stack_folders(stack)] == ["Beta", "Gamma", "alpha"]
+    assert repin.read_heads(stack, ["Gamma"])["Gamma"] == git(real, "rev-parse", "HEAD")
+
+
+def test_unread_names_the_manifest_repositories_no_folder_matches():
+    assert repin.unread(["alpha", "Beta", "Gamma"], ["ALPHA", "beta"]) == ["Gamma"]
+    assert repin.unread(["alpha"], []) == ["alpha"]
+
+
+def test_manifest_names_come_in_the_manifests_order(tmp_path):
+    path = tmp_path / "m.json"
+    path.write_text(manifest_text({"b": OLD, "a": OLD}), encoding="utf-8")
+    assert repin.manifest_names(path) == ["b", "a"]
+    assert repin.manifest_names() == list(json.loads(repin.DEFAULT_MANIFEST.read_text(encoding="utf-8"))["repos"])
+    with pytest.raises(repin.RepinError, match="cannot be read"):
+        repin.manifest_names(tmp_path / "absent-manifest.json")

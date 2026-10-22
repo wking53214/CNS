@@ -27,6 +27,12 @@ A pin that is not in the table (its version cannot be told), a pin below the tab
 the table's `current` (the table is stale). Everything between the floor and `current` is a note, so the check can be
 switched on at today's lowest version and the floor raised as repositories move, until it equals `current`.
 
+HOW MANY IT READ
+
+A stack folder may be a symlink to a checkout, as `repin` already allows, and it is read like any other. The run says
+how many repositories it read, and fails (exit 2) when a repository named by `contracts/warden-stack.json` was not
+read: with one of the seven missing, "all at or above the floor" would be a claim about six.
+
 The files are read as text and never executed.
 """
 
@@ -121,11 +127,19 @@ def load_table(path: Path = DEFAULT_TABLE) -> Table:
 
 def read_pins(stack: Path) -> List[Pin]:
     """Every direct CNS pin in the sources of each immediate subfolder of `stack`."""
+    return scan(stack)[0]
+
+
+def scan(stack: Path) -> Tuple[List[Pin], List[str]]:
+    """(every direct CNS pin, the names of the folders from which at least one source file was read). A folder that
+    is a symlink to a folder is read, as `repin` reads it."""
     stack = Path(stack)
     if not stack.is_dir():
         raise repin.RepinError(f"the stack folder {str(stack)!r} does not exist")
     pins: List[Pin] = []
-    for folder in sorted(p for p in stack.iterdir() if p.is_dir() and not p.is_symlink()):
+    read: List[str] = []
+    for folder in repin.stack_folders(stack):
+        opened = False
         files: List[Path] = []
         for pattern in _SOURCES:
             files += sorted(folder.glob(pattern))
@@ -139,9 +153,12 @@ def read_pins(stack: Path) -> List[Pin]:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as err:
                 raise repin.RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
+            opened = True
             for ref in dict.fromkeys(m.group("ref") for m in _PIN.finditer(text)):
                 pins.append(Pin(folder.name, path.relative_to(folder).as_posix(), ref))
-    return pins
+        if opened:
+            read.append(folder.name)
+    return pins, read
 
 
 def resolve(ref: str, table: Table) -> Optional[Release]:
@@ -193,12 +210,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         description="Fail if a repository pins a CNS release below the floor, or one the table does not know.")
     parser.add_argument("--stack", required=True, type=Path, help="a folder holding one checkout per repository")
     parser.add_argument("--table", type=Path, default=DEFAULT_TABLE, help="the release table (default: contracts/)")
+    parser.add_argument("--manifest", type=Path, default=repin.DEFAULT_MANIFEST,
+                        help="the manifest whose repositories must all be read (default: contracts/warden-stack.json)")
     args = parser.parse_args(argv)
     try:
+        names = repin.manifest_names(args.manifest)
         table = load_table(args.table)
-        pins = read_pins(args.stack)
+        pins, read = scan(args.stack)
         problems, notes = assess(pins, table)
-        folders = sorted(p.name for p in Path(args.stack).iterdir() if p.is_dir() and not p.is_symlink())
+        folders = [p.name for p in repin.stack_folders(args.stack)]
     except repin.RepinError as err:
         print(f"cns_versions: {err}", file=sys.stderr)
         return 2
@@ -208,11 +228,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     absent = [name for name in folders if name not in pinned and not name.startswith(".")]
     if absent:
         print(f"note: no direct CNS pin in: {', '.join(absent)}")
+    for problem in problems:
+        print(f"cns_versions: {problem}", file=sys.stderr)
+    missing = repin.unread(names, read)
+    if missing:
+        print(f"cns_versions: read {len(read)} repositories, but the manifest names {len(names)} and nothing was "
+              f"read from: {', '.join(missing)}. It is missing, not a folder, or has none of the files this reads, "
+              "so no version can be claimed for it", file=sys.stderr)
+        return 2
     if problems:
-        for problem in problems:
-            print(f"cns_versions: {problem}", file=sys.stderr)
         return 1
-    print(f"cns_versions: {len(pins)} pin(s) in {len(pinned)} repositories, all at or above the floor {table.floor} "
+    print(f"cns_versions: read {len(read)} repositories ({len(names)} of {len(names)} named by the manifest); "
+          f"{len(pins)} pin(s) in {len(pinned)} repositories, all at or above the floor {table.floor} "
           f"(current {table.current.version})")
     return 0
 
