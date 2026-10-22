@@ -86,8 +86,12 @@ def _key(version: str) -> Tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 
 
-def load_table(path: Path = DEFAULT_TABLE) -> Table:
-    """Read and validate the release table. Raises repin.RepinError on anything that makes a lookup untrustworthy."""
+def load_table(path: Optional[Path] = None) -> Table:
+    """Read and validate the release table. Raises repin.RepinError on anything that makes a lookup untrustworthy.
+
+    With no path the default is read when this is called, not when the module is imported, so a caller (or a test)
+    that moves DEFAULT_TABLE is obeyed."""
+    path = DEFAULT_TABLE if path is None else path
     try:
         data = json.loads(delivery.read_text(Path(path)))
     except delivery.DeliveryError as err:
