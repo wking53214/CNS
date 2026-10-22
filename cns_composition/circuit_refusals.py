@@ -285,7 +285,7 @@ def outcome_expected(name: str) -> frozenset:
 
 def main(argv: Optional[List[str]] = None) -> int:
     """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
-    return delivery.deliver(_main(argv), "circuit_refusals")
+    return delivery.run(_main, argv, "circuit_refusals")
 
 
 if __name__ == "__main__":

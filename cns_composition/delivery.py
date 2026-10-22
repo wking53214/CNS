@@ -15,7 +15,8 @@ link; and it blocks forever on a named pipe. Warden 0.13.8 closed the same gap f
 
 WHAT IT DOES
 
-`deliver(code, program)` is the last thing a command does. It flushes stdout; if stdout is closed or the flush
+`run(main, argv, program)` is what a command returns: it runs `main(argv)` with stdout guarded and then calls
+`deliver`. `deliver(code, program)` is the last thing a command does. It flushes stdout; if stdout is closed or the flush
 fails (a broken pipe, a full device, any OSError), it says so on stderr and returns 2 in place of 0. A non-zero
 code is kept, since the failure it reports went to stderr and was delivered. After a failed flush the stream's
 descriptor is parked on a pipe of our own and stdout is detached from the interpreter, so the shutdown flush
@@ -37,8 +38,9 @@ import os
 import stat
 import sys
 from pathlib import Path
+from typing import Callable, List, Optional
 
-__all__ = ["CONTRACTS", "DeliveryError", "UNDELIVERED", "deliver", "read_text", "write_file"]
+__all__ = ["CONTRACTS", "DeliveryError", "UNDELIVERED", "deliver", "read_text", "run", "write_file"]
 
 #: The exit code for a report that could not be delivered. 2 is what every command here already means by
 #: "the question could not be answered"; it is never 0.
@@ -59,13 +61,74 @@ def deliver(code: int, program: str) -> int:
     try:
         stream.flush()
     except OSError as err:
-        # BrokenPipeError (the reader is gone), ENOSPC (a full device), EIO: the report did not arrive. Park the
-        # descriptor and detach stdout, so the interpreter's own flush at exit cannot fail a second time.
-        _park(stream)
-        sys.stdout = sys.__stdout__ = None  # type: ignore[assignment]
-        _say(program, f"the report could not be delivered ({type(err).__name__})")
-        return code or UNDELIVERED
+        return _lost(stream, err, code, program)
     return code
+
+
+def run(main: Callable[[Optional[List[str]]], int], argv: Optional[List[str]], program: str) -> int:
+    """Run a command's `main(argv)` with its report protected, then `deliver` it. This is what a command returns.
+
+    `deliver` alone is not enough: in `deliver(main(argv), name)` the call to `main` runs, and prints, before
+    `deliver` exists. With buffered stdout a print only fills a buffer and the failure waits for the flush that
+    `deliver` makes; with unbuffered stdout (PYTHONUNBUFFERED=1, `python -u`) every print is a write, and a write to
+    a pipe whose reader has gone, or to a full device, raised out of `main` as a traceback and exit 1.
+
+    While `main` runs, stdout is a guard that takes the first write error as a fact and goes quiet: `main` carries
+    on, so work that comes after a print (a file written, a second file rendered) is still done, and its own exit
+    code is kept. A report that did not arrive is then handled exactly as `deliver` handles a failed flush."""
+    real = sys.stdout
+    if real is None:  # a closed descriptor 1: print is already a no-op, and `deliver` names it
+        return deliver(main(argv), program)
+    guard = _Guard(real)
+    sys.stdout = guard
+    try:
+        code = main(argv)
+    finally:
+        sys.stdout = real
+    if guard.error is None:
+        return deliver(code, program)
+    return _lost(real, guard.error, code, program)
+
+
+class _Guard:
+    """stdout while a command runs: the real stream, except that the first OSError (a broken pipe, ENOSPC, EIO) or
+    ValueError (a stream closed under us) from a write or flush is kept in `error` and every write after it is
+    taken and dropped. Everything else about the stream (fileno, encoding, isatty) is the real stream's."""
+
+    def __init__(self, stream: object) -> None:
+        self._stream = stream
+        self.error: Optional[BaseException] = None
+
+    def write(self, text: str) -> int:
+        if self.error is None:
+            try:
+                return int(self._stream.write(text))  # type: ignore[attr-defined]
+            except (OSError, ValueError) as err:
+                self.error = err
+        return len(text)
+
+    def flush(self) -> None:
+        if self.error is None:
+            try:
+                self._stream.flush()  # type: ignore[attr-defined]
+            except (OSError, ValueError) as err:
+                self.error = err
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._stream, name)
+
+
+def _lost(stream: object, err: BaseException, code: int, program: str) -> int:
+    """The report did not arrive. Say so on stderr and return `code`, or 2 in place of 0."""
+    if isinstance(err, ValueError) or getattr(stream, "closed", False):
+        _say(program, "stdout is closed, so the report was not delivered")
+        return code or UNDELIVERED
+    # BrokenPipeError (the reader is gone), ENOSPC (a full device), EIO: the report did not arrive. Park the
+    # descriptor and detach stdout, so the interpreter's own flush at exit cannot fail a second time.
+    _park(stream)
+    sys.stdout = sys.__stdout__ = None  # type: ignore[assignment]
+    _say(program, f"the report could not be delivered ({type(err).__name__})")
+    return code or UNDELIVERED
 
 
 _parked: list = []

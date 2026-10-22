@@ -8,6 +8,7 @@ the test creates, and a full device is a stand-in stream whose flush raises ENOS
 import ast
 import errno
 import io
+import json
 import os
 import stat
 import subprocess
@@ -68,6 +69,49 @@ def test_a_closed_stderr_does_not_raise(monkeypatch):
     assert delivery.deliver(0, "x") == 2
 
 
+class _FailsOnWrite(io.StringIO):
+    def __init__(self, err: OSError):
+        super().__init__()
+        self.err = err
+
+    def write(self, text):
+        raise self.err
+
+
+def test_run_keeps_going_after_a_write_fails_and_reports_the_loss(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "stdout", _FailsOnWrite(BrokenPipeError(errno.EPIPE, "Broken pipe")))
+    monkeypatch.setattr(sys, "__stdout__", sys.stdout)
+    done = []
+
+    def main(argv):
+        print("first")
+        done.append("work after the print")
+        print("second")
+        return 1
+
+    assert delivery.run(main, None, "x") == 1  # a non-zero code is kept
+    assert done == ["work after the print"]
+    assert sys.stdout is None and sys.__stdout__ is None
+    assert "x: the report could not be delivered (BrokenPipeError)" in capsys.readouterr().err
+
+    monkeypatch.setattr(sys, "stdout", _FailsOnWrite(OSError(errno.ENOSPC, "No space left")))
+    monkeypatch.setattr(sys, "__stdout__", sys.stdout)
+    assert delivery.run(lambda argv: (print("a"), 0)[1], None, "x") == 2  # 0 becomes 2
+
+
+def test_run_restores_stdout_and_lets_an_unrelated_error_through(capsys):
+    before = sys.stdout
+
+    def main(argv):
+        raise PermissionError(errno.EACCES, "Permission denied")
+
+    with pytest.raises(PermissionError):  # an OSError that is not about stdout is not a lost report
+        delivery.run(main, None, "x")
+    assert sys.stdout is before
+    assert delivery.run(lambda argv: (print("fine"), 0)[1], None, "x") == 0
+    assert capsys.readouterr().out == "fine\n"
+
+
 # ------------------------------------------------------------------------------------------ the commands, in a process
 
 def _run(module, *args, **kw):
@@ -109,9 +153,9 @@ def test_every_command_in_the_package_ends_with_deliver():
         last = main.body[-1]
         assert isinstance(last, ast.Return) and isinstance(last.value, ast.Call), module
         func = last.value.func
-        assert isinstance(func, ast.Attribute) and func.attr == "deliver" and \
-            isinstance(func.value, ast.Name) and func.value.id == "delivery", f"{module}.main does not end with delivery.deliver"
-        assert last.value.args[1].value == module, f"{module}.main names another program"  # type: ignore[attr-defined]
+        assert isinstance(func, ast.Attribute) and func.attr == "run" and \
+            isinstance(func.value, ast.Name) and func.value.id == "delivery", f"{module}.main does not end with delivery.run"
+        assert last.value.args[2].value == module, f"{module}.main names another program"  # type: ignore[attr-defined]
 
 
 # ------------------------------------------------------------------------------------------------------- write_file
@@ -233,3 +277,154 @@ def test_digest_vectors_write_refuses_a_symbolic_link_at_the_vectors_file(tmp_pa
     assert digest_vectors.main(["--write"]) == 2
     assert "is a symbolic link" in capsys.readouterr().err
     assert not (tmp_path / "elsewhere.json").exists()
+
+
+# ------------------------------------------- every command, in both buffering modes, for each way delivery fails
+#
+# The guard used to be `return delivery.deliver(_main(argv), name)`: `_main` ran, and printed, before `deliver` could
+# protect anything. With buffered stdout (the default, and what a CI runner has) a print only fills a buffer and the
+# failure shows up at the flush that `deliver` makes, so the guard worked. With PYTHONUNBUFFERED=1 every print is a
+# write, the write raised BrokenPipeError (or ENOSPC on a full device) inside `_main`, and the command ended in a
+# traceback with exit 1. These cases set the variable explicitly in the child's environment, both ways, so the result
+# does not depend on the machine that runs them.
+
+IDENT = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+ALL_TOOLS = ("circuit_canary", "circuit_refusals", "cns_versions", "consumers", "digest_vectors", "install_stack",
+             "link_ledger", "release", "repin", "seat_pins")
+BUFFERING = ("buffered", "unbuffered")
+
+#: circuit_canary and circuit_refusals print only after minutes of real work (they run the whole circuit), so the
+#: child replaces that work with its result and runs the real `main`, which is what prints and delivers.
+_STUB_CANARY = """
+import sys
+from cns_composition import circuit_canary as m
+m.run_canary = lambda *a, **k: m.CanaryResult(True, "ACCEPT", "")
+raise SystemExit(m.main(sys.argv[1:]))
+"""
+_STUB_REFUSALS = """
+import sys
+from cns_composition import circuit_canary as canary, circuit_refusals as m
+canary._folder = lambda stack, name: stack
+canary._missing_modules = lambda python, modules=(): []
+m.run_all = lambda stack, cns, names=(), **k: [m.Outcome(c.name, True, "REJECT", 1, "") for c in m.CASES]
+raise SystemExit(m.main(sys.argv[1:]))
+"""
+
+
+def _git(folder, *args):
+    done = subprocess.run(["git", *IDENT, "-C", str(folder), *args], capture_output=True, text=True, check=True)
+    return done.stdout.strip()
+
+
+@pytest.fixture
+def small_stack(tmp_path):
+    """One real repository `J` that pins CNS, and a manifest that names its HEAD: enough for repin, seat_pins and
+    cns_versions to each print a report."""
+    stack = tmp_path / "stack"
+    (stack / "J").mkdir(parents=True)
+    _git(stack / "J", "init", "-q")
+    (stack / "J" / "pyproject.toml").write_text(
+        '[project]\nname = "j"\nversion = "0"\n'
+        'dependencies = ["cns @ git+https://github.com/o/CNS.git@v1.9.0"]\n', encoding="utf-8")
+    _git(stack / "J", "add", "-A")
+    _git(stack / "J", "commit", "-q", "-m", "c")
+    return stack, _git(stack / "J", "rev-parse", "HEAD")
+
+
+def _manifest(tmp_path, sha):
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps({"schema": "warden-stack/1", "contract": "1", "repos": {"J": sha}}), encoding="utf-8")
+    return path
+
+
+def _command(tool, tmp_path, small_stack):
+    stack, sha = small_stack
+    manifest = _manifest(tmp_path, sha)
+    by_stack = {"repin": ["--stack", str(stack), "--manifest", str(manifest), "--check"],
+                "seat_pins": ["--stack", str(stack), "--manifest", str(manifest)],
+                "cns_versions": ["--stack", str(stack), "--manifest", str(manifest), "--spelling", "tag"]}
+    if tool == "circuit_canary":
+        return [sys.executable, "-c", _STUB_CANARY, "--stack", str(stack), "--cns", str(ROOT)]
+    if tool == "circuit_refusals":
+        return [sys.executable, "-c", _STUB_REFUSALS, "--stack", str(stack), "--cns", str(ROOT)]
+    return [sys.executable, "-m", f"cns_composition.{tool}", *by_stack.get(tool, [])]
+
+
+def _env(mode):
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+    env["PYTHONPATH"] = str(ROOT)
+    if mode == "unbuffered":
+        env["PYTHONUNBUFFERED"] = "1"
+    return env
+
+
+def _spawn(argv, mode, how):
+    """Run `argv` with its stdout failing in the way `how` says. Returns (returncode, stdout bytes, stderr text).
+    No device node is opened for anything but reading into the child as its own stdout (/dev/full, write only)."""
+    kw = dict(env=_env(mode), cwd=ROOT, timeout=120, stderr=subprocess.PIPE)
+    if how == "reader_gone":
+        reader, writer = os.pipe()
+        os.close(reader)
+        try:
+            done = subprocess.run(argv, stdout=writer, **kw)
+        finally:
+            os.close(writer)
+    elif how == "closed":
+        done = subprocess.run(argv, stdout=subprocess.PIPE, preexec_fn=lambda: os.close(1), **kw)
+    elif how == "full_device":
+        with open("/dev/full", "wb") as full:  # opened for write and never replaced; it is only the child's stdout
+            done = subprocess.run(argv, stdout=full, **kw)
+    else:
+        done = subprocess.run(argv, stdout=subprocess.PIPE, **kw)
+    return done.returncode, done.stdout or b"", done.stderr.decode("utf-8", "replace")
+
+
+@pytest.mark.parametrize("mode", BUFFERING)
+@pytest.mark.parametrize("tool", ALL_TOOLS)
+def test_the_harness_gets_a_report_out_of_every_command_when_stdout_works(tool, mode, tmp_path, small_stack):
+    """Control: the failure cases below are only meaningful if each command really prints a report to stdout here."""
+    code, out, err = _spawn(_command(tool, tmp_path, small_stack), mode, "works")
+    assert code == 0, err
+    assert out.strip(), f"{tool} printed nothing on stdout"
+    assert "Traceback" not in err
+
+
+@pytest.mark.parametrize("mode", BUFFERING)
+@pytest.mark.parametrize("tool", ALL_TOOLS)
+def test_every_command_whose_reader_has_gone_exits_two_with_no_traceback(tool, mode, tmp_path, small_stack):
+    code, _, err = _spawn(_command(tool, tmp_path, small_stack), mode, "reader_gone")
+    assert code == 2, err
+    assert f"{tool}: the report could not be delivered (BrokenPipeError)" in err
+    assert "Traceback" not in err and "Exception ignored" not in err
+
+
+@pytest.mark.parametrize("mode", BUFFERING)
+@pytest.mark.parametrize("tool", ALL_TOOLS)
+def test_every_command_with_stdout_closed_exits_two_and_names_it(tool, mode, tmp_path, small_stack):
+    code, _, err = _spawn(_command(tool, tmp_path, small_stack), mode, "closed")
+    assert code == 2, err
+    assert f"{tool}: stdout is closed, so the report was not delivered" in err
+    assert "Traceback" not in err and "Exception ignored" not in err
+
+
+@pytest.mark.parametrize("mode", BUFFERING)
+@pytest.mark.parametrize("tool", ALL_TOOLS)
+def test_every_command_whose_stdout_is_a_full_device_exits_two_with_no_traceback(tool, mode, tmp_path, small_stack):
+    code, _, err = _spawn(_command(tool, tmp_path, small_stack), mode, "full_device")
+    assert code == 2, err
+    assert f"{tool}: the report could not be delivered (OSError)" in err
+    assert "Traceback" not in err and "Exception ignored" not in err
+
+
+@pytest.mark.parametrize("how", ["reader_gone", "full_device"])
+@pytest.mark.parametrize("mode", BUFFERING)
+def test_a_report_that_cannot_be_delivered_does_not_stop_the_work_that_comes_after_it(mode, how, tmp_path, small_stack):
+    """`repin` prints which pins moved and only then writes the manifest. A print that raised ended the command
+    before the write; now the work is done, the manifest is the new one, and the exit code says the report was lost."""
+    stack, sha = small_stack
+    manifest = _manifest(tmp_path, "a" * 40)
+    argv = [sys.executable, "-m", "cns_composition.repin", "--stack", str(stack), "--manifest", str(manifest)]
+    code, _, err = _spawn(argv, mode, how)
+    assert code == 2, err
+    assert json.loads(manifest.read_text(encoding="utf-8"))["repos"] == {"J": sha}
+    assert "Traceback" not in err
