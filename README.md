@@ -121,19 +121,40 @@ and re-checks the manifest before using it. One setting is needed once: Settings
 token does not start `ci.yml`; the canary has already run the circuit on that exact manifest. A third job, `pins`, runs `python -m cns_composition.seat_pins --stack DIR`: it reads every repository's
 `pyproject.toml` as text and fails when two repositories pin the same package at different direct URLs or refs
 (JUDGE, DRAFTER and BURNISH all pin Warden, and pip refuses to install them together if one moves alone; a pin
-that merely lags the checkout it names is only a note). It is independent of the other two jobs. Adding a
+that merely lags the checkout it names is only a note). The job is independent of the other two. `seat_pins` and `cns_versions` follow a stack folder that is a symlink, as `repin` does, say how many repositories they read, and exit 2 when a repository the manifest names was not read. Adding a
 repository to the manifest also needs a checkout step in the workflow, and a test fails until both are done.
 
 ## Consuming it
 
-Pin a tag, the way sentinel_os already pins Conservation_Kernel:
+Pin a tag, the way sentinel_os already pins Conservation_Kernel. In a requirements file or a
+`pyproject.toml` dependency list the line is:
 
 ```
-cns @ git+https://github.com/wking53214/CNS.git@v1.0.0
+cns @ git+https://github.com/wking53214/CNS.git@v1.9.0
+```
+
+and to put it in an environment by hand:
+
+```
+python3 -m venv .venv
+.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"
 ```
 
 Then `from cns.graph import Node, Edge, Graph` and delete the vendored
 copy. Your own tests are the check that can fail.
+
+To install the whole circuit (CNS and the seven repositories, each at the commit
+`contracts/warden-stack.json` names, plus watcher-mcu) from a checkout of this repository:
+
+```
+python3 -m venv .venv
+.venv/bin/pip install -r contracts/install-stack.txt
+.venv/bin/pip install 'pytest>=8' "numpy==2.4.6; python_version < '3.12'" "numpy==2.5.4; python_version >= '3.12'" matplotlib==3.11.2
+```
+
+The last line is what running Warden on a target also needs: pytest, because Warden runs the target's own suite,
+and numpy and matplotlib, because ASSAY grades Ghost with them (numpy 2.5 needs Python 3.12 or newer, hence the two
+markers). `tests/test_install_stack.py` holds `contracts/install-stack.txt` equal to the manifest.
 
 Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
