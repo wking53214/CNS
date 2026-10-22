@@ -271,3 +271,28 @@ def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_seven
     table.write_text(json.dumps(table_dict()), encoding="utf-8")
     assert cv.main(["--stack", str(stack), "--table", str(table)]) != 0
     assert "the manifest names 7" in capsys.readouterr().err
+
+
+# -------------------------------------------------------------------------------------- 2.0.0: the tag spelling
+
+def test_spelling_tag_fails_a_pin_that_names_its_release_by_commit(tmp_path):
+    table = make_table(tmp_path, releases=table_dict()["releases"] + [{"ref": "e" * 40, "commit": "e" * 40,
+                                                                        "version": "1.8.0", "note": "no tag"}])
+    pins = [cv.Pin("A", "pyproject.toml", "v1.9.0"), cv.Pin("B", "pyproject.toml", "9" * 40),
+            cv.Pin("C", "pyproject.toml", "9" * 12), cv.Pin("D", "pyproject.toml", "e" * 40)]
+    assert cv.assess(pins, table)[0] == []
+    problems, _ = cv.assess(pins, table, spelling="tag")
+    assert [p.split(" (")[0] for p in problems] == ["B", "C", "D"]
+    assert "spelled as a commit; the circuit spells the pin as its tag v1.9.0" in problems[0]
+    assert "the circuit spells the pin as the tag v1.9.0" in problems[2]
+
+
+def test_the_command_takes_spelling_tag(tmp_path, capsys):
+    table = tmp_path / "t.json"
+    table.write_text(json.dumps(table_dict()), encoding="utf-8")
+    stack = tmp_path / "stack"
+    put(stack, "A", "pyproject.toml", pin("9" * 40))
+    manifest = manifest_for(tmp_path, "A")
+    assert cv.main(["--stack", str(stack), "--table", str(table), "--manifest", manifest]) == 0
+    assert cv.main(["--stack", str(stack), "--table", str(table), "--manifest", manifest, "--spelling", "tag"]) == 1
+    assert "spelled as a commit" in capsys.readouterr().err

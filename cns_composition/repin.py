@@ -45,8 +45,8 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from cns.stack import StackManifest, StackPin
 from cns_composition import delivery
 
-__all__ = ["RepinError", "DEFAULT_MANIFEST", "stack_folders", "manifest_names", "unread", "read_heads", "uncommitted",
-           "repin_text", "changes", "main"]
+__all__ = ["RepinError", "DEFAULT_MANIFEST", "stack_folders", "manifest_names", "unread", "uncovered_notes",
+           "read_heads", "uncommitted", "repin_text", "changes", "main"]
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
 
@@ -128,6 +128,18 @@ def unread(names: Sequence[str], read: Sequence[str]) -> List[str]:
     """The manifest names that no folder name in `read` matches (without regard to case, as Warden matches them)."""
     seen = {r.casefold() for r in read}
     return [n for n in names if n.casefold() not in seen]
+
+
+def uncovered_notes(stack: Path, names: Sequence[str]) -> List[str]:
+    """One note when the stack folder holds checkouts the manifest does not name. A note, not a failure: Warden
+    refuses only a folder it uses (WATCHER_MCU sits beside the seven and reads the record afterwards), but a
+    person reading "every pin agrees" should know which folders that claim does not cover."""
+    covered = {n.casefold() for n in names}
+    extra = [p.name for p in stack_folders(stack) if p.name.casefold() not in covered and not p.name.startswith(".")]
+    if not extra:
+        return []
+    return [f"the stack folder also holds {', '.join(extra)}, which the manifest does not name, so nothing pins "
+            + ("it" if len(extra) == 1 else "them") + " to a commit"]
 
 
 def _folder_for(stack: Path, name: str) -> Path:
@@ -235,6 +247,8 @@ def _main(argv: Optional[List[str]] = None) -> int:
     except (RepinError, OSError) as err:
         print(f"repin: {err}", file=sys.stderr)
         return 2
+    for note in uncovered_notes(args.stack, [p.name for p in manifest.repos]):
+        print(f"note: {note}")
     for name, old, now in moved:
         print(f"{name}: {old[:12]} -> {now[:12]}")
     if not moved:

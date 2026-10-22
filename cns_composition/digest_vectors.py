@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from cns.gate import subject_digest
-from cns_composition import delivery
+from cns_composition import delivery, repin
 
 __all__ = ["CASES", "VENDORED", "build", "drift", "main"]
 
@@ -100,8 +100,7 @@ def drift(stack: Path, committed: Optional[Path] = None) -> List[str]:
     out: List[str] = []
     stack = Path(stack)
     for repo, rel in VENDORED.items():
-        folder = next((p for p in sorted(stack.iterdir())
-                       if p.is_dir() and not p.is_symlink() and p.name.casefold() == repo.casefold()), None)
+        folder = next((p for p in repin.stack_folders(stack) if p.name.casefold() == repo.casefold()), None)
         if folder is None:
             out.append(f"{repo} is registered but has no checkout in {str(stack)!r}")
             continue

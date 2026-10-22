@@ -59,7 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from cns_composition import delivery
+from cns_composition import delivery, repin
 
 __all__ = ["LEDGER_SCHEMA", "Link", "LedgerError", "read_ledger", "status", "problems", "unverified", "counts", "main"]
 
@@ -288,10 +288,9 @@ def cns_side_problem(cns_root: Path, repo: str, evidence: str, aka: Sequence[str
 
 
 def _folder(stack: Path, name: str) -> Optional[Path]:
-    for p in sorted(stack.iterdir()):
-        if p.is_dir() and not p.is_symlink() and p.name.casefold() == name.casefold():
-            return p
-    return None
+    """The stack folder for a repository name, matched without regard to case. A folder that is a symlink counts,
+    as it does for every other tool that reads a stack folder (`repin.stack_folders`)."""
+    return next((p for p in repin.stack_folders(stack) if p.name.casefold() == name.casefold()), None)
 
 
 def repo_side_problem(stack: Path, repo: str, evidence: str, cns_root: Optional[Path] = None) -> Optional[str]:

@@ -175,8 +175,12 @@ def resolve(ref: str, table: Table) -> Optional[Release]:
     return None
 
 
-def assess(pins: Sequence[Pin], table: Table) -> Tuple[List[str], List[str]]:
-    """(problems, notes). A problem fails the check; a note is a repository that lags but is above the floor."""
+def assess(pins: Sequence[Pin], table: Table, spelling: str = "any") -> Tuple[List[str], List[str]]:
+    """(problems, notes). A problem fails the check; a note is a repository that lags but is above the floor.
+
+    `spelling="tag"` also fails a pin that names a release by its commit rather than by its tag: the circuit
+    repositories spell the CNS pin as the tag, because pip treats a tag URL and a commit URL as two different
+    sources and refuses to install them together."""
     problems: List[str] = []
     notes: List[str] = []
     cur, floor = _key(table.current.version), _key(table.floor)
@@ -189,6 +193,10 @@ def assess(pins: Sequence[Pin], table: Table) -> Tuple[List[str], List[str]]:
                             f"told: pin the tag {table.current.ref}, or add the release to the table")
             continue
         resolved.setdefault(pin.repo, []).append((pin, release))
+        if spelling == "tag" and (pin.ref != release.ref or release.ref == release.commit):
+            tag = f"its tag {release.ref}" if release.ref != release.commit else f"the tag {table.current.ref}"
+            problems.append(f"{where}, which is CNS {release.version} spelled as a commit; the circuit spells the pin "
+                            f"as {tag}, because pip cannot install a tag pin and a commit pin of one package together")
         version = _key(release.version)
         if version > cur:
             problems.append(f"{where}, which is CNS {release.version}, newer than the table's current "
@@ -214,12 +222,15 @@ def _main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--table", type=Path, default=DEFAULT_TABLE, help="the release table (default: contracts/)")
     parser.add_argument("--manifest", type=Path, default=repin.DEFAULT_MANIFEST,
                         help="the manifest whose repositories must all be read (default: contracts/warden-stack.json)")
+    parser.add_argument("--spelling", choices=("any", "tag"), default="any",
+                        help="tag: also fail a pin that names its release by commit instead of by tag, the spelling "
+                             "the circuit repositories share (default: any)")
     args = parser.parse_args(argv)
     try:
         names = repin.manifest_names(args.manifest)
         table = load_table(args.table)
         pins, read = scan(args.stack)
-        problems, notes = assess(pins, table)
+        problems, notes = assess(pins, table, spelling=args.spelling)
         folders = [p.name for p in repin.stack_folders(args.stack)]
     except repin.RepinError as err:
         print(f"cns_versions: {err}", file=sys.stderr)

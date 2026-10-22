@@ -41,7 +41,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from cns_composition import delivery, repin
 
-__all__ = ["Pin", "agreement_problems", "lag_notes", "read_pins", "main"]
+__all__ = ["Pin", "agreement_problems", "lag_notes", "read_install", "read_pins", "main"]
 
 #: `"name @ git+URL@ref"`, in a dependencies list or an extra. The ref is whatever follows the last `@`.
 _DIRECT = re.compile(r"""["'](?P<pkg>[A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[^\]]*\])?\s*@\s*(?P<target>git\+[^"'\s]+)["']""")
@@ -105,9 +105,40 @@ def agreement_problems(pins: Sequence[Pin]) -> List[str]:
             continue
         urls_differ = len({p.url for p in group}) > 1
         spelled = "; ".join(f"{p.repo} pins {p.text if urls_differ else p.ref}" for p in group)
+        if urls_differ and len({(_same_repository(p.url), p.ref) for p in group}) == 1:
+            out.append(f"{package} is spelled differently for the same repository and commit: {spelled}. pip "
+                       "compares the text, so it cannot install these together; spell the URL the same way everywhere")
+            continue
         out.append(f"{package} is pinned differently: {spelled}. pip cannot install these together; "
                    "move the pin in every repository at once")
     return out
+
+
+def _same_repository(url: str) -> str:
+    """The URL with the differences GitHub ignores and pip does not removed: case, a trailing `.git`, a trailing slash."""
+    return url.rstrip("/").removesuffix(".git").casefold()
+
+
+#: A requirement line as a requirements file carries it: `name @ git+URL@ref`, unquoted, at the start of a line.
+_REQUIREMENT = re.compile(r"(?m)^\s*(?P<pkg>[A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[^\]]*\])?\s*@\s*(?P<target>git\+\S+)")
+
+
+def read_install(path: Path) -> List[Pin]:
+    """Every direct-URL pin in a requirements file such as contracts/install-stack.txt, as one more member of the
+    agreement under the file's own name. The file is read as text and never executed."""
+    path = Path(path)
+    try:
+        text = delivery.read_text(path)
+    except delivery.DeliveryError as err:
+        raise repin.RepinError(str(err)) from err
+    except (OSError, UnicodeDecodeError) as err:
+        raise repin.RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
+    pins: List[Pin] = []
+    for match in _REQUIREMENT.finditer(text):
+        url, _, ref = match.group("target").rpartition("@")
+        if url and ref:
+            pins.append(Pin(path.name, _normalise(match.group("pkg")), url, ref))
+    return pins
 
 
 def lag_notes(stack: Path, pins: Sequence[Pin]) -> List[str]:
@@ -139,12 +170,18 @@ def _main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--stack", required=True, type=Path, help="a folder holding one checkout per repository")
     parser.add_argument("--manifest", type=Path, default=repin.DEFAULT_MANIFEST,
                         help="the manifest whose repositories must all be read (default: contracts/warden-stack.json)")
+    parser.add_argument("--install", type=Path, default=None, metavar="FILE",
+                        help="a requirements file (contracts/install-stack.txt) whose pins must agree with the "
+                             "repositories' pins too; a URL spelled another way there is a disagreement")
     args = parser.parse_args(argv)
     try:
         names = repin.manifest_names(args.manifest)
         pins, read = scan(args.stack)
+        if args.install is not None:
+            pins += read_install(args.install)
         problems = agreement_problems(pins)
         notes = lag_notes(args.stack, pins)
+        notes += repin.uncovered_notes(args.stack, names)
     except repin.RepinError as err:
         print(f"seat_pins: {err}", file=sys.stderr)
         return 2

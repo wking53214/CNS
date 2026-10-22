@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
 
-from cns_composition import delivery
+from cns_composition import delivery, repin
 
 __all__ = ["REQUIRED", "drift", "main", "missing", "scan"]
 
@@ -154,8 +154,7 @@ def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None,
     stack = Path(stack)
     out: List[str] = []
     for repo, registered in (REQUIRED if required is None else required).items():
-        folder = next((p for p in sorted(stack.iterdir())
-                       if p.is_dir() and not p.is_symlink() and p.name.casefold() == repo.casefold()), None)
+        folder = next((p for p in repin.stack_folders(stack) if p.name.casefold() == repo.casefold()), None)
         if folder is None:
             if repo.casefold() not in {p.casefold() for p in private}:
                 out.append(f"{repo} is registered but has no checkout in {str(stack)!r}")

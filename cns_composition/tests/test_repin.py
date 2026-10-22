@@ -276,3 +276,15 @@ def test_manifest_names_come_in_the_manifests_order(tmp_path):
     assert repin.manifest_names() == list(json.loads(repin.DEFAULT_MANIFEST.read_text(encoding="utf-8"))["repos"])
     with pytest.raises(repin.RepinError, match="cannot be read"):
         repin.manifest_names(tmp_path / "absent-manifest.json")
+
+
+def test_a_stack_folder_the_manifest_does_not_name_is_noted_by_check_and_by_write(stack, tmp_path, capsys):
+    make_repo(stack, "WATCHER_MCU")
+    heads = repin.read_heads(stack, ["alpha", "Beta"])
+    path = tmp_path / "m.json"
+    path.write_text(manifest_text({"alpha": heads["alpha"], "Beta": heads["Beta"]}), encoding="utf-8")
+    assert repin.main(["--stack", str(stack), "--manifest", str(path), "--check"]) == 0
+    assert "note: the stack folder also holds WATCHER_MCU, which the manifest does not name" in capsys.readouterr().out
+    assert repin.uncovered_notes(stack, ["alpha", "beta"]) == [
+        "the stack folder also holds WATCHER_MCU, which the manifest does not name, so nothing pins it to a commit"]
+    assert repin.uncovered_notes(stack, ["alpha", "Beta", "watcher_mcu"]) == []
