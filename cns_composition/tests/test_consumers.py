@@ -123,3 +123,15 @@ def test_the_command_fails_on_drift_and_on_a_missing_stack(tmp_path, capsys):
     assert C.main(["--stack", str(tmp_path / "nope")]) == 2
     assert C.main(["--stack", str(tmp_path)]) == 1
     assert "has no checkout" in capsys.readouterr().err
+
+
+def test_a_symlinked_stack_folder_is_compared_like_any_other(tmp_path):
+    """2.0.0: repin, seat_pins and cns_versions already followed a symlinked stack folder; this did not, so one stack
+    folder gave two tools two different repository sets."""
+    real = tmp_path / "elsewhere" / "Link"
+    write(real, "link/a.py", "from cns.gate import Gate\n")
+    stack = tmp_path / "stack"
+    stack.mkdir()
+    (stack / "Link").symlink_to(real, target_is_directory=True)
+    assert C.drift(stack, {"Link": {"cns.gate": ("Gate",)}}) == []
+    assert "now takes Gate" in C.drift(stack, {"Link": {"cns.gate": ()}})[0]

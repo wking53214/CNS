@@ -204,3 +204,46 @@ def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_seven
     put(tmp_path, "J", warden(A))
     assert sp.main(["--stack", str(tmp_path)]) != 0
     assert "the manifest names 7" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------- 2.0.0: the install file, spelling, uncovered folders
+
+def test_the_install_file_is_one_more_member_of_the_agreement(tmp_path, capsys):
+    put(tmp_path, "J", warden(A))
+    install = tmp_path / "install-stack.txt"
+    install.write_text(f"# header\ncns @ git+https://github.com/o/CNS.git@v1.9.0\nwarden @ {URL}@{A}  # 0.13.7\n")
+    pins = sp.read_install(install)
+    assert [(p.repo, p.package, p.ref) for p in pins] == [("install-stack.txt", "cns", "v1.9.0"), ("install-stack.txt", "warden", A)]
+    manifest = manifest_for(tmp_path, "J")
+    assert sp.main(["--stack", str(tmp_path), "--manifest", manifest, "--install", str(install)]) == 0
+    assert "across 2 repositories" in capsys.readouterr().out
+    install.write_text(f"warden @ {URL}@{B}\n")
+    assert sp.main(["--stack", str(tmp_path), "--manifest", manifest, "--install", str(install)]) == 1
+    assert "install-stack.txt pins" in capsys.readouterr().err
+
+
+def test_the_same_commit_spelled_with_another_url_is_named_as_a_spelling_difference(tmp_path):
+    put(tmp_path, "J", warden(A))
+    put(tmp_path, "D", f"warden @ git+https://github.com/o/WARDEN.git@{A}")
+    put(tmp_path, "B", f"warden @ git+https://github.com/o/warden@{A}")
+    problems = sp.agreement_problems(sp.read_pins(tmp_path))
+    assert len(problems) == 1
+    assert problems[0].startswith("warden is spelled differently for the same repository and commit:")
+    assert "spell the URL the same way everywhere" in problems[0]
+    put(tmp_path, "B", f"warden @ git+https://github.com/o/warden@{B}")
+    assert sp.agreement_problems(sp.read_pins(tmp_path))[0].startswith("warden is pinned differently:")
+
+
+def test_a_missing_or_unreadable_install_file_is_an_error_not_a_skip(tmp_path, capsys):
+    put(tmp_path, "J", warden(A))
+    manifest = manifest_for(tmp_path, "J")
+    assert sp.main(["--stack", str(tmp_path), "--manifest", manifest, "--install", str(tmp_path / "none.txt")]) == 2
+    assert "cannot be read" in capsys.readouterr().err
+
+
+def test_a_stack_folder_the_manifest_does_not_name_is_noted(tmp_path, capsys):
+    put(tmp_path, "J", warden(A))
+    put(tmp_path, "WATCHER_MCU", warden(A))
+    assert sp.main(["--stack", str(tmp_path), "--manifest", manifest_for(tmp_path, "J")]) == 0
+    out = capsys.readouterr().out
+    assert "note: the stack folder also holds WATCHER_MCU, which the manifest does not name" in out

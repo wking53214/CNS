@@ -389,3 +389,14 @@ def test_a_private_repo_with_a_checkout_is_checked_like_any_other(cns, stack):
 def test_without_a_stack_nothing_is_unverified_because_nothing_was_asked(cns, tmp_path):
     assert L.unverified([L.Link("Hidden", "h/conn.py", "x", private=True)], None) == []
     assert L.unverified([L.Link("Hidden", "h/conn.py", "x", private=True)], tmp_path / "nope") == []
+
+
+def test_a_symlinked_stack_folder_is_read_like_any_other(cns, stack, tmp_path):
+    """2.0.0: the folder may be a symlink; a proof file inside it may still not be one."""
+    linked = tmp_path / "linked"
+    linked.mkdir()
+    (linked / "JUDGE").symlink_to(stack / "JUDGE", target_is_directory=True)
+    assert L.repo_side_problem(linked, "JUDGE", "judge/conn.py") is None
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert "has no checkout" in L.repo_side_problem(empty, "JUDGE", "judge/conn.py")

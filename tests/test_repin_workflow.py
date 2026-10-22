@@ -183,3 +183,22 @@ def test_the_pins_job_keeps_no_credential_and_runs_no_code_from_the_stack():
     block = job("pins")
     assert block.count("persist-credentials: false") == block.count("actions/checkout@")
     assert "pip install" not in block and "circuit_canary" not in block
+
+
+# ---------------------------------------------------------------------------
+# 2.0.0: the install file travels with the manifest, so the two cannot drift by one tool and not the other.
+# ---------------------------------------------------------------------------
+
+def test_the_canary_notices_a_moved_install_file_and_carries_it_with_the_manifest():
+    block = job("canary")
+    assert "git diff --quiet -- contracts/warden-stack.json contracts/install-stack.txt" in block
+    assert "cp hub/contracts/install-stack.txt proposed/install-stack.txt" in block
+
+
+def test_the_proposing_job_checks_the_install_file_is_the_rendering_and_commits_both():
+    block = job("propose")
+    assert "cp proposed/install-stack.txt contracts/install-stack.txt" in block
+    assert "python -m cns_composition.install_stack --check" in block
+    assert "tests/test_install_stack.py" in block and "cns_composition/tests/test_install_rendering.py" in block
+    assert "git add contracts/warden-stack.json contracts/install-stack.txt" in block
+    assert block.index("install_stack --check") < block.index("git add contracts/")

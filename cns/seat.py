@@ -84,6 +84,11 @@ class Evidence:
     assay: Optional[Mapping[str, object]] = None
     ghost_baseline_before: Optional[Mapping[str, object]] = None
     ghost_baseline_after: Optional[Mapping[str, object]] = None
+    #: True: the finisher was called after the loop converged. False: it was not. None: the governor did
+    #: not say (a governor older than this field). Added in 2.0.0 because a converged run ends on
+    #: NOTHING_TO_PROPOSE whether or not a finisher then edited files, so without this the judge cannot
+    #: tell a finishing edit from a fabricated one; JUDGE 0.4.8 records that limit in its own docstring.
+    finisher_ran: Optional[bool] = None
 
 
 @dataclass(frozen=True)

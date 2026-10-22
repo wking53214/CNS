@@ -34,6 +34,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
 
+from cns_composition import delivery, repin
+
 __all__ = ["REQUIRED", "drift", "main", "missing", "scan"]
 
 Imports = Mapping[str, Tuple[str, ...]]
@@ -152,8 +154,7 @@ def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None,
     stack = Path(stack)
     out: List[str] = []
     for repo, registered in (REQUIRED if required is None else required).items():
-        folder = next((p for p in sorted(stack.iterdir())
-                       if p.is_dir() and not p.is_symlink() and p.name.casefold() == repo.casefold()), None)
+        folder = next((p for p in repin.stack_folders(stack) if p.name.casefold() == repo.casefold()), None)
         if folder is None:
             if repo.casefold() not in {p.casefold() for p in private}:
                 out.append(f"{repo} is registered but has no checkout in {str(stack)!r}")
@@ -175,7 +176,7 @@ def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None,
     return out
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.consumers",
         description="Check that CNS still provides what the registered repositories take from it, "
@@ -189,10 +190,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 2
         from cns_composition.link_ledger import LedgerError, read_ledger
         try:
-            private = tuple(k.repo for k in read_ledger(Path(__file__).resolve().parents[1] / "contracts" / "cns-links.json")
-                            if k.private)
-        except LedgerError:
-            private = ()
+            private = tuple(k.repo for k in read_ledger(delivery.CONTRACTS / "cns-links.json") if k.private)
+        except LedgerError as err:
+            # Without the ledger the private repositories would be reported as missing checkouts, which is not
+            # what is wrong. Say what is, and claim nothing.
+            print(f"consumers: {err}", file=sys.stderr)
+            return 2
         problems += drift(args.stack, private=private)
     for line in problems:
         print(f"consumers: {line}", file=sys.stderr)
@@ -200,6 +203,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         names = sum(len(n) or 1 for m in REQUIRED.values() for n in m.values())
         print(f"consumers: CNS provides everything {len(REQUIRED)} repositories take from it ({names} items)")
     return 1 if problems else 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.deliver(_main(argv), "consumers")
 
 
 if __name__ == "__main__":

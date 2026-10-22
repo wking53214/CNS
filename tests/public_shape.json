@@ -1188,11 +1188,31 @@
               "default": "factory:dict",
               "name": "versions",
               "type": "Mapping[str, Any]"
+            },
+            {
+              "default": "()",
+              "name": "reobserved",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "()",
+              "name": "declined",
+              "type": "Tuple[str, ...]"
+            },
+            {
+              "default": "None",
+              "name": "swizzle_sound",
+              "type": "Optional[bool]"
             }
           ],
           "frozen": true,
           "kind": "dataclass",
           "members": {
+            "clean": "property",
+            "dirty_parts": "def(self) -> 'Tuple[str, ...]'",
+            "findings_remaining": "property",
+            "gaps": "def(self) -> 'Tuple[str, ...]'",
+            "participants": "def(self) -> 'Tuple[Tuple[str, str, Optional[bool]], ...]'",
             "problems": "def(self) -> 'Tuple[str, ...]'"
           },
           "slots": false
@@ -1297,6 +1317,11 @@
               "default": "None",
               "name": "ghost_baseline_after",
               "type": "Optional[Mapping[str, object]]"
+            },
+            {
+              "default": "None",
+              "name": "finisher_ran",
+              "type": "Optional[bool]"
             }
           ],
           "frozen": true,
@@ -1531,5 +1556,5 @@
       "functions": {}
     }
   },
-  "version": "1.9.0"
+  "version": "2.0.0"
 }

@@ -96,3 +96,114 @@ def test_a_null_reason_is_refused_not_read_as_the_word_none():
         RunRecord.from_dict(_good(reason=None))
     with pytest.raises(ValueError, match="decision is int, not text"):
         RunRecord.from_dict(_good(decision=3))
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# 2.0.0: what a reader can say about a run beyond its named fields. The first fixture is a real record (Warden
+# 0.13.6, kept by WATCHER_MCU as tests/fixtures/warden_0_13_6_declined_record.json): unmeasured is empty, converged
+# is true, and seven checks were declined. A narrator that read only the named fields said "gaps: none" of it.
+# ---------------------------------------------------------------------------------------------------------------
+
+import json
+
+FIXTURE = Path(__file__).with_name("fixtures") / "warden_0_13_6_declined_record.json"
+DECLINED = ("mutate", "kernel", "structure", "tests", "project", "secrets", "correlate")
+
+
+def _real() -> RunRecord:
+    return RunRecord.from_dict(json.loads(FIXTURE.read_text(encoding="utf-8")))
+
+
+def test_the_real_declined_record_reads_and_says_what_was_declined():
+    r = _real()
+    assert r.decision == "FINISH_REJECTED" and r.converged is True and r.unmeasured == ()
+    assert r.declined == DECLINED
+    assert r.swizzle_sound is True
+
+
+def test_gaps_names_every_declined_check_even_when_unmeasured_is_empty():
+    assert _real().gaps() == tuple(f"declined: {name}" for name in DECLINED)
+
+
+def test_converged_is_not_zero_findings():
+    r = _real()
+    assert r.converged and r.findings_remaining == 27 and len(r.reobserved) == 27
+    assert not r.clean
+
+
+def test_participants_is_the_commit_set_that_took_part():
+    parts = _real().participants()
+    names = [name for name, _, _ in parts]
+    assert names[:4] == ["warden", "ghost_tools", "swizzle", "assay"]
+    assert names[4:7] == ["drafter seat", "finisher seat", "judge seat"]
+    assert len(names) == 14 and all(n.startswith("join /stack/") for n in names[7:])
+    assert all(len(commit) == 40 for _, commit, _ in parts)
+    assert {dirty for _, _, dirty in parts} == {False}
+    assert _real().dirty_parts() == ()
+
+
+def _accept(**over: object) -> dict:
+    base = {"schema": "cns.run/1", "contract": "1", "decision": "ACCEPT", "reason": "", "converged": True,
+            "finished": True, "put_back": False, "unmeasured": [], "observed": ["g1"], "reobserved": [],
+            "ghost_scan": {"status": "ok", "gaps": [], "declined": []}, "swizzle_sound": True,
+            "versions": {"warden": {"commit": "a" * 40, "dirty": False},
+                         "seats": {"judge": {"commit": "b" * 40, "dirty": False}},
+                         "joins": [{"path": "/s/JUDGE", "commit": "b" * 40, "dirty": False}]}}
+    base.update(over)
+    return base
+
+
+def test_clean_is_accept_converged_nothing_put_back_no_gap_and_nothing_remaining():
+    assert RunRecord.from_dict(_accept()).clean
+
+
+@pytest.mark.parametrize("change", [
+    {"decision": "ACCEPT_UNVERIFIED"},
+    {"converged": False},
+    {"put_back": True},
+    {"unmeasured": ["assay"]},
+    {"reobserved": ["g1"]},
+    {"ghost_scan": {"status": "ok", "gaps": ["parse: 1 file(s) could not be parsed"], "declined": []}},
+    {"ghost_scan": {"status": "ok", "gaps": [], "declined": ["mutate"]}},
+    {"versions": {"warden": {"commit": "a" * 40, "dirty": True}}},
+])
+def test_anything_less_than_fully_measured_is_not_clean(change):
+    assert not RunRecord.from_dict(_accept(**change)).clean
+
+
+def test_a_dirty_part_is_a_gap_and_is_named_and_a_null_flag_is_not_dirty():
+    r = RunRecord.from_dict(_accept(versions={
+        "warden": {"commit": "a" * 40, "dirty": None},
+        "seats": {"judge": {"commit": "b" * 40, "dirty": True}, "drafter": None},
+        "joins": [{"path": "/s/JUDGE", "commit": "b" * 40, "dirty": True}]}))
+    assert r.dirty_parts() == ("judge seat", "join /s/JUDGE")
+    assert r.gaps() == ("dirty: judge seat", "dirty: join /s/JUDGE")
+    assert r.participants()[0] == ("warden", "a" * 40, None)
+
+
+def test_a_part_without_a_commit_is_reported_with_an_empty_one_not_dropped():
+    r = RunRecord.from_dict(_accept(versions={"assay": {"version": "0.11.3"}}))
+    assert r.participants() == (("assay", "", None),)
+
+
+def test_the_new_fields_are_typed_like_the_old_ones():
+    with pytest.raises(ValueError, match="ghost_scan.declined is str, not a list"):
+        RunRecord.from_dict(_good(ghost_scan={"declined": "mutate"}))
+    with pytest.raises(ValueError, match="ghost_scan.declined holds something that is not text"):
+        RunRecord.from_dict(_good(ghost_scan={"declined": ["mutate", 3]}))
+    with pytest.raises(ValueError, match="reobserved is dict, not a list"):
+        RunRecord.from_dict(_good(reobserved={}))
+    with pytest.raises(ValueError, match="swizzle_sound is str, not a true or false value or null"):
+        RunRecord.from_dict(_good(swizzle_sound="yes"))
+
+
+def test_a_record_that_does_not_say_leaves_the_new_fields_unknown():
+    r = RunRecord.from_dict(_good())
+    assert r.reobserved == () and r.declined == () and r.swizzle_sound is None
+    assert r.gaps() == ("unmeasured: ghost_partial", "ghost: boundary")
+
+
+def test_the_pure_functions_are_pure():
+    r = _real()
+    assert r.gaps() == r.gaps() and r.participants() == r.participants()
+    assert r == _real()

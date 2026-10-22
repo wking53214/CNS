@@ -51,8 +51,8 @@ must. Revisit this entry when a second repository reads the summary.
 | `cns.suite` | `SuiteRun` | new in 1.7.0; what one run of a target's suite reported, with `green` and `describe` |
 | `cns.epistemic` | `EpistemicState` | new in 1.7.0; the vocabulary for what kind of claim a finding makes |
 | `cns.defect` | `Defect`, `DefectSeverity`, `DefectLifecycle` | new in 1.7.0; one defect as the scanner, governor and drafter share it |
-| `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return |
-| `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it) |
+| `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return. 2.0.0 adds `Evidence.finisher_ran` (None when the governor does not say) |
+| `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it). 2.0.0 adds `reobserved`, `declined`, `swizzle_sound` and the pure functions `gaps`, `participants`, `dirty_parts`, `findings_remaining`, `clean`; the schema stays `cns.run/1` |
 | `cns.assay` | `AssaySummary` | new in 1.9.0; the one-line summary ASSAY reports on an answer key (all claims hold, status, counts, failures) |
 | `cns.attack` | `AttackResult` | new in 1.8.0; one attack SWIZZLE reported against the governor (scenario, severity, status) |
 | `cns.finding` | `Finding` | new in 1.8.0; one defect Ghost Tools reported, as Warden, the Drafter and the Finisher read it |
@@ -105,7 +105,16 @@ circuit repositories used to make the manifest wrong until someone edited it. Tw
 ```
 python -m cns_composition.repin --stack DIR [--check]      # move the pins to the HEAD of each checkout in DIR
 python -m cns_composition.circuit_canary --stack DIR --cns .   # run the whole circuit; exit 0 only on ACCEPT
+python -m cns_composition.circuit_refusals --stack DIR --cns .  # run it on stacks it must refuse; exit 0 only if it does
+python -m cns_composition.install_stack [--check|--installed]   # contracts/install-stack.txt is a rendering of the manifest
+python -m cns_composition.release --check                   # every place the release is written agrees
 ```
+
+These run from a checkout: `contracts/` is beside the package and not in the wheel, and a tool run from an
+installed wheel exits 2 and says so (`tests/test_checkout_boundary.py`). `repin` renders the install file when it
+moves a pin, so the two contract files cannot drift by one tool and not the other
+(`cns_composition/tests/test_install_rendering.py`). Every command ends by checking its report was delivered: with
+stdout closed or the reader gone the exit is 2, never 0 (`cns_composition/tests/test_delivery.py`).
 
 `repin` only moves commits. It never adds or removes a repository, never touches `schema` or `contract`,
 refuses a dirty or unreadable checkout, and writes the format the committed file already has, so an unchanged
@@ -168,7 +177,8 @@ Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row). A raw commit SHA still
-works, but a tag says which contract you are joining on.
+works, but a tag says which contract you are joining on. This tree is 2.0.0, not yet tagged: what it changes is
+in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says what each consumer does about it.
 
 ## Versioning
 
@@ -176,6 +186,15 @@ A field added with a default is a minor version. A field removed,
 renamed, or given a new meaning is a major version, and every consumer
 moves deliberately. `drifted_copy` in ghost_tools has nothing left to
 report for a class once it lives here.
+
+Two words in `contracts/cns-releases.json` have one meaning each. **Current** is the newest release that is
+tagged; it moves when a tag exists, never before, so between a version bump and its tag the package is ahead of
+it and `python -m cns_composition.release --check` calls that state unreleased. **Floor** is the lowest release a
+consumer may pin; `cns_versions` fails a pin below it, so raising the floor to a version forces every consumer
+below it to move at once, and it is raised after they move, not before. The tag text is `v` plus the version the
+tagged tree declares. `release --check` holds `pyproject.toml`, `cns.__version__`, the newest CHANGELOG entry,
+this file's tag list and pin examples, the table and the install file to one another, and `tests/test_release.py`
+runs it; after tagging, `release --record vX.Y.Z` adds the row and moves current.
 
 ### Moving to 1.0.0
 
@@ -222,6 +241,103 @@ and their tests find out too late.
 `mypy --strict` over the package, and a check that `cns/py.typed` really
 ships inside the built wheel. The marker is what tells a consumer's type
 checker to trust these annotations, so it is asserted rather than assumed.
+
+## What works
+
+Each line names the test or workflow job that holds it. A claim without one is not made.
+
+- `cns` carries shapes and pure functions of them, nothing else: no forbidden import, no file opened, no
+  module-level name, no method that assigns to `self` (`tests/test_graph.py`, four tests), and `mypy --strict`
+  over the package in the `ci` job on Python 3.10, 3.11, 3.12 and 3.13.
+- Every exported class, field, default, enum member and method is pinned to `tests/public_shape.json`; a change
+  fails `tests/test_public_shape.py` until it is regenerated in the same commit.
+- Every enum serialises and compares the same way on all four interpreters (`tests/test_serialization.py`, the
+  `ci` matrix).
+- `cns.run.RunRecord` reads a real Warden record and names its gaps: the seven declined checks beside
+  `unmeasured: []`, the dirty flags, the findings left at the end (`tests/test_run.py`, on
+  `tests/fixtures/warden_0_13_6_declined_record.json`).
+- What each registered repository takes from CNS is still there (`cns_composition/tests/test_consumers.py`), and
+  the `links` job re-reads their source daily to keep the registry a fact. The ledger of 42 repositories is held to
+  the files it names by the same job (`contracts/cns-links.json`: 37 two-way, 4 exempt, 1 hub on 2026-10-22).
+- The digest answer key is exactly what `cns.gate.subject_digest` produces (`cns_composition/tests/test_digest_vectors.py`)
+  and STACK-Kernel's vendored copy is compared with it in the `links` job.
+- The whole circuit installs from `contracts/install-stack.txt` with `pip check` clean and exactly one `cns`, runs on
+  a throwaway repository and ends ACCEPT (the `stack` job, on every push and weekly; run 39797114827 on the base commit).
+- The circuit refuses a dirty member, a short, uppercase or wrong pin (the `stack` job's `circuit_refusals` step,
+  cases held by `cns_composition/tests/test_circuit_refusals.py`), and a red target suite is not accepted.
+- The install file is the rendering of the manifest and the release table, and each version comment in it is the
+  version pip installed (`cns_composition/tests/test_install_rendering.py`, the `stack` job).
+- A report that could not be delivered is exit 2, a file is written whole or not at all, a pipe named on the
+  command line is refused instead of read (`cns_composition/tests/test_delivery.py`).
+- `repin` cannot be talked out of a dirty checkout by an index flag or the caller's git configuration
+  (`cns_composition/tests/test_repin.py`).
+- The six places the release is written agree (`tests/test_release.py`).
+- No test skips; a skip fails the run (`conftest.py`, held by `tests/test_no_skips.py`).
+
+## What does not work, or is not proven
+
+- The circuit cannot be proven ACCEPT on a machine where ASSAY's verifier cannot `unshare` (measured 2026-10-22 in
+  a sandbox: "unshare: fork failed", 27 of 60 claims unscorable, Warden INCONCLUSIVE). Only the `stack` job proves
+  it. The same limit applies to the red-suite refusal case.
+- With the manifest at Warden 0.13.7, four refusal cases are red: that Warden runs on with a seat the manifest
+  does not name and with a seat file hidden from `git status` by `assume-unchanged`, `skip-worktree` or a global
+  excludes file. Warden 0.13.8 (`380894f0304ef40587dd29efd41b4ceccf94a5d3`) refuses all four, measured on
+  throwaway clones on 2026-10-22. The red stays until the manifest moves.
+- `seat_pins --install` reports that WARDEN's `ghost` extra pins ghost-tools at `c2ada82` while the install file
+  installs `2d03d8e`. `pip check` does not see it because the extra is not installed; `pip install warden[ghost]`
+  beside the install file would. Open until the manifest moves to a Warden that pins `2d03d8e` (0.13.8 does).
+- `pip install cns` installs an unrelated project (2.3.50 on PyPI). Nothing in the circuit installs CNS by name,
+  so nothing breaks today; the decision record describes the rename for the owner's decision.
+- `release --check` sees a tag only where it is visible; a shallow CI checkout has none, so "the tag exists but
+  the table has no row" is caught in a local checkout, not in CI.
+- The `links` job cannot read ATS and Resume_OS (private); their to_cns proofs are named as unverified every run.
+- `consumers` reads imports. A repository that takes `cns.gate` as a module and uses its names as attributes is
+  registered with the module only, so a rename of such a name is not caught for it.
+- The circuit is run on Python 3.12 only (the `stack` job); the four-interpreter matrix covers the shapes.
+- The repin workflow's proposing job runs only from the default branch; it has opened pull requests #18 and
+  #31 from the schedule, and nothing on a branch exercises it.
+- `cns.assay` has one writer and one reader (ASSAY); it does not meet the two-repository rule and is recorded
+  above as the one exception.
+
+## What broke and how it was fixed
+
+From the git history and the sibling changelogs. Each row names the commit or the 2.0.0 step that closed it.
+
+| when | what broke | how it was found | fixed |
+|---|---|---|---|
+| 2026-09-11 | `CallOutcome` was not JSON-serialisable while the governance enums were; `str(x)` differed between 3.10 and 3.11 | the readiness scorecard measured it | 1.0.0, every enum a `RowEnum` (`01e9522`); `tests/test_serialization.py` on the matrix |
+| 2026-09-12 | four of eleven repositories put the precondition after the outcome check | measured across the library | `cns.gate` declares the order in the type (`3747bad`); `GateChain.complete` |
+| 2026-09-12 | 25 skips in a sibling hid a gap that had closed | a skip cannot notice | `conftest.py` fails the run on a skip (`042a762`); every test directory in `testpaths` (`84d3680`) |
+| 2026-09-30 | the composition layer lived inside the shapes package | the purity test | moved out to `cns_composition`, 1.4.0 (`08a96a3`) |
+| 2026-10-11 | composition stubs returned placeholder outcomes | review | they refuse instead (`92224bd`, `7447eed`) |
+| 2026-10-14 | the circuit on its own seven repositories could not measure four of them | the circuit's own run | `cns.stack` and the manifest, 1.5.0 (`512f9aa`) |
+| 2026-10-15 | the run record had no contract; a null reason read as the word None | the Watcher | `cns.run`, 1.6.0 (`c2c53d2`, `89427c2`) |
+| 2026-10-16 | the wheel lacked `cns_composition`, so Link's pinned install could not import it | Link's install | shipped beside `cns` (`e638e08`); the `packaging` job asserts it |
+| 2026-10-17 | the manifest went stale twice on the day it merged | Warden refused the stack | `repin`, `circuit_canary`, the repin workflow (`8262691`, `7ba3c10`, `838f85c`) |
+| 2026-10-17 | the canary ended SUITE_RED and INSUFFICIENT on a clean CI interpreter, naming neither cause | the first run on GitHub | the interpreter check names what is missing (`8ef643c`, `4b9ee82`); numpy and matplotlib for ASSAY (`ed18013`) |
+| 2026-10-17 | pip refused JUDGE and DRAFTER together: each pinned a different Warden commit | a person hit the error | `seat_pins` (`f31d41d`), the pins job |
+| 2026-10-21 | 7 repositories pinned CNS 1.9.0, 14 pinned 1.8.0, 10 pinned a 1.4.0 commit, one 1.6.0, and the ledger was green | reading every pin | `cns_versions` and the release table (`56e2d0b`); floor 1.9.0 (`7777c9e`) |
+| 2026-10-22 | the README told a consumer to pin `@v1.0.0` for a month | the audit | `9f29b76`; `tests/test_readme_install.py` |
+| 2026-10-22 | `seat_pins` and `cns_versions` skipped a symlinked stack folder and said "every pin agrees" about six | the audit | `df27f45`; the read count |
+| 2026-10-22 | a record said `unmeasured: []` and a narrator "gaps: none" beside seven declined checks | the audit, on a real record | Step 2: `RunRecord.declined`, `gaps()` |
+| 2026-10-22 | seven commands exited 0 with the report lost when stdout was closed, and exit 120 with a traceback when the reader had gone | reproduced on the base commit | Step 4: `delivery` |
+| 2026-10-22 | `repin` and `digest_vectors --write` wrote in place; a pipe named on the command line blocked forever | reproduced | Step 4 |
+| 2026-10-22 | `repin` pinned a tampered checkout as clean under `assume-unchanged` | reproduced | Step 5 |
+| 2026-10-22 | `consumers`, `digest_vectors` and `link_ledger` still skipped a symlinked stack folder | reading the code | Step 6 |
+| 2026-10-22 | the install file was edited by hand after every re-pin and drifted six times | the git history | Step 7: `install_stack`; `repin` renders it |
+| 2026-10-22 | the circuit had never been run on a stack it must refuse | the audit | Step 8: `circuit_refusals`; four cases red at Warden 0.13.7, which is the finding |
+| 2026-10-22 | the installed `v1.9.0` lacked `cns_versions`; a tool run from a wheel gave a traceback | the audit | Step 9: the boundary is said and tested; the `packaging` job asserts the tools ship |
+| 2026-10-22 | the version was written in six places by hand | the audit | Step 10: `release --check`, `tests/test_release.py` |
+
+## Ceilings code cannot fix
+
+- The repositories are weeks old: the first CNS commit is 2026-09-11, the circuit's manifest is from 2026-10-15.
+- One maintainer. Every repository in the ledger has the same author, and no second person has reviewed a change
+  to a contract here.
+- No outside user. Every consumer is in the same account; the ledger has nothing to say about anyone else.
+- CNS has tags up to `v1.9.0`; none of the other seven circuit repositories tags releases (Warden's newest tag is
+  `v0.12.0` and does not match its tree, by its own changelog), so every circuit pin is a commit.
+- Two repositories are private and cannot be verified by the `links` job.
 
 <!-- ghost_buster:name-disagreements:begin -->
 ## Name disagreements
