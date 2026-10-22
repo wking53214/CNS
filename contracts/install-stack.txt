@@ -9,14 +9,14 @@
 # Running Warden on a target also needs pytest in the same environment (it runs the target's own suite):
 #     .venv/bin/pip install 'pytest>=8' "numpy==2.4.6; python_version < '3.12'" "numpy==2.5.4; python_version >= '3.12'" matplotlib==3.11.2
 # (ASSAY grades Ghost with numpy and matplotlib; numpy 2.5 needs Python 3.12 or newer, hence the two markers.)
-# Every entry that needs CNS pins it the same way, the tag v1.9.0 (the commit da18e411743d4e3b0e783105394d845fb1c16746),
+# Every entry that needs CNS pins it the same way, the tag v2.0.0 (the commit b13e5d2f9e0e4291725f82794b89117c3d840ac1),
 # because pip treats a tag URL and a commit URL as two different sources and refuses to resolve them together.
-cns @ git+https://github.com/wking53214/CNS.git@v1.9.0
-ghost-tools @ git+https://github.com/wking53214/ghost_tools@43b1a184058f12e01c772328dd6788920c598cc4  # 1.10.7
-swizzle @ git+https://github.com/wking53214/SWIZZLE.git@d26106fd586eb27a886de77daffd88c2f616081e  # 0.8.6
-assay @ git+https://github.com/wking53214/ASSAY.git@6fd59ab89d83ccc97bc38952dd472a36ab5341e7  # 0.11.4
-warden @ git+https://github.com/wking53214/Warden.git@380894f0304ef40587dd29efd41b4ceccf94a5d3  # 0.13.8
-judge @ git+https://github.com/wking53214/JUDGE.git@fa5a1ed99dd61a17e3aab633c169b36d38d46ee4  # 0.4.9
-drafter @ git+https://github.com/wking53214/DRAFTER.git@12d7d4dd6ec3f0b952917cbdb353f2083ed9917c  # 0.2.9
-burnish @ git+https://github.com/wking53214/BURNISH.git@16689849cd883be740bde3c53d9917f681de219f  # 0.3.10
-watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@99901da11d37e054af0e6105cd66640aafe8f967  # 0.3.7
+cns @ git+https://github.com/wking53214/CNS.git@v2.0.0
+ghost-tools @ git+https://github.com/wking53214/ghost_tools@5a9154d3c76670f5bf1f46d845acadfed46d7bc8  # 1.10.8
+swizzle @ git+https://github.com/wking53214/SWIZZLE.git@3f35dad5568b590c2ee36e60533d50a35db94aa2  # 0.8.7
+assay @ git+https://github.com/wking53214/ASSAY.git@184679c06e0a636a9a08a8403efa410b375c9429  # 0.11.5
+warden @ git+https://github.com/wking53214/Warden.git@b57b81e1c98333c43d422666c89a8fcf3ae6eaca  # 0.13.9
+judge @ git+https://github.com/wking53214/JUDGE.git@c3001b86764c8946dbc3d367c977aed53cbab9b7  # 0.4.10
+drafter @ git+https://github.com/wking53214/DRAFTER.git@715b657c0c5080f4b6082b5cd94a38e693c600e7  # 0.2.11
+burnish @ git+https://github.com/wking53214/BURNISH.git@cd17eec1c7029b280efae4ebe655ce88deb8b8ab  # 0.3.11
+watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@b25d8522301005ba764783927f43abfeb9f18f5c  # 0.3.8
