@@ -141,6 +141,7 @@ CHECKS = [
     "python -m cns_composition.install_stack --check",
     "python -m cns_composition.repin --stack ../stack --check",
     "python -m cns_composition.circuit_canary --stack ../stack --cns .",
+    "python -m cns_composition.circuit_refusals --stack ../stack --cns .",
 ]
 
 

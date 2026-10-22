@@ -20,7 +20,7 @@ from cns_composition import delivery
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMANDS = ("seat_pins", "cns_versions", "repin", "circuit_canary", "consumers", "digest_vectors", "link_ledger",
-            "install_stack")
+            "install_stack", "circuit_refusals")
 
 
 # ---------------------------------------------------------------------------------------------- deliver, in process
