@@ -34,6 +34,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
 
+from cns_composition import delivery
+
 __all__ = ["REQUIRED", "drift", "main", "missing", "scan"]
 
 Imports = Mapping[str, Tuple[str, ...]]
@@ -175,7 +177,7 @@ def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None,
     return out
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.consumers",
         description="Check that CNS still provides what the registered repositories take from it, "
@@ -200,6 +202,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         names = sum(len(n) or 1 for m in REQUIRED.values() for n in m.values())
         print(f"consumers: CNS provides everything {len(REQUIRED)} repositories take from it ({names} items)")
     return 1 if problems else 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.deliver(_main(argv), "consumers")
 
 
 if __name__ == "__main__":

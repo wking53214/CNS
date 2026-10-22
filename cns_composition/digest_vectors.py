@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from cns.gate import subject_digest
+from cns_composition import delivery
 
 __all__ = ["CASES", "VENDORED", "build", "drift", "main"]
 
@@ -119,7 +120,7 @@ def drift(stack: Path, committed: Optional[Path] = None) -> List[str]:
     return out
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.digest_vectors",
         description="Write or check contracts/digest-vectors.json, and the copies repositories vendor.")
@@ -129,7 +130,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     path = _default_path()
     text = _render(build())
     if args.write:
-        path.write_text(text, encoding="utf-8")
+        try:
+            delivery.write_file(path, text)
+        except delivery.DeliveryError as err:
+            print(f"digest_vectors: {err}", file=sys.stderr)
+            return 2
         print(f"digest_vectors: wrote {path}")
         return 0
     problems: List[str] = []
@@ -147,6 +152,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not problems:
         print(f"digest_vectors: up to date ({len(CASES)} vectors, {len(VENDORED)} vendored copies)")
     return 1 if problems else 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.deliver(_main(argv), "digest_vectors")
 
 
 if __name__ == "__main__":

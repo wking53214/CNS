@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+from cns_composition import delivery
+
 __all__ = ["CanaryResult", "run_canary", "main"]
 
 #: What the interpreter must be able to import on its own. The throwaway repository's tests need pytest, and the
@@ -170,7 +172,7 @@ def run_canary(stack: Path, cns: Path, *, python: Optional[str] = None,
                            f"put_back={record.get('put_back')!r}")
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.circuit_canary",
         description="Run the whole circuit over a stack folder and exit 0 only if it ends ACCEPT.")
@@ -184,6 +186,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     print(f"circuit canary: {result.decision}: {result.reason}", file=sys.stderr)
     return 1
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.deliver(_main(argv), "circuit_canary")
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from cns.stack import StackManifest, StackPin
+from cns_composition import delivery
 
 __all__ = ["RepinError", "DEFAULT_MANIFEST", "stack_folders", "manifest_names", "unread", "read_heads", "repin_text",
            "changes", "main"]
@@ -80,7 +81,9 @@ def manifest_names(path: Optional[Path] = None) -> List[str]:
     """The repository names a manifest pins, in its order. Raises RepinError if it cannot be read as a manifest."""
     path = Path(path) if path else DEFAULT_MANIFEST
     try:
-        text = path.read_text(encoding="utf-8")
+        text = delivery.read_text(path)
+    except delivery.DeliveryError as err:
+        raise RepinError(str(err)) from err
     except (OSError, UnicodeDecodeError) as err:
         raise RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
     _, manifest = _load(text)
@@ -158,7 +161,7 @@ def repin_text(text: str, heads: Mapping[str, str]) -> str:
     return new
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.repin",
         description="Rewrite the pins in the circuit manifest to the HEAD of each checkout in a stack folder.")
@@ -172,7 +175,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     path = args.manifest or Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
     try:
-        text = path.read_text(encoding="utf-8")
+        text = delivery.read_text(path)
         _, manifest = _load(text)
         heads = read_heads(args.stack, [p.name for p in manifest.repos], allow_dirty=args.allow_dirty)
         moved = changes(text, heads)
@@ -188,9 +191,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.check:
         print(f"repin: {len(moved)} pin(s) are stale", file=sys.stderr)
         return 1
-    path.write_text(new, encoding="utf-8")
+    try:
+        delivery.write_file(path, new)
+    except delivery.DeliveryError as err:
+        print(f"repin: {err}", file=sys.stderr)
+        return 2
     print(f"repin: wrote {len(moved)} pin(s) to {path}")
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.deliver(_main(argv), "repin")
 
 
 if __name__ == "__main__":

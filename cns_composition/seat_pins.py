@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from cns_composition import repin
+from cns_composition import delivery, repin
 
 __all__ = ["Pin", "agreement_problems", "lag_notes", "read_pins", "main"]
 
@@ -132,7 +132,7 @@ def lag_notes(stack: Path, pins: Sequence[Pin]) -> List[str]:
     return notes
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.seat_pins",
         description="Fail if two repositories in a stack folder pin the same package differently.")
@@ -165,6 +165,11 @@ def main(argv: Optional[List[str]] = None) -> int:
           f"shared pin agrees ({len(pins)} pin(s) across {len({p.repo for p in pins})} repositories: "
           f"{', '.join(shared)})")
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.deliver(_main(argv), "seat_pins")
 
 
 if __name__ == "__main__":

@@ -59,6 +59,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from cns_composition import delivery
+
 __all__ = ["LEDGER_SCHEMA", "Link", "LedgerError", "read_ledger", "status", "problems", "unverified", "counts", "main"]
 
 LEDGER_SCHEMA = "cns-links/1"
@@ -104,7 +106,9 @@ def status(link: Link) -> str:
 def read_ledger(path: Path) -> List[Link]:
     """The ledger as `Link`s, in file order. Raises LedgerError for anything that is not the documented shape."""
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(delivery.read_text(Path(path)))
+    except delivery.DeliveryError as err:
+        raise LedgerError(f"the ledger {err}") from err
     except (OSError, ValueError) as err:
         raise LedgerError(f"the ledger {str(path)!r} cannot be read as JSON: {type(err).__name__}") from err
     if not isinstance(data, dict) or data.get("schema") != LEDGER_SCHEMA or not isinstance(data.get("repos"), dict):
@@ -372,7 +376,7 @@ def _default_ledger() -> Path:
     return Path(__file__).resolve().parents[1] / "contracts" / "cns-links.json"
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.link_ledger",
         description="Check the CNS connection ledger against the files it points at.")
@@ -404,6 +408,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"link_ledger: {line}", file=sys.stderr)
         return 1
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.deliver(_main(argv), "link_ledger")
 
 
 if __name__ == "__main__":
