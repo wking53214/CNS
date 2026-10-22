@@ -1317,6 +1317,11 @@
               "default": "None",
               "name": "ghost_baseline_after",
               "type": "Optional[Mapping[str, object]]"
+            },
+            {
+              "default": "None",
+              "name": "finisher_ran",
+              "type": "Optional[bool]"
             }
           ],
           "frozen": true,

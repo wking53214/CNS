@@ -63,3 +63,15 @@ def test_the_seat_rows_only_hold_the_types_the_contract_names():
     for cls in (FileEdit, Facts, Evidence, Verdict):
         assert all(not callable(getattr(cls, name, None)) or name.startswith("__") for name in vars(cls)
                    if not name.startswith("__")), cls
+
+
+def test_evidence_says_whether_the_finisher_ran_and_not_said_is_none():
+    """2.0.0. A converged loop ends on NOTHING_TO_PROPOSE whether or not a finisher then edited files; the judge
+    needs the governor to say which, and a governor that does not say leaves None, never a default of False."""
+    base = dict(target="/t", scope="code", cycles=(), changed=(), judging_files_touched=(), suite_before=None,
+                suite_after=None, ghost_before=None, ghost_after=None, declined=(), swizzle_proofs=None,
+                attacks=None, unmeasured=())
+    assert Evidence(**base).finisher_ran is None
+    assert Evidence(**base, finisher_ran=True).finisher_ran is True
+    assert Evidence(**base, finisher_ran=False).finisher_ran is False
+    assert [f.name for f in dataclasses.fields(Evidence)][-1] == "finisher_ran"
