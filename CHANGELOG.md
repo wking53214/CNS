@@ -15,6 +15,17 @@ The release candidate built from five audit rounds of the circuit. The decision 
 `docs/decisions/2026-10-22-cns-2.0.0.md`; the migration guide for the eight circuit repositories is
 `docs/migrations/2.0.0.md`. Every change below names the test or workflow job that holds it.
 
+### Breaking
+
+- `cns.stack.StackPin.commit` must be exactly 40 lowercase hex characters (it accepted 7 to 40), and
+  `StackPin.pins()` matches the full commit only (it matched a prefix of seven or more). This is the one change
+  that gives a field a narrower meaning, and the reason the version is 2.0.0 rather than 1.10.0. Who it reaches:
+  no circuit repository imports `cns.stack` (Warden reads the manifest JSON itself and has required a full commit
+  since 0.13.7; the stack workflow's checkout step and `install_stack` require it too), so no consumer code
+  changes; a hand-written manifest with a short pin is now refused by CNS as it is already refused by Warden.
+  `tests/test_stack.py`. This is the last commit on the branch, labelled BREAKING, so the owner can drop it and
+  release 1.10.0 instead.
+
 ### Added
 
 - `cns.run.RunRecord` names what a reader of a run record had no field for: `reobserved` (the findings still
@@ -89,6 +100,11 @@ The release candidate built from five audit rounds of the circuit. The decision 
 - `tests/test_stack_workflow.py`: the list of commands the `stack` job runs and their order (Steps 7 and 8: the
   install-file checks, `--install`, `--spelling tag`, `circuit_refusals`).
 - `cns_composition/tests/test_delivery.py`: the tuple of commands grows with each new command (Steps 7, 8, 10).
+- `cns_composition/tests/test_cns_versions.py`: `test_the_committed_table_is_held_to_the_cns_package_itself` now
+  allows the package to be ahead of `current` between a version bump and its tag, and never behind it (Step 10).
+- `tests/test_stack.py`: `test_a_pin_matches_exactly_or_by_a_prefix_of_seven_or_more` became
+  `test_a_pin_matches_exactly_and_never_by_a_prefix`, and the problem text in `test_every_problem_is_named`
+  says "40 lowercase hex characters" (Step 12, BREAKING).
 
 ### Not changed
 
