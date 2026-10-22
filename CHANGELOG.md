@@ -43,7 +43,8 @@ The release candidate built from five audit rounds of the circuit. The decision 
   device) is said on stderr and is exit 2, never 0; a file a tool writes goes to a temporary name and is renamed
   into place only over a regular file or into an empty place (a symbolic link, a named pipe, a device or a folder
   is refused by name); a file named on the command line that is a pipe is refused instead of read. Every command
-  in the package ends with it, and `cns_composition/tests/test_delivery.py` holds that structurally.
+  in the package ends with `delivery.run(_main, argv, name)`, and `cns_composition/tests/test_delivery.py` holds
+  that structurally.
 - `cns_composition.install_stack`: `contracts/install-stack.txt` is a rendering of the manifest, the release table
   and the lines a person owns; `--check` holds the committed file to it, `--installed` holds each version comment
   to the distribution pip installed, and `repin` re-renders the file when it moves a pin.
@@ -92,6 +93,14 @@ The release candidate built from five audit rounds of the circuit. The decision 
   `cns_versions --table` and `link_ledger --ledger` blocked forever on a pipe. (`delivery`, above.)
 - `repin` pinned a tampered checkout as clean under `assume-unchanged`, `skip-worktree`, a global excludes file
   or `status.showUntrackedFiles=no`. (Changed, above.)
+- The delivery guard did not hold with unbuffered stdout. Found by running the suite on a machine that sets
+  `PYTHONUNBUFFERED=1`, after this candidate's own CI was green: with a gone reader or a full device, all ten
+  commands ended in a traceback and exit 1 instead of exit 2, and a lost first print stopped the work after it.
+  Every command ended with `delivery.deliver(_main(argv), name)`, so `_main` printed before `deliver` could
+  protect it. CI missed it because a CI runner's stdout is buffered, and with buffered stdout the failure waits
+  for the flush `deliver` makes. `delivery.run` now guards stdout while `_main` runs; the tests run each of the
+  ten commands in both buffering modes, set in the child's environment, for a gone reader, a closed descriptor 1
+  and a full device.
 
 ### Tests edited, and the step that caused each
 
@@ -100,6 +109,9 @@ The release candidate built from five audit rounds of the circuit. The decision 
 - `tests/test_stack_workflow.py`: the list of commands the `stack` job runs and their order (Steps 7 and 8: the
   install-file checks, `--install`, `--spelling tag`, `circuit_refusals`).
 - `cns_composition/tests/test_delivery.py`: the tuple of commands grows with each new command (Steps 7, 8, 10).
+- `cns_composition/tests/test_delivery.py`: `test_every_command_in_the_package_ends_with_deliver` asserted the call
+  shape the unbuffered fix changes (`delivery.deliver(..., name)` as the last statement); it now asserts
+  `delivery.run(_main, argv, name)` and nothing else about it changed (the unbuffered delivery fix).
 - `cns_composition/tests/test_cns_versions.py`: `test_the_committed_table_is_held_to_the_cns_package_itself` now
   allows the package to be ahead of `current` between a version bump and its tag, and never behind it (Step 10).
 - `tests/test_stack.py`: `test_a_pin_matches_exactly_or_by_a_prefix_of_seven_or_more` became
@@ -108,8 +120,10 @@ The release candidate built from five audit rounds of the circuit. The decision 
 
 ### Not changed
 
-- The distribution name is still `cns`, which on PyPI belongs to an unrelated project (2.3.50). The decision record
-  describes the rename option (`cns-contracts`, import name unchanged) for the owner's decision.
+- The distribution name is still `cns`, which on PyPI belongs to an unrelated project (2.3.50). The owner deferred
+  the rename to `cns-contracts` (import name unchanged) on 2026-10-22; the decision record says why: every pin and
+  document uses a git URL, so the collision only bites a bare `pip install cns`, and a later rename is itself a
+  breaking change, to be decided before outside users arrive.
 - The floor stays 1.9.0. It is raised after the eight circuit repositories re-pin, not before.
 
 ## Earlier releases, from the git history

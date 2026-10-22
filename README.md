@@ -287,7 +287,7 @@ Each line names the test or workflow job that holds it. A claim without one is n
   installs `2d03d8e`. `pip check` does not see it because the extra is not installed; `pip install warden[ghost]`
   beside the install file would. Open until the manifest moves to a Warden that pins `2d03d8e` (0.13.8 does).
 - `pip install cns` installs an unrelated project (2.3.50 on PyPI). Nothing in the circuit installs CNS by name,
-  so nothing breaks today; the decision record describes the rename for the owner's decision.
+  so nothing breaks today; the owner deferred the rename on 2026-10-22 (the decision record says why).
 - `release --check` sees a tag only where it is visible; a shallow CI checkout has none, so "the tag exists but
   the table has no row" is caught in a local checkout, not in CI.
 - The `links` job cannot read ATS and Resume_OS (private); their to_cns proofs are named as unverified every run.
@@ -328,6 +328,7 @@ From the git history and the sibling changelogs. Each row names the commit or th
 | 2026-10-22 | the circuit had never been run on a stack it must refuse | the audit | Step 8: `circuit_refusals`; four cases red at Warden 0.13.7, which is the finding |
 | 2026-10-22 | the installed `v1.9.0` lacked `cns_versions`; a tool run from a wheel gave a traceback | the audit | Step 9: the boundary is said and tested; the `packaging` job asserts the tools ship |
 | 2026-10-22 | the version was written in six places by hand | the audit | Step 10: `release --check`, `tests/test_release.py` |
+| 2026-10-22 | with `PYTHONUNBUFFERED=1` the delivery guard did not hold: a gone reader or a full device ended all ten commands in a traceback and exit 1, and a lost first print stopped the work after it. The candidate's own CI was green because a CI runner's stdout is buffered, where the failure waits for the flush the guard makes | running the suite on a machine that sets `PYTHONUNBUFFERED=1`, after the 2.0.0 candidate's CI had passed | `delivery.run` guards the call that prints; `cns_composition/tests/test_delivery.py` runs all ten commands in both buffering modes for a gone reader, a closed descriptor 1 and a full device |
 
 ## Ceilings code cannot fix
 
