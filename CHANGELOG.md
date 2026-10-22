@@ -9,7 +9,7 @@ release and "floor" the lowest a consumer may pin; both are defined in `cns_comp
 Tagging is the owner's decision. An entry whose heading says "not yet tagged" describes this tree; after the tag
 exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the table and moves `current`.
 
-## [2.0.0] - 2026-10-22, not yet tagged
+## [2.0.0] - 2026-10-22
 
 The release candidate built from five audit rounds of the circuit. The decision record is
 `docs/decisions/2026-10-22-cns-2.0.0.md`; the migration guide for the eight circuit repositories is

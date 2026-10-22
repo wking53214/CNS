@@ -147,14 +147,14 @@ Pin a tag, the way sentinel_os already pins Conservation_Kernel. In a requiremen
 `pyproject.toml` dependency list the line is:
 
 ```
-cns @ git+https://github.com/wking53214/CNS.git@v1.9.0
+cns @ git+https://github.com/wking53214/CNS.git@v2.0.0
 ```
 
 and to put it in an environment by hand:
 
 ```
 python3 -m venv .venv
-.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"
+.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.0.0"
 ```
 
 Then `from cns.graph import Node, Edge, Graph` and delete the vendored
@@ -176,8 +176,8 @@ markers). `tests/test_install_stack.py` holds `contracts/install-stack.txt` equa
 Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
-and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row). A raw commit SHA still
-works, but a tag says which contract you are joining on. This tree is 2.0.0, not yet tagged: what it changes is
+and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`). A raw commit SHA still
+works, but a tag says which contract you are joining on. This tree is 2.0.0: what it changes is
 in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says what each consumer does about it.
 
 ## Versioning
@@ -336,8 +336,8 @@ From the git history and the sibling changelogs. Each row names the commit or th
 - One maintainer. Every repository in the ledger has the same author, and no second person has reviewed a change
   to a contract here.
 - No outside user. Every consumer is in the same account; the ledger has nothing to say about anyone else.
-- CNS has tags up to `v1.9.0`; none of the other seven circuit repositories tags releases (Warden's newest tag is
-  `v0.12.0` and does not match its tree, by its own changelog), so every circuit pin is a commit.
+- Every circuit repository pins CNS by its tag and every other circuit pin is a full commit. What the other
+  repositories have tagged is for their own tags and releases pages to say; a statement here would go stale.
 - Two repositories are private and cannot be verified by the `links` job.
 
 <!-- ghost_buster:name-disagreements:begin -->
