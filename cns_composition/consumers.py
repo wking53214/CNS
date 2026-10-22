@@ -190,10 +190,12 @@ def _main(argv: Optional[List[str]] = None) -> int:
             return 2
         from cns_composition.link_ledger import LedgerError, read_ledger
         try:
-            private = tuple(k.repo for k in read_ledger(Path(__file__).resolve().parents[1] / "contracts" / "cns-links.json")
-                            if k.private)
-        except LedgerError:
-            private = ()
+            private = tuple(k.repo for k in read_ledger(delivery.CONTRACTS / "cns-links.json") if k.private)
+        except LedgerError as err:
+            # Without the ledger the private repositories would be reported as missing checkouts, which is not
+            # what is wrong. Say what is, and claim nothing.
+            print(f"consumers: {err}", file=sys.stderr)
+            return 2
         problems += drift(args.stack, private=private)
     for line in problems:
         print(f"consumers: {line}", file=sys.stderr)

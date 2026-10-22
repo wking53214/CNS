@@ -71,13 +71,19 @@ jobs:
           # Link imports cns_composition from an installed cns. Without it in
           # the wheel that import fails on any pinned install, and nothing in
           # this repository's own tests can see it because they run in place.
+          # The maintenance tools ship too (the installed v1.9.0 tag lacked cns_versions, which the tree had),
+          # and the contract files do not: a pin is state, and the tools say so when run from a wheel.
           for needed in ("cns_composition/__init__.py", "cns_composition/gate_chain.py",
                          "cns_composition/ccc_admission.py", "cns_composition/triad_admission.py",
-                         "cns_composition/resubmission.py"):
+                         "cns_composition/resubmission.py", "cns_composition/cns_versions.py",
+                         "cns_composition/install_stack.py", "cns_composition/circuit_refusals.py",
+                         "cns_composition/delivery.py"):
               if needed not in names:
                   sys.exit(f"FAIL: {needed} is missing from the wheel")
           leaked = [n for n in names if "/tests/" in n or n.startswith("tests/")]
           if leaked:
               sys.exit(f"FAIL: tests ship in the wheel: {leaked}")
-          print("OK: cns_composition ships and its tests do not")
+          if any(n.startswith("contracts/") or "/contracts/" in n for n in names):
+              sys.exit("FAIL: contracts/ ships in the wheel; a pin is state and the package holds none")
+          print("OK: cns_composition ships with its tools, its tests and the contract files do not")
           PY

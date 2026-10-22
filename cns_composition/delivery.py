@@ -38,7 +38,7 @@ import stat
 import sys
 from pathlib import Path
 
-__all__ = ["DeliveryError", "UNDELIVERED", "deliver", "read_text", "write_file"]
+__all__ = ["CONTRACTS", "DeliveryError", "UNDELIVERED", "deliver", "read_text", "write_file"]
 
 #: The exit code for a report that could not be delivered. 2 is what every command here already means by
 #: "the question could not be answered"; it is never 0.
@@ -105,9 +105,22 @@ def _refuse(path: Path, kind: str) -> DeliveryError:
                          "empty place, so nothing was written")
 
 
+#: Where the contract files live: beside the package in a checkout, and nowhere in an installed wheel. A pin is
+#: state and the package holds none (the README's rule), so the maintenance tools run from a checkout.
+CONTRACTS = Path(__file__).resolve().parents[1] / "contracts"
+_TOOLS = ("repin", "seat_pins", "cns_versions", "install_stack", "circuit_canary", "circuit_refusals",
+          "link_ledger", "consumers", "digest_vectors")
+
+
 def read_text(path: Path) -> str:
-    """The text of a regular file. A named pipe, a device or a folder is refused by name instead of read."""
+    """The text of a regular file. A named pipe, a device or a folder is refused by name instead of read. A
+    contract file that is missing because `contracts/` is not beside the package is named as what it is: an
+    installed wheel, where the maintenance tools do not run."""
     path = Path(path)
+    if path.parent == CONTRACTS and not CONTRACTS.is_dir():
+        raise DeliveryError(f"{str(path)!r} is not there because contracts/ is not beside this package: this is an "
+                            f"installed wheel, not a checkout, and the maintenance tools ({', '.join(_TOOLS)}) run "
+                            "from a CNS checkout")
     mode = os.stat(path).st_mode  # a missing file raises FileNotFoundError, as read_text itself would
     if not stat.S_ISREG(mode):
         kind = "fifo" if stat.S_ISFIFO(mode) else "device" if stat.S_ISCHR(mode) or stat.S_ISBLK(mode) \

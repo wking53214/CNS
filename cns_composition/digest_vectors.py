@@ -137,7 +137,14 @@ def _main(argv: Optional[List[str]] = None) -> int:
         print(f"digest_vectors: wrote {path}")
         return 0
     problems: List[str] = []
-    if not path.is_file() or path.read_text(encoding="utf-8") != text:
+    try:
+        committed = delivery.read_text(path)
+    except delivery.DeliveryError as err:
+        print(f"digest_vectors: {err}", file=sys.stderr)
+        return 2
+    except OSError:
+        committed = ""
+    if committed != text:
         problems.append("contracts/digest-vectors.json is not what cns.gate.subject_digest produces now; "
                         "run with --write")
     if args.stack is not None:
