@@ -51,8 +51,8 @@ must. Revisit this entry when a second repository reads the summary.
 | `cns.suite` | `SuiteRun` | new in 1.7.0; what one run of a target's suite reported, with `green` and `describe` |
 | `cns.epistemic` | `EpistemicState` | new in 1.7.0; the vocabulary for what kind of claim a finding makes |
 | `cns.defect` | `Defect`, `DefectSeverity`, `DefectLifecycle` | new in 1.7.0; one defect as the scanner, governor and drafter share it |
-| `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return |
-| `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it) |
+| `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return. 2.0.0 adds `Evidence.finisher_ran` (None when the governor does not say) |
+| `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it). 2.0.0 adds `reobserved`, `declined`, `swizzle_sound` and the pure functions `gaps`, `participants`, `dirty_parts`, `findings_remaining`, `clean`; the schema stays `cns.run/1` |
 | `cns.assay` | `AssaySummary` | new in 1.9.0; the one-line summary ASSAY reports on an answer key (all claims hold, status, counts, failures) |
 | `cns.attack` | `AttackResult` | new in 1.8.0; one attack SWIZZLE reported against the governor (scenario, severity, status) |
 | `cns.finding` | `Finding` | new in 1.8.0; one defect Ghost Tools reported, as Warden, the Drafter and the Finisher read it |
@@ -168,7 +168,8 @@ Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row). A raw commit SHA still
-works, but a tag says which contract you are joining on.
+works, but a tag says which contract you are joining on. This tree is 2.0.0, not yet tagged: what it changes is
+in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says what each consumer does about it.
 
 ## Versioning
 
@@ -176,6 +177,15 @@ A field added with a default is a minor version. A field removed,
 renamed, or given a new meaning is a major version, and every consumer
 moves deliberately. `drifted_copy` in ghost_tools has nothing left to
 report for a class once it lives here.
+
+Two words in `contracts/cns-releases.json` have one meaning each. **Current** is the newest release that is
+tagged; it moves when a tag exists, never before, so between a version bump and its tag the package is ahead of
+it and `python -m cns_composition.release --check` calls that state unreleased. **Floor** is the lowest release a
+consumer may pin; `cns_versions` fails a pin below it, so raising the floor to a version forces every consumer
+below it to move at once, and it is raised after they move, not before. The tag text is `v` plus the version the
+tagged tree declares. `release --check` holds `pyproject.toml`, `cns.__version__`, the newest CHANGELOG entry,
+this file's tag list and pin examples, the table and the install file to one another, and `tests/test_release.py`
+runs it; after tagging, `release --record vX.Y.Z` adds the row and moves current.
 
 ### Moving to 1.0.0
 

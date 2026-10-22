@@ -181,9 +181,17 @@ def test_a_duplicate_ref_or_commit_a_short_commit_and_a_release_above_current_ar
 
 
 def test_the_committed_table_is_held_to_the_cns_package_itself():
+    """2.0.0: `current` is the newest tagged release and moves only when a tag exists, so between a version bump
+    and its tag the package is ahead of it; it is never behind it, and a package version that is current must be
+    the one the table's current row declares. The rest of the checklist is `cns_composition.release --check`."""
     table = cv.load_table()
     declared = re.search(r'^version\s*=\s*"([^"]+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"), re.M)
-    assert declared and table.current.version == declared.group(1)
+    assert declared
+    package = tuple(int(p) for p in declared.group(1).split("."))
+    current = tuple(int(p) for p in table.current.version.split("."))
+    assert current <= package, "the table's current release is newer than the package"
+    if current != package:
+        assert cv.resolve(f"v{declared.group(1)}", table) is None, "the package version is tagged but not current"
 
 
 # ------------------------------------------------------------ the command
