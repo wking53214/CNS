@@ -131,21 +131,27 @@ def test_the_install_file_and_the_manifest_name_the_same_repositories():
 
 # -------------------------------------------------------------------------------------------- the order, and the checks
 
+#: Every check the job runs, as its exact command, in the order that makes each one meaningful. (2.0.0 added the
+#: install-file checks, the install file to seat_pins and the tag spelling to cns_versions.)
+CHECKS = [
+    "python -m pip check",
+    "python -m cns_composition.install_stack --installed",
+    "python -m cns_composition.seat_pins --stack ../stack --install contracts/install-stack.txt",
+    "python -m cns_composition.cns_versions --stack ../stack --spelling tag",
+    "python -m cns_composition.install_stack --check",
+    "python -m cns_composition.repin --stack ../stack --check",
+    "python -m cns_composition.circuit_canary --stack ../stack --cns .",
+]
+
+
 def test_the_steps_run_in_the_order_that_makes_each_one_meaningful():
-    order = ["Install the whole circuit", "pip is satisfied", "Exactly one cns", "Check out the seven",
-             "cns_composition.seat_pins", "cns_composition.cns_versions", "cns_composition.repin",
-             "cns_composition.circuit_canary"]
+    order = ["Install the whole circuit", "pip is satisfied", "Exactly one cns", CHECKS[1], "Check out the seven",
+             *CHECKS[2:]]
     assert [position(f) for f in order] == sorted(position(f) for f in order)
     assert position("actions/checkout") < position("actions/setup-python") < position(order[0])
 
 
-@pytest.mark.parametrize("command", [
-    "python -m pip check",
-    "python -m cns_composition.seat_pins --stack ../stack",
-    "python -m cns_composition.cns_versions --stack ../stack",
-    "python -m cns_composition.repin --stack ../stack --check",
-    "python -m cns_composition.circuit_canary --stack ../stack --cns .",
-])
+@pytest.mark.parametrize("command", CHECKS)
 def test_each_check_runs_as_its_own_step_with_nothing_that_could_hide_a_failure(command):
     block = step(command)
     assert f"run: {command}\n" in block + "\n"
@@ -153,9 +159,9 @@ def test_each_check_runs_as_its_own_step_with_nothing_that_could_hide_a_failure(
         assert hiding not in block
 
 
-@pytest.mark.parametrize("module", ["seat_pins", "cns_versions", "repin", "circuit_canary"])
-def test_the_checks_run_this_checkouts_code_from_the_hub_directory(module):
-    block = step(f"cns_composition.{module}")
+@pytest.mark.parametrize("command", CHECKS[1:])
+def test_the_checks_run_this_checkouts_code_from_the_hub_directory(command):
+    block = step(command)
     assert "working-directory: hub" in block
     assert "PYTHONPATH: ${{ github.workspace }}/hub" in block
 

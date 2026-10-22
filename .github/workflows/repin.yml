@@ -4,14 +4,16 @@
 # that is at any other commit. So every merge to any of the seven made it wrong until somebody edited it by
 # hand. This workflow does the editing, but only after proving the new combination works:
 #
-#   canary   checks out the main of all seven, moves the pins to their heads (cns_composition.repin), then
-#            runs the whole circuit (cns_composition.circuit_canary). It runs every time, so a red run also
-#            means "something merged to one of the seven broke the others".
+#   canary   checks out the main of all seven, moves the pins to their heads (cns_composition.repin, which also
+#            renders contracts/install-stack.txt from the moved manifest), then runs the whole circuit
+#            (cns_composition.circuit_canary). It runs every time, so a red run also means "something merged to
+#            one of the seven broke the others".
 #   pins     separately, checks that the repositories pin each shared package identically (JUDGE, DRAFTER and
 #            BURNISH all pin Warden; pip refuses them together if one moves alone). Red on a disagreement,
 #            and independent of the other two jobs.
 #   propose  only when a pin moved AND the canary said ACCEPT: opens or updates one pull request,
-#            branch auto/repin, that changes nothing but the commits in the manifest.
+#            branch auto/repin, that changes nothing but the commits in the manifest and the install file
+#            rendered from it.
 #
 # A person merges that pull request. Nothing here pushes to main.
 #
@@ -106,7 +108,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: |
           python -m cns_composition.repin --stack ../stack --manifest contracts/warden-stack.json | tee ../repin.txt
-          if git diff --quiet -- contracts/warden-stack.json; then
+          if git diff --quiet -- contracts/warden-stack.json contracts/install-stack.txt; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -121,6 +123,7 @@ jobs:
         run: |
           mkdir proposed
           cp hub/contracts/warden-stack.json proposed/warden-stack.json
+          cp hub/contracts/install-stack.txt proposed/install-stack.txt
           cp repin.txt proposed/repin.txt
       - uses: actions/upload-artifact@v4
         if: steps.repin.outputs.changed == 'true'
@@ -216,10 +219,12 @@ jobs:
           assert set(new) == set(old), "a top-level field was added or removed"
           PY
           cp proposed/warden-stack.json contracts/warden-stack.json
-      - name: The manifest still passes the tests that read it
+          cp proposed/install-stack.txt contracts/install-stack.txt
+      - name: The install file is the rendering of that manifest, and both pass the tests that read them
         run: |
           pip install -e ".[dev]"
-          python -m pytest tests/test_stack.py -q
+          python -m cns_composition.install_stack --check
+          python -m pytest tests/test_stack.py tests/test_install_stack.py cns_composition/tests/test_install_rendering.py -q
       - name: Open or update the pull request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -230,7 +235,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B auto/repin
-          git add contracts/warden-stack.json
+          git add contracts/warden-stack.json contracts/install-stack.txt
           git commit -m "Re-pin the circuit manifest to the current main heads"
           git push --force origin auto/repin
           {
@@ -240,7 +245,7 @@ jobs:
             cat proposed/repin.txt
             echo '```'
             echo
-            echo "Changes nothing but the commits in contracts/warden-stack.json. Merge it before the next merge to any of the seven repositories."
+            echo "Changes nothing but the commits in contracts/warden-stack.json and the install file rendered from it. Merge it before the next merge to any of the seven repositories."
           } > body.md
           if gh pr list --head auto/repin --state open --json number --jq '.[0].number' | grep -q .; then
             gh pr edit auto/repin --body-file body.md

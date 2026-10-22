@@ -45,8 +45,8 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from cns.stack import StackManifest, StackPin
 from cns_composition import delivery
 
-__all__ = ["RepinError", "DEFAULT_MANIFEST", "stack_folders", "manifest_names", "unread", "uncovered_notes",
-           "read_heads", "uncommitted", "repin_text", "changes", "main"]
+__all__ = ["RepinError", "DEFAULT_MANIFEST", "stack_folders", "load_manifest", "manifest_names", "unread",
+           "uncovered_notes", "read_heads", "uncommitted", "repin_text", "changes", "render_install", "main"]
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
 
@@ -111,8 +111,8 @@ def stack_folders(stack: Path) -> List[Path]:
     return sorted(p for p in Path(stack).iterdir() if p.is_dir())
 
 
-def manifest_names(path: Optional[Path] = None) -> List[str]:
-    """The repository names a manifest pins, in its order. Raises RepinError if it cannot be read as a manifest."""
+def load_manifest(path: Optional[Path] = None) -> Dict[str, str]:
+    """The pins a manifest holds, name to commit, in its order. Raises RepinError if it cannot be read as a manifest."""
     path = Path(path) if path else DEFAULT_MANIFEST
     try:
         text = delivery.read_text(path)
@@ -121,7 +121,12 @@ def manifest_names(path: Optional[Path] = None) -> List[str]:
     except (OSError, UnicodeDecodeError) as err:
         raise RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
     _, manifest = _load(text)
-    return [p.name for p in manifest.repos]
+    return {p.name: p.commit for p in manifest.repos}
+
+
+def manifest_names(path: Optional[Path] = None) -> List[str]:
+    """The repository names a manifest pins, in its order. Raises RepinError if it cannot be read as a manifest."""
+    return list(load_manifest(path))
 
 
 def unread(names: Sequence[str], read: Sequence[str]) -> List[str]:
@@ -263,6 +268,29 @@ def _main(argv: Optional[List[str]] = None) -> int:
         print(f"repin: {err}", file=sys.stderr)
         return 2
     print(f"repin: wrote {len(moved)} pin(s) to {path}")
+    return render_install(path, args.stack)
+
+
+def render_install(manifest_path: Path, stack: Path) -> int:
+    """After the manifest moved: rewrite the install file beside it so the two cannot drift apart, with each
+    version comment refreshed from its checkout. No install file beside the manifest is said, not skipped silently.
+    Returns the exit code for the command."""
+    from cns_composition import cns_versions, install_stack  # here, not at the top: cns_versions imports repin
+    install = manifest_path.with_name("install-stack.txt")
+    if not install.exists():
+        print(f"repin: no install-stack.txt beside {manifest_path}, so nothing was rendered from the new pins")
+        return 0
+    try:
+        text = delivery.read_text(install)
+        manifest = load_manifest(manifest_path)
+        table = cns_versions.load_table()
+        rendered = install_stack.render(text, manifest, table, install_stack.stack_versions(stack, list(manifest)))
+        if rendered != text:
+            delivery.write_file(install, rendered)
+    except (RepinError, install_stack.RenderError, OSError) as err:
+        print(f"repin: the manifest moved but {install} could not be rendered from it: {err}", file=sys.stderr)
+        return 2
+    print(f"repin: {'wrote' if rendered != text else 'left'} {install}")
     return 0
 
 

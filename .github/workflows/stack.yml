@@ -5,8 +5,11 @@
 # that exactly one `cns` is in it, checks out the seven repositories at the commits contracts/warden-stack.json
 # names, and then runs the four checks that need all of them at once:
 #
-#   seat_pins       the repositories pin each shared package identically, and all seven were read
-#   cns_versions    every CNS pin is a release the table knows, at or above its floor, and all seven were read
+#   install_stack --installed  every version comment in the install file is the version pip really installed
+#   seat_pins       the repositories and the install file pin each shared package identically, and all seven were read
+#   cns_versions    every CNS pin is a release the table knows, at or above its floor, spelled as its tag, and all
+#                   seven were read
+#   install_stack --check  the install file is the rendering of the manifest and the release table
 #   repin --check   the manifest equals the HEAD of each checkout (the checkouts ARE the manifest, so this holds the
 #                   manifest to itself and fails if a commit could not be checked out as named)
 #   circuit_canary  the whole circuit runs on a throwaway repository and ends ACCEPT
@@ -18,8 +21,9 @@
 # code, so nothing here can write anywhere. No expression from the event is spliced into a shell: values reach a
 # script through env.
 #
-# ADDING A REPOSITORY. List it in contracts/warden-stack.json and in contracts/install-stack.txt. The checkout step
-# reads the manifest, so it needs no edit; tests/test_stack_workflow.py fails if the two files disagree.
+# ADDING A REPOSITORY. List it in contracts/warden-stack.json and give it a line in contracts/install-stack.txt
+# (the commit there is rendered from the manifest by cns_composition.install_stack; the line itself is yours). The
+# checkout step reads the manifest, so it needs no edit; tests/test_stack_workflow.py fails if the two files disagree.
 name: stack
 
 on:
@@ -71,6 +75,11 @@ jobs:
               print(f"{name} {version} at {path}")
           assert len(found) == 1, f"expected exactly one cns distribution, found {len(found)}"
           PY
+      - name: Every version comment in the install file is the version that was installed
+        working-directory: hub
+        env:
+          PYTHONPATH: ${{ github.workspace }}/hub
+        run: python -m cns_composition.install_stack --installed
       - name: Check out the seven repositories at the commits the manifest names
         env:
           BASE_URL: https://github.com/${{ github.repository_owner }}
@@ -96,16 +105,21 @@ jobs:
                   sys.exit(f"{name} is at {head}, not {sha}")
               print(f"{name} {head}")
           PY
-      - name: Every repository pins a shared package the same way, and all seven were read
+      - name: Every repository and the install file pin a shared package the same way, and all seven were read
         working-directory: hub
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
-        run: python -m cns_composition.seat_pins --stack ../stack
-      - name: Every repository pins a CNS release the table knows, and all seven were read
+        run: python -m cns_composition.seat_pins --stack ../stack --install contracts/install-stack.txt
+      - name: Every repository pins a CNS release the table knows, spelled as its tag, and all seven were read
         working-directory: hub
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
-        run: python -m cns_composition.cns_versions --stack ../stack
+        run: python -m cns_composition.cns_versions --stack ../stack --spelling tag
+      - name: The install file is the rendering of the manifest and the release table
+        working-directory: hub
+        env:
+          PYTHONPATH: ${{ github.workspace }}/hub
+        run: python -m cns_composition.install_stack --check
       - name: The manifest is the HEAD of each checkout
         working-directory: hub
         env:
