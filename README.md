@@ -3,6 +3,9 @@
 The central nervous system of the library: one package holding
 the contracts every repo joins on.
 
+Where the eight-repository circuit stands today (what was checked, what it found when it ran on itself, what is
+still open): [docs/STATUS.md](docs/STATUS.md).
+
 ## The rule
 
 `cns` carries **row shapes and interfaces**: dataclasses, enums,
