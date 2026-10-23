@@ -18,5 +18,5 @@ assay @ git+https://github.com/wking53214/ASSAY.git@184679c06e0a636a9a08a8403efa
 warden @ git+https://github.com/wking53214/Warden.git@b57b81e1c98333c43d422666c89a8fcf3ae6eaca  # 0.13.9
 judge @ git+https://github.com/wking53214/JUDGE.git@c3001b86764c8946dbc3d367c977aed53cbab9b7  # 0.4.10
 drafter @ git+https://github.com/wking53214/DRAFTER.git@715b657c0c5080f4b6082b5cd94a38e693c600e7  # 0.2.11
-burnish @ git+https://github.com/wking53214/BURNISH.git@cd17eec1c7029b280efae4ebe655ce88deb8b8ab  # 0.3.11
+burnish @ git+https://github.com/wking53214/BURNISH.git@c23ed874ef2599085bf1bb1ec6f0861ea5b7bd7d  # 0.3.12
 watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@b25d8522301005ba764783927f43abfeb9f18f5c  # 0.3.8
