@@ -19,9 +19,10 @@ standard library. `graph_to_dict`, `CallerState.snapshot` and
 them. Anything a class might *do* beyond that stays in the repo that
 owns it, and the CNS carries its interface as a Protocol instead.
 
-Four tests enforce the rule rather than describing it: no forbidden
-import, no file opened, no module-level name, and no method that assigns
-to `self` (`tests/test_graph.py`).
+Three tests enforce the rule rather than describing it (`tests/test_graph.py`):
+`test_the_package_carries_shapes_and_nothing_else` (no forbidden import, no file opened),
+`test_no_module_level_state` (no module-level name) and `test_rows_do_not_mutate_themselves` (no method that
+assigns to `self`).
 
 `CallerState.default_likelihoods` was the one real exception, a hard-coded
 intent prior rather than a property of the row. It was removed in 1.0.0,
@@ -139,10 +140,15 @@ repository to the manifest also needs a checkout step in the workflow, and a tes
 `.github/workflows/stack.yml` is the check that all of this works together as a consumer would get it. On pushes and
 pull requests to `main` and the horsemen branch, and weekly, it installs the circuit with
 `pip install -r contracts/install-stack.txt` on Python 3.12, runs `pip check`, asserts exactly one `cns` distribution
-is installed, checks out the repositories `contracts/warden-stack.json` names at the commits it names, and runs
-`seat_pins`, `cns_versions`, `repin --check` and `circuit_canary` on them. It reads the repository list from the
+is installed, checks out the repositories `contracts/warden-stack.json` names at the commits it names, and runs the checks listed
+below on them. It reads the repository list from the
 manifest, so a new repository needs no edit there; `tests/test_stack_workflow.py` holds it to the manifest and runs its
 checkout step against local fixtures.
+
+The job's steps, in order: install the circuit; `pip check`; assert exactly one `cns` distribution;
+`install_stack --installed` (each version comment in the install file is the version pip installed); check out the
+repositories at the manifest's commits; `seat_pins`; `cns_versions --spelling tag`; `install_stack --check` (the install
+file is the rendering of the manifest and the release table); `repin --check`; `circuit_canary`; `circuit_refusals`.
 
 ## Consuming it
 
@@ -250,7 +256,7 @@ checker to trust these annotations, so it is asserted rather than assumed.
 Each line names the test or workflow job that holds it. A claim without one is not made.
 
 - `cns` carries shapes and pure functions of them, nothing else: no forbidden import, no file opened, no
-  module-level name, no method that assigns to `self` (`tests/test_graph.py`, four tests), and `mypy --strict`
+  module-level name, no method that assigns to `self` (`tests/test_graph.py`, three tests), and `mypy --strict`
   over the package in the `ci` job on Python 3.10, 3.11, 3.12 and 3.13.
 - Every exported class, field, default, enum member and method is pinned to `tests/public_shape.json`; a change
   fails `tests/test_public_shape.py` until it is regenerated in the same commit.
@@ -265,7 +271,8 @@ Each line names the test or workflow job that holds it. A claim without one is n
 - The digest answer key is exactly what `cns.gate.subject_digest` produces (`cns_composition/tests/test_digest_vectors.py`)
   and STACK-Kernel's vendored copy is compared with it in the `links` job.
 - The whole circuit installs from `contracts/install-stack.txt` with `pip check` clean and exactly one `cns`, runs on
-  a throwaway repository and ends ACCEPT (the `stack` job, on every push and weekly; run 39797114827 on the base commit).
+  a throwaway repository and ends ACCEPT (the `stack` job, on every push and weekly; the run for any commit is on the
+  repository's Actions page, and `docs/STATUS.md` names the run it read).
 - The circuit refuses a dirty member, a short, uppercase or wrong pin (the `stack` job's `circuit_refusals` step,
   cases held by `cns_composition/tests/test_circuit_refusals.py`), and a red target suite is not accepted.
 - The install file is the rendering of the manifest and the release table, and each version comment in it is the
@@ -282,13 +289,6 @@ Each line names the test or workflow job that holds it. A claim without one is n
 - The circuit cannot be proven ACCEPT on a machine where ASSAY's verifier cannot `unshare` (measured 2026-10-22 in
   a sandbox: "unshare: fork failed", 27 of 60 claims unscorable, Warden INCONCLUSIVE). Only the `stack` job proves
   it. The same limit applies to the red-suite refusal case.
-- With the manifest at Warden 0.13.7, four refusal cases are red: that Warden runs on with a seat the manifest
-  does not name and with a seat file hidden from `git status` by `assume-unchanged`, `skip-worktree` or a global
-  excludes file. Warden 0.13.8 (`380894f0304ef40587dd29efd41b4ceccf94a5d3`) refuses all four, measured on
-  throwaway clones on 2026-10-22. The red stays until the manifest moves.
-- `seat_pins --install` reports that WARDEN's `ghost` extra pins ghost-tools at `c2ada82` while the install file
-  installs `2d03d8e`. `pip check` does not see it because the extra is not installed; `pip install warden[ghost]`
-  beside the install file would. Open until the manifest moves to a Warden that pins `2d03d8e` (0.13.8 does).
 - `pip install cns` installs an unrelated project (2.3.50 on PyPI). Nothing in the circuit installs CNS by name,
   so nothing breaks today; the owner deferred the rename on 2026-10-22 (the decision record says why).
 - `release --check` sees a tag only where it is visible; a shallow CI checkout has none, so "the tag exists but
@@ -297,8 +297,9 @@ Each line names the test or workflow job that holds it. A claim without one is n
 - `consumers` reads imports. A repository that takes `cns.gate` as a module and uses its names as attributes is
   registered with the module only, so a rename of such a name is not caught for it.
 - The circuit is run on Python 3.12 only (the `stack` job); the four-interpreter matrix covers the shapes.
-- The repin workflow's proposing job runs only from the default branch; it has opened pull requests #18 and
-  #31 from the schedule, and nothing on a branch exercises it.
+- The repin workflow's proposing job runs only from the default branch, and nothing on a branch exercises it. Of
+  the two pull requests it produced, #18 was opened by hand (the workflow pushed the branch; the setting that lets
+  it open pull requests was off) and #31 was opened by the workflow's own token (`github-actions[bot]`).
 - `cns.assay` has one writer and one reader (ASSAY); it does not meet the two-repository rule and is recorded
   above as the one exception.
 
@@ -328,7 +329,7 @@ From the git history and the sibling changelogs. Each row names the commit or th
 | 2026-10-22 | `repin` pinned a tampered checkout as clean under `assume-unchanged` | reproduced | Step 5 |
 | 2026-10-22 | `consumers`, `digest_vectors` and `link_ledger` still skipped a symlinked stack folder | reading the code | Step 6 |
 | 2026-10-22 | the install file was edited by hand after every re-pin and drifted six times | the git history | Step 7: `install_stack`; `repin` renders it |
-| 2026-10-22 | the circuit had never been run on a stack it must refuse | the audit | Step 8: `circuit_refusals`; four cases red at Warden 0.13.7, which is the finding |
+| 2026-10-22 | the circuit had never been run on a stack it must refuse | the audit | Step 8: `circuit_refusals`; four cases were red at Warden 0.13.7, which was the finding, and the manifest has since moved to a Warden that refuses all ten (the `stack` job) |
 | 2026-10-22 | the installed `v1.9.0` lacked `cns_versions`; a tool run from a wheel gave a traceback | the audit | Step 9: the boundary is said and tested; the `packaging` job asserts the tools ship |
 | 2026-10-22 | the version was written in six places by hand | the audit | Step 10: `release --check`, `tests/test_release.py` |
 | 2026-10-22 | with `PYTHONUNBUFFERED=1` the delivery guard did not hold: a gone reader or a full device ended all ten commands in a traceback and exit 1, and a lost first print stopped the work after it. The candidate's own CI was green because a CI runner's stdout is buffered, where the failure waits for the flush the guard makes | running the suite on a machine that sets `PYTHONUNBUFFERED=1`, after the 2.0.0 candidate's CI had passed | `delivery.run` guards the call that prints; `cns_composition/tests/test_delivery.py` runs all ten commands in both buffering modes for a gone reader, a closed descriptor 1 and a full device |
