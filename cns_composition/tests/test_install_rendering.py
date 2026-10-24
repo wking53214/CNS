@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -302,7 +303,16 @@ def installed_site(tmp_path, monkeypatch, **override):
     for name, (version, commit) in have.items():
         if version is not None:
             fake_dist(site, name, version, commit)
-    monkeypatch.syspath_prepend(str(site))
+    # Only the fake site may supply these distributions: a real install of the circuit in the interpreter running the
+    # suite (the stack job's, or a developer's) would otherwise answer for a distribution the test removed.
+    names = ("cns", "judge", "warden", "watcher_mcu", "watcher-mcu")
+
+    def has_real(entry: str) -> bool:
+        base = Path(entry or ".")
+        return any(next(base.glob(f"{n}-*.{kind}"), None) is not None or (base / f"{n}.{kind}").exists()
+                   for n in names for kind in ("dist-info", "egg-info"))
+
+    monkeypatch.setattr(sys, "path", [str(site)] + [e for e in sys.path if not has_real(e)])
     return site
 
 
