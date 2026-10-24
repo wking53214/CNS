@@ -5,7 +5,9 @@
 # that exactly one `cns` is in it, checks out the seven repositories at the commits contracts/warden-stack.json
 # names, and then runs the four checks that need all of them at once:
 #
-#   install_stack --installed  every version comment in the install file is the version pip really installed
+#   install_stack --installed  every version comment in the install file is the version pip really installed, and
+#                   every commit in it (watcher-mcu's included, and the commit the release table records for the CNS
+#                   tag) is the commit pip recorded in direct_url.json
 #   seat_pins       the repositories and the install file pin each shared package identically, and all seven were read
 #   cns_versions    every CNS pin is a release the table knows, at or above its floor, spelled as its tag, and all
 #                   seven were read
@@ -80,7 +82,7 @@ jobs:
               print(f"{name} {version} at {path}")
           assert len(found) == 1, f"expected exactly one cns distribution, found {len(found)}"
           PY
-      - name: Every version comment in the install file is the version that was installed
+      - name: Every version comment is the installed version, and every commit is the commit pip recorded (the CNS tag's too)
         working-directory: hub
         env:
           PYTHONPATH: ${{ github.workspace }}/hub

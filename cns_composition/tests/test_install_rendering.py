@@ -257,3 +257,103 @@ def test_repin_fails_when_the_install_file_cannot_follow_the_manifest(tmp_path, 
     (tmp_path / "t.json").write_text(json.dumps(TABLE))
     assert repin.main(["--stack", str(stack), "--manifest", str(contracts / "warden-stack.json")]) == 2
     assert "could not be rendered from it: the install file has no line for ASSAY" in capsys.readouterr().err
+
+
+# ------------------------------------------------------------------ Step 14: the commits, not only the versions
+
+def test_a_line_outside_the_manifest_must_still_pin_a_full_commit(tmp_path):
+    """watcher-mcu is not in the manifest, so its line was held only by its version comment: a short or mangled
+    commit passed `--check` and the suite."""
+    tbl = table(tmp_path)
+    manifest = {"JUDGE": A, "WARDEN": B}
+    for bad in ("abc1234", "C" * 40, "c" * 39, "c" * 41, "v1.0.0", "main"):
+        text = TEXT.replace(f"WATCHER_MCU.git@{C}", f"WATCHER_MCU.git@{bad}")
+        assert text != TEXT
+        with pytest.raises(I.RenderError, match=r"watcher-mcu .*not a full lowercase 40-character commit"):
+            I.render(text, manifest, tbl)
+    assert I.render(TEXT, manifest, tbl)  # a full commit is still fine
+
+
+def test_the_command_check_refuses_a_mangled_commit_on_the_line_the_manifest_does_not_name(tmp_path, capsys):
+    args = files(tmp_path, text=TEXT.replace(f"@{C}", "@abc1234"))
+    assert I.main([*args, "--check"]) == 2
+    assert "watcher-mcu" in capsys.readouterr().err
+
+
+def fake_dist(site, name, version, commit=None, *, url="https://github.com/o/x", record=True):
+    """A dist-info folder as pip writes it for a git install: METADATA and direct_url.json with vcs_info."""
+    folder = site / f"{name.replace('-', '_')}-{version}.dist-info"
+    folder.mkdir(parents=True)
+    (folder / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n", encoding="utf-8")
+    if record and commit is not None:
+        (folder / "direct_url.json").write_text(
+            json.dumps({"url": url, "vcs_info": {"vcs": "git", "commit_id": commit}}), encoding="utf-8")
+
+
+CNS_TAG_TEXT = TEXT.replace("@v1.8.0\n", "@v1.9.0\n").replace("tag v1.8.0 (the commit " + "8" * 40 + ")",
+                                                             "tag v1.9.0 (the commit " + "9" * 40 + ")")
+
+
+def installed_site(tmp_path, monkeypatch, **override):
+    site = tmp_path / "site"
+    site.mkdir(exist_ok=True)
+    have = {"cns": ("1.9.0", "9" * 40), "judge": ("0.4.7", A), "warden": ("0.13.6", B), "watcher-mcu": ("0.3.6", C)}
+    have.update(override)
+    for name, (version, commit) in have.items():
+        if version is not None:
+            fake_dist(site, name, version, commit)
+    monkeypatch.syspath_prepend(str(site))
+    return site
+
+
+def test_installed_commit_problems_is_empty_when_every_installed_commit_is_the_one_named(tmp_path, monkeypatch):
+    installed_site(tmp_path, monkeypatch)
+    assert I.installed_commit_problems(CNS_TAG_TEXT, table(tmp_path)) == []
+
+
+def test_a_mutated_watcher_mcu_commit_is_caught_by_the_installed_check(tmp_path, monkeypatch):
+    """The hand-edited line: change its commit and `--check` and every suite still pass, because nothing knows which
+    commit is right. pip does: what it installed from the line is what it recorded."""
+    installed_site(tmp_path, monkeypatch, **{"watcher-mcu": ("0.3.6", "d" * 40)})
+    problems = I.installed_commit_problems(CNS_TAG_TEXT, table(tmp_path))
+    assert problems == [f"watcher-mcu: the install file names commit {C}, but {'d' * 40} is installed"]
+
+
+def test_a_force_moved_tag_with_the_same_version_is_caught(tmp_path, monkeypatch):
+    """cns v1.9.0 is recorded at one commit in the release table. If the tag is moved, the same version installs
+    from another commit and every version comment still holds."""
+    installed_site(tmp_path, monkeypatch, cns=("1.9.0", "e" * 40))
+    tbl = table(tmp_path)
+    assert I.installed_problems(CNS_TAG_TEXT, tbl) == []  # the versions alone cannot see it
+    problems = I.installed_commit_problems(CNS_TAG_TEXT, tbl)
+    assert problems == [f"cns: the release table says v1.9.0 is commit {'9' * 40}, but {'e' * 40} is installed"]
+
+
+def test_an_install_without_a_commit_record_or_not_installed_is_a_problem_not_a_pass(tmp_path, monkeypatch):
+    site = installed_site(tmp_path, monkeypatch, judge=(None, None))
+    fake_dist(site, "judge", "0.4.7", None)  # installed, but not from a git URL: no direct_url.json
+    problems = I.installed_commit_problems(CNS_TAG_TEXT, table(tmp_path))
+    assert len(problems) == 1 and problems[0].startswith("judge: no commit is recorded")
+    (site / "judge-0.4.7.dist-info" / "METADATA").unlink()
+    (site / "judge-0.4.7.dist-info").rmdir()
+    problems = I.installed_commit_problems(CNS_TAG_TEXT, table(tmp_path))
+    assert len(problems) == 1 and problems[0].startswith("judge is not installed")
+
+
+def test_a_cns_pin_the_release_table_does_not_know_is_a_problem(tmp_path, monkeypatch):
+    installed_site(tmp_path, monkeypatch)
+    text = CNS_TAG_TEXT.replace("CNS.git@v1.9.0", "CNS.git@v7.7.7")
+    problems = I.installed_commit_problems(text, table(tmp_path))
+    assert len(problems) == 1 and "v7.7.7" in problems[0] and "release table" in problems[0]
+
+
+def test_the_installed_command_passes_when_versions_and_commits_agree(tmp_path, monkeypatch, capsys):
+    installed_site(tmp_path, monkeypatch)
+    assert I.main([*files(tmp_path, text=CNS_TAG_TEXT), "--installed"]) == 0
+    assert "every version comment is the installed version and every commit is the installed commit" in capsys.readouterr().out
+
+
+def test_the_installed_command_fails_on_a_commit_difference_the_versions_do_not_show(tmp_path, monkeypatch, capsys):
+    installed_site(tmp_path, monkeypatch, **{"watcher-mcu": ("0.3.6", "d" * 40)})
+    assert I.main([*files(tmp_path, text=CNS_TAG_TEXT), "--installed"]) == 1
+    assert "watcher-mcu: the install file names commit" in capsys.readouterr().err

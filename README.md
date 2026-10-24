@@ -146,7 +146,7 @@ manifest, so a new repository needs no edit there; `tests/test_stack_workflow.py
 checkout step against local fixtures.
 
 The job's steps, in order: install the circuit; `pip check`; assert exactly one `cns` distribution;
-`install_stack --installed` (each version comment in the install file is the version pip installed); check out the
+`install_stack --installed` (each version comment in the install file is the version pip installed, and each commit in it, watcher-mcu's included, is the commit pip recorded; the installed `cns` is the commit the release table records for the pinned tag); check out the
 repositories at the manifest's commits; `seat_pins`; `cns_versions --spelling tag`; `install_stack --check` (the install
 file is the rendering of the manifest and the release table); `repin --check`; `circuit_canary`; `circuit_refusals`.
 
@@ -334,6 +334,7 @@ From the git history and the sibling changelogs. Each row names the commit or th
 | 2026-10-22 | the version was written in six places by hand | the audit | Step 10: `release --check`, `tests/test_release.py` |
 | 2026-10-22 | with `PYTHONUNBUFFERED=1` the delivery guard did not hold: a gone reader or a full device ended all ten commands in a traceback and exit 1, and a lost first print stopped the work after it. The candidate's own CI was green because a CI runner's stdout is buffered, where the failure waits for the flush the guard makes | running the suite on a machine that sets `PYTHONUNBUFFERED=1`, after the 2.0.0 candidate's CI had passed | `delivery.run` guards the call that prints; `cns_composition/tests/test_delivery.py` runs all ten commands in both buffering modes for a gone reader, a closed descriptor 1 and a full device |
 | 2026-10-24 | `repin --manifest` and `install_stack --install` given a binary file ended in a traceback and exit 1, the code a stale pin gets; `release --root <absent>` exited 1; `StackPin("WARDEN", 5).problems()` raised `TypeError` | the round-6 audit | Step 13: an undecodable file is a `DeliveryError`, so every command that reads one ends exit 2 with one line; `release` exits 2 for a root that is not a folder; `problems()` reports a field that is not text. `cns_composition/tests/test_tool_exit_codes.py`, `tests/test_stack.py` |
+| 2026-10-24 | the hand-edited `watcher-mcu` line of `contracts/install-stack.txt` was held only by its version comment: its commit could be changed, or cut short, and `install_stack --check` and the suite passed. Nothing compared the installed `cns` with the release table's commit for the pinned tag either, so a force-moved `v2.0.0` with the same version would have passed | the round-6 audit | Step 14: `render` refuses a line outside the manifest that is not a full lowercase 40-character commit; `install_stack --installed` compares every installed commit (`direct_url.json`) with the commit named, and the installed `cns` with the table's commit for its tag. `cns_composition/tests/test_install_rendering.py` (the mutated-commit and force-moved-tag cases). The tag-moved case is proven on fake distributions; it fires in the `stack` job on a real install |
 
 ## Ceilings code cannot fix
 

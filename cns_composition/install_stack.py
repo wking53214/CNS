@@ -28,12 +28,15 @@ in this interpreter, which is what the stack workflow does after `pip install -r
 
     python -m cns_composition.install_stack --check            exit 1 if the committed file is not the rendering
     python -m cns_composition.install_stack                    rewrite it (repin does this too when a pin moves)
-    python -m cns_composition.install_stack --installed        every version comment is the installed version
+    python -m cns_composition.install_stack --installed        every version comment is the installed version, and
+                                                               every commit (and the CNS tag's commit) is the one pip
+                                                               recorded
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from dataclasses import dataclass
@@ -42,8 +45,8 @@ from typing import Dict, List, Mapping, Optional, Sequence, Union
 
 from cns_composition import cns_versions, delivery, repin
 
-__all__ = ["DEFAULT_INSTALL", "Line", "RenderError", "installed_problems", "parse", "project_version", "render",
-           "stack_versions", "main"]
+__all__ = ["DEFAULT_INSTALL", "Line", "RenderError", "installed_commit", "installed_commit_problems",
+           "installed_problems", "parse", "project_version", "render", "stack_versions", "main"]
 
 DEFAULT_INSTALL = Path(__file__).resolve().parents[1] / "contracts" / "install-stack.txt"
 
@@ -124,6 +127,10 @@ def render(text: str, manifest: Mapping[str, str], table: cns_versions.Table,
             if versions and versions.get(name):
                 rest = f"  # {versions[name]}"
             item = Line(item.dist, item.url, item.repo, commit, rest)
+        elif not _FULL_COMMIT.match(item.ref):
+            # A line the manifest does not cover (watcher-mcu) is edited by hand and nothing says which commit is
+            # right, but it must at least name one. A short, uppercase or branch ref is a pin that moves.
+            raise RenderError(f"{item.dist} is pinned at {item.ref!r}, not a full lowercase 40-character commit")
         out.append(item.text)
     missing = [name for name in manifest if name not in seen]
     if missing:
@@ -195,6 +202,61 @@ def installed_problems(text: str, table: cns_versions.Table) -> List[str]:
     return out
 
 
+def installed_commit(dist: str) -> Optional[str]:
+    """The commit pip recorded when it installed `dist` from a git URL (direct_url.json, vcs_info.commit_id), or
+    None when it recorded none (a PyPI or editable install, an unreadable record). Raises PackageNotFoundError
+    when the distribution is not installed."""
+    from importlib.metadata import distribution
+    raw = distribution(dist).read_text("direct_url.json")
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    vcs = data.get("vcs_info") if isinstance(data, dict) else None
+    commit = vcs.get("commit_id") if isinstance(vcs, dict) else None
+    return commit if isinstance(commit, str) else None
+
+
+def installed_commit_problems(text: str, table: cns_versions.Table) -> List[str]:
+    """Each pin whose installed commit is not the commit the install file names. Versions are a claim a person
+    types; the commit is what pip fetched.
+
+    A line the manifest names and the hand-edited watcher-mcu line carry a full commit, and pip must have installed
+    exactly that one. The CNS line carries a tag, and the commit it must have installed is the one the release
+    table records for that tag, so a tag that was moved after the table recorded it, leaving the version the same,
+    is found here and nowhere else. Empty when every installed commit is the one named."""
+    from importlib.metadata import PackageNotFoundError
+    out: List[str] = []
+    for item in parse(text):
+        if isinstance(item, str):
+            continue
+        if item.repo.casefold() == "cns":
+            rows = [r for r in table.releases if item.ref in (r.ref, r.commit)]
+            if not rows:
+                out.append(f"cns is pinned at {item.ref}, which the release table does not know, so its commit "
+                           "cannot be checked")
+                continue
+            want, what = rows[0].commit, f"the release table says {rows[0].ref} is commit {rows[0].commit}"
+        elif _FULL_COMMIT.match(item.ref):
+            want, what = item.ref, f"the install file names commit {item.ref}"
+        else:
+            out.append(f"{item.dist} is pinned at {item.ref!r}, not a full lowercase 40-character commit")
+            continue
+        try:
+            have = installed_commit(item.dist)
+        except PackageNotFoundError:
+            out.append(f"{item.dist} is not installed in this interpreter, so its commit cannot be checked")
+            continue
+        if have is None:
+            out.append(f"{item.dist}: no commit is recorded for the installed copy (it was not installed from the "
+                       "git URL the install file names), so its commit cannot be checked")
+        elif have != want:
+            out.append(f"{item.dist}: {what}, but {have} is installed")
+    return out
+
+
 def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.install_stack",
@@ -218,12 +280,12 @@ def _main(argv: Optional[List[str]] = None) -> int:
         print(f"install_stack: {err}", file=sys.stderr)
         return 2
     if args.installed:
-        problems = installed_problems(text, table)
+        problems = installed_problems(text, table) + installed_commit_problems(text, table)
         for line in problems:
             print(f"install_stack: {line}", file=sys.stderr)
         if problems:
             return 1
-        print("install_stack: every version comment is the installed version")
+        print("install_stack: every version comment is the installed version and every commit is the installed commit")
         return 0
     if rendered == text:
         print("install_stack: the install file is the rendering of the manifest and the release table")
