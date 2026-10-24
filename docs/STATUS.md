@@ -55,7 +55,9 @@ CNS is pinned by its tag in every repository; every other cross-repository pin i
 
 Run on 2026-10-22 and 2026-10-23, in a throwaway clone of each repository at the commit above, one run at a time,
 scope `documentation`, nothing tuned and nothing kept. The full record, including the commands and every run's
-decision, is in [evidence/SELFHOSTING_2026-10-23.md](evidence/SELFHOSTING_2026-10-23.md).
+decision, is in [evidence/SELFHOSTING_2026-10-23.md](evidence/SELFHOSTING_2026-10-23.md). The raw run records it reads
+(Warden's JSON, receipts, exit codes, stderr logs and the README diffs the circuit kept) are in
+[evidence/selfhosting-records-2026-10-23/](evidence/selfhosting-records-2026-10-23/), copied unaltered.
 
 | Repository | Decision | In plain words |
 |---|---|---|

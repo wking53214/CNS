@@ -1,0 +1,31 @@
+warden: INFO warden.cli: seat loaded: drafter.seat:Drafter (Drafter, requires_contract=1)
+warden: INFO warden.cli: seat loaded: burnish.finisher:Burnish (Burnish, requires_contract=1)
+warden: INFO warden.cli: seat loaded: judge.seat:Judge (Judge, requires_contract=1)
+warden: INFO warden.tagteam: run: target=/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/targets/ghost_tools scope=documentation authorized=selfhost-experiment judge=yes
+warden: INFO warden.isolation: instrument swizzle.cli --contract exited 0 in 0.2s
+warden: INFO warden.isolation: instrument swizzle.cli prove exited 0 in 0.6s
+warden: INFO warden.tagteam: swizzle proofs: hold (SWIZZLE proofs: 12 of 12 proofs hold.)
+warden: INFO warden.isolation: instrument swizzle.cli assay exited 0 in 7.2s
+warden: INFO warden.tagteam: assay grading: usable (ASSAY: Ghost caught 5 of 7 known failure modes (60/60 manifest claims hold))
+warden: INFO warden.isolation: instrument ghost_buster.cli /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/targets/ghost_tools exited 1 in 16.2s
+warden: INFO warden.tagteam: ghost scan: 132 finding(s)
+warden: INFO warden.isolation: instrument swizzle.cli --contract exited 0 in 0.1s
+warden: INFO warden.isolation: instrument swizzle.cli prove exited 0 in 0.4s
+warden: INFO warden.tagteam: swizzle proofs: hold (SWIZZLE proofs: 12 of 12 proofs hold.)
+warden: INFO warden.suite: suite: running the target's own tests with pytest (timeout 3000s)
+warden: INFO warden.suite: suite: ran in 487.0s: 2432 passed, 0 failed, 0 errors, 38 skipped, 0 xfailed, 0 xpassed
+warden: INFO warden.suite: suite: running the target's own tests with pytest (timeout 3000s)
+warden: INFO warden.suite: suite: ran in 461.1s: 2432 passed, 0 failed, 0 errors, 38 skipped, 0 xfailed, 0 xpassed
+warden: INFO warden.suite: suite: running the target's own tests with pytest (timeout 3000s)
+warden: INFO warden.suite: suite: ran in 469.5s: 2432 passed, 0 failed, 0 errors, 38 skipped, 0 xfailed, 0 xpassed
+warden: INFO warden.isolation: instrument ghost_buster.cli /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/targets/ghost_tools exited 1 in 15.3s
+warden: INFO warden.tagteam: ghost scan: 132 finding(s)
+warden: INFO warden.isolation: instrument swizzle.cli governor exited 0 in 37.8s
+warden: INFO warden.tagteam: swizzle attacks on the governor: 28 run
+warden: INFO warden.suite: suite: running the target's own tests with pytest (timeout 3000s)
+warden: INFO warden.suite: suite: ran in 457.8s: 2432 passed, 0 failed, 0 errors, 38 skipped, 0 xfailed, 0 xpassed
+warden: INFO warden.tagteam: verdict: ACCEPT_UNVERIFIED (unmeasured: ghost_partial) Loop converged and the finishing change stands. Not measured: ghost_partial. Nothing here says those checks would have passed. Judge: INSUFFICIENT (these checks never ran: ghost_partial). The ...
+warden: INFO warden.tagteam: put back: 1 path(s) restored after ACCEPT_UNVERIFIED; held as 69a6c6c4bf02099c7b0fd1b1a6a378682a4ccb11669ea702d108ba5fcc45cc73
+warden: INFO warden.cli: tagteam finished: decision=ACCEPT_UNVERIFIED exit=3 put_back=True unmeasured=ghost_partial
+warden: INFO warden.horsemen: receipt prcp_4ee4869458c3: ACCEPT_UNVERIFIED, 7 handoff(s)
+warden: receipt written to /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/records/ghost_tools.run1.receipt.json

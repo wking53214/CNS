@@ -1,7 +1,9 @@
 # Self-hosting record: the full circuit over each of its own eight repositories
 
 Date of runs: 2026-10-22 to 2026-10-23. Everything below is read from the run records in
-`scratchpad/selfhost/records/` (JSON, stderr log, exit code, receipt, start and end stamps per run).
+`scratchpad/selfhost/records/` on the run machine, now copied unaltered into this repository at
+[selfhosting-records-2026-10-23/](selfhosting-records-2026-10-23/) (JSON, stderr log, exit code, receipt, start and end stamps per run).
+Where this file says `records/<NAME>.runN.*`, the file is in that folder.
 Nothing was tuned, no target code was edited, no repository was skipped, nothing was pushed. Each target is a
 throwaway clone in `scratchpad/selfhost/targets/<NAME>`, detached at the final commit (`git rev-parse HEAD` matched,
 `git status` clean before every run).

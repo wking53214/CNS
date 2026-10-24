@@ -1,0 +1,34 @@
+diff --git a/README.md b/README.md
+index 7661c84..483d008 100644
+--- a/README.md
++++ b/README.md
+@@ -414,3 +414,29 @@ repository is at https://github.com/wking53214/CNS. This README states no result
+ - Releases are tagged by the owner, not by the code. Check the repository's tags and releases on GitHub for what exists.
+ 
+ Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 William N. King.
++
++<!-- burnish:begin claims-vs-reality -->
++## Measured facts (generated)
++
++- Warden ran the target's suite at the end of the loop: green; nothing failed or errored.
++- `CNS is referenced`: A CNS mention is not proof of a correct seam. Subject binding is UNKNOWN until inspected. [implemented]
++- No test-count claims found in the README.
++
++Critic: **No contradiction with the measurements was found. That is not a proof of the whole design.**
++
++- Ghost Tools still reports findings of these kinds: boundary, intra_function_duplicate_block, loop_invariant_call, placeholder_name, unmerged_branch. Converged means no fixes were left to propose, not that Ghost is silent.
++- Unknown: Finished means the loop had no proposals left, not that Ghost is silent.
++- Unknown: Whether any CNS digest here is the CNS canonical digest.
++
++README critic, on the README as it stood going into the finish:
++
++- \[RM-ONELINER\] It never says what the project is in one plain sentence. (there is no sentence under the title)
++- \[RM-USAGE\] A reader cannot tell how to use it. (no section matching /usage\|quick ?start\|example\|getting started/)
++- \[RM-LICENSE\] A reader cannot tell whether they may use it. (no License section)
++- \[RM-CONTRIB\] Nobody can tell if help is wanted. (no Contributing section)
++- \[RM-STATUS\] A reader cannot tell whether this is alive. (no statement of whether this is maintained, experimental or stable)
++- \[RM-SUPPORT\] A stuck reader has nowhere to go. (no place to ask for help)
++- \[RM-TOC\] It is long and offers no way through.
++- \[RM-FENCES\] Code is shown unhighlighted.
++- \[RM-EXAMPLES\] No example a reader can run. (no runnable examples are linked)
++<!-- burnish:end -->
