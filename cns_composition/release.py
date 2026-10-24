@@ -247,6 +247,10 @@ def _main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--check", action="store_true", help="check only (the default when --record is not given)")
     parser.add_argument("--record", metavar="TAG", default=None, help="record this tag: add its row, move current")
     args = parser.parse_args(argv)
+    if not args.root.is_dir():
+        # Exit 2, "the question could not be answered": there is no tree to check, which is not a finding about one.
+        print(f"release: the root {str(args.root)!r} is not a folder, so nothing was checked", file=sys.stderr)
+        return 2
     if args.record:
         try:
             lines = record(args.root, args.record)

@@ -30,6 +30,8 @@ permission bits. On any failure the temporary file is removed and the old file i
 `read_text(path)` reads a file a person named on the command line (a manifest, a table, a ledger) and refuses
 one that is not a regular file after links are followed: `read_text` on a named pipe with no writer blocks
 forever, and a workflow step that blocks forever reads as "still running", never as a failure.
+A file that is not UTF-8 text is refused the same way, as a DeliveryError (an OSError), so a command ends exit 2
+with one line and not a traceback with exit 1, the code a stale pin gets.
 """
 
 from __future__ import annotations
@@ -212,7 +214,12 @@ def read_text(path: Path) -> str:
             else "folder" if stat.S_ISDIR(mode) else "other"
         named = {"fifo": "a named pipe", "device": "a device", "folder": "a folder", "other": "not a regular file"}
         raise DeliveryError(f"{str(path)!r} is {named[kind]}, not a regular file, so it was not read")
-    return path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as err:
+        # A binary or non-UTF-8 file named on the command line. A DeliveryError is an OSError, so every command
+        # that already turns an unreadable file into exit 2 and one line does the same here, instead of a traceback.
+        raise DeliveryError(f"{str(path)!r} cannot be read: UnicodeDecodeError (it is not UTF-8 text)") from err
 
 
 def write_file(path: Path, text: str) -> None:

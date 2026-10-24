@@ -72,3 +72,17 @@ def test_the_circuits_manifest_beside_the_package_satisfies_the_shape():
     assert m.to_dict() == data
     assert {p.name for p in m.repos} == {"ghost_tools", "SWIZZLE", "ASSAY", "DRAFTER", "JUDGE", "BURNISH", "WARDEN"}
     assert all(len(p.commit) == 40 for p in m.repos)
+
+
+def test_a_pin_whose_fields_are_not_text_reports_a_problem_instead_of_raising():
+    """Step 13: `StackPin("WARDEN", 5).problems()` raised TypeError out of the hex check. A pin read from a hand-written
+    file can hold anything, and `problems()` is the place that says so."""
+    bad_commit = StackPin("WARDEN", 5)  # type: ignore[arg-type]
+    assert bad_commit.problems() == ("the pin 'WARDEN' has commit 5, not 40 lowercase hex characters",)
+    bad_name = StackPin(5, "a" * 40)  # type: ignore[arg-type]
+    assert bad_name.problems() == ("a pin has no name",)
+    none_commit = StackPin("WARDEN", None)  # type: ignore[arg-type]
+    assert none_commit.problems() != ()
+    assert not bad_commit.pins("a" * 40)
+    manifest = _manifest(repos=(bad_name, bad_commit))
+    assert len(manifest.problems()) == 2

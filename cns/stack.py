@@ -62,7 +62,7 @@ class StackPin:
 
     def problems(self) -> Tuple[str, ...]:
         out = []
-        if not self.name or not self.name.strip():
+        if not isinstance(self.name, str) or not self.name.strip():
             out.append("a pin has no name")
         elif "/" in self.name or "\\" in self.name or self.name in (".", ".."):
             out.append(f"the pin {self.name!r} is a path, not a folder name")
@@ -99,7 +99,7 @@ class StackManifest:
         seen: Dict[str, str] = {}
         for pin in self.repos:
             out.extend(pin.problems())
-            key = pin.name.casefold()
+            key = str(pin.name).casefold()
             if key in seen:
                 out.append(f"{pin.name!r} is pinned twice (names are matched without regard to case)")
             seen.setdefault(key, pin.name)
@@ -115,4 +115,4 @@ class StackManifest:
 
 
 def _is_hex(text: str) -> bool:
-    return bool(text) and all(c in "0123456789abcdef" for c in text)
+    return isinstance(text, str) and bool(text) and all(c in "0123456789abcdef" for c in text)
