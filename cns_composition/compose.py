@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from cns.gate import GateOutcome, subject_digest
 
@@ -27,7 +27,7 @@ class CompositionStep:
     system: SystemName
     input_outcome: Optional[str] = None  # outcome from previous step, if any
     output_outcome: Optional[str] = None  # verdict/decision/status produced
-    metadata: Dict[str, Any] = None
+    metadata: Optional[Dict[str, Any]] = None
     subject_hash: Optional[str] = None  # what this step is judging
 
 

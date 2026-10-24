@@ -41,7 +41,7 @@ import shutil
 import subprocess  # nosec B404 - git is run with a fixed argument list, never through a shell
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from cns_composition import cns_versions, delivery
 
@@ -144,8 +144,8 @@ def check(root: Path = ROOT) -> Tuple[List[str], List[str]]:
         problems.append(f"the table's current release {table.current.ref} is {table.current.version}, newer than "
                         f"the package version {package}")
     for release in table.releases:
-        tag = _TAG.match(release.ref)
-        if tag and tag.group(1) != release.version and not release.note:
+        ref_match = _TAG.match(release.ref)
+        if ref_match and ref_match.group(1) != release.version and not release.note:
             problems.append(f"the tag {release.ref} declares {release.version} and has no note saying why")
     # README: every pin example is the current tag, and the tag list names it
     try:
@@ -180,10 +180,10 @@ def check(root: Path = ROOT) -> Tuple[List[str], List[str]]:
                          "table's row for it was not checked against it")
     else:
         if row is None:
-            problems.append(f"the tag {tag} exists at {commit[:12]} but the table has no row for it: run "
+            problems.append(f"the tag {tag} exists at {commit} but the table has no row for it: run "
                             f"python -m cns_composition.release --record {tag}")
         elif row.commit != commit:
-            problems.append(f"the tag {tag} peels to {commit[:12]} but the table says {row.commit[:12]}")
+            problems.append(f"the tag {tag} peels to {commit} but the table says {row.commit}")
         elif table.current.ref != tag:
             problems.append(f"the tag {tag} exists and is recorded, but current is still {table.current.ref}")
         at = version_at(root, commit)
@@ -219,7 +219,7 @@ def record(root: Path, tag: str) -> List[str]:
     rows = data["releases"]
     existing = next((r for r in rows if r.get("ref") == tag), None)
     if existing is not None and (existing.get("commit") != commit or existing.get("version") != version):
-        raise ReleaseError(f"the table already has a row for {tag} that says {str(existing.get('commit'))[:12]} "
+        raise ReleaseError(f"the table already has a row for {tag} that says {existing.get('commit')} "
                            f"({existing.get('version')}); it does not match the tag and was not changed")
     if existing is None:
         rows.append({"ref": tag, "commit": commit, "version": version})

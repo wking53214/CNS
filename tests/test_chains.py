@@ -31,7 +31,7 @@ def test_the_workflow_can_only_read_and_runs_on_a_schedule_by_hand_and_for_its_o
 def test_nothing_from_the_event_is_spliced_into_a_shell():
     body = WORKFLOW.split("\njobs:\n", 1)[1]
     assert "${{ github.event" not in body and "${{ github.head_ref" not in body
-    assert body.count("persist-credentials: false") == body.count("uses: actions/checkout@v4")
+    assert body.count("persist-credentials: false") == body.count("uses: actions/checkout@")
 
 
 def test_every_repository_the_chains_use_is_checked_out():

@@ -53,46 +53,46 @@ jobs:
     outputs:
       changed: ${{ steps.repin.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: hub
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/ghost_tools
           path: stack/ghost_tools
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/SWIZZLE
           path: stack/SWIZZLE
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/ASSAY
           path: stack/ASSAY
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/DRAFTER
           path: stack/DRAFTER
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/JUDGE
           path: stack/JUDGE
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/BURNISH
           path: stack/BURNISH
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/WARDEN
           path: stack/WARDEN
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Install what the circuit needs on this interpreter
@@ -125,7 +125,7 @@ jobs:
           cp hub/contracts/warden-stack.json proposed/warden-stack.json
           cp hub/contracts/install-stack.txt proposed/install-stack.txt
           cp repin.txt proposed/repin.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: steps.repin.outputs.changed == 'true'
         with:
           name: proposed
@@ -140,46 +140,46 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: hub
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/ghost_tools
           path: stack/ghost_tools
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/SWIZZLE
           path: stack/SWIZZLE
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/ASSAY
           path: stack/ASSAY
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/DRAFTER
           path: stack/DRAFTER
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/JUDGE
           path: stack/JUDGE
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/BURNISH
           path: stack/BURNISH
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/WARDEN
           path: stack/WARDEN
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Every repository pins a shared package the same way
@@ -191,6 +191,11 @@ jobs:
   propose:
     name: propose
     needs: canary
+    # This is the one job with a write token, and it stays that way on purpose: it pushes the branch auto/repin
+    # (contents: write) and opens or edits the pull request (pull-requests: write), which nothing else can do. It runs
+    # no code from the other repositories: it takes the files the canary produced, re-checks them (schema, contract,
+    # names, full commits) in the first step, and a person merges the result. Every action it uses is pinned to a
+    # full commit, because a moved tag here would run with the write token.
     # Only from the default branch: a manual run from any other branch still runs the canary, but proposes nothing.
     if: needs.canary.outputs.changed == 'true' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
@@ -198,12 +203,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: proposed
           path: proposed
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Re-check what the canary produced

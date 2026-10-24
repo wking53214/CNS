@@ -247,8 +247,10 @@ diff, because CI cannot reach the private repositories that pin this one,
 and their tests find out too late.
 
 **CI runs before a pin can move**: the suite on Python 3.10 through 3.13,
-`mypy --strict` over the package, and a check that `cns/py.typed` really
-ships inside the built wheel. The marker is what tells a consumer's type
+`mypy --strict` over the package, `ruff check .` (rules named in `pyproject.toml`, ruff pinned in the dev extra),
+`mypy cns_composition` (not strict, clean), and a check that `cns/py.typed` really
+ships inside the built wheel. Every action in every workflow is pinned to a full commit with its version in a
+comment (`tests/test_workflow_pins.py`). The marker is what tells a consumer's type
 checker to trust these annotations, so it is asserted rather than assumed.
 
 ## What works
@@ -335,6 +337,7 @@ From the git history and the sibling changelogs. Each row names the commit or th
 | 2026-10-22 | with `PYTHONUNBUFFERED=1` the delivery guard did not hold: a gone reader or a full device ended all ten commands in a traceback and exit 1, and a lost first print stopped the work after it. The candidate's own CI was green because a CI runner's stdout is buffered, where the failure waits for the flush the guard makes | running the suite on a machine that sets `PYTHONUNBUFFERED=1`, after the 2.0.0 candidate's CI had passed | `delivery.run` guards the call that prints; `cns_composition/tests/test_delivery.py` runs all ten commands in both buffering modes for a gone reader, a closed descriptor 1 and a full device |
 | 2026-10-24 | `repin --manifest` and `install_stack --install` given a binary file ended in a traceback and exit 1, the code a stale pin gets; `release --root <absent>` exited 1; `StackPin("WARDEN", 5).problems()` raised `TypeError` | the round-6 audit | Step 13: an undecodable file is a `DeliveryError`, so every command that reads one ends exit 2 with one line; `release` exits 2 for a root that is not a folder; `problems()` reports a field that is not text. `cns_composition/tests/test_tool_exit_codes.py`, `tests/test_stack.py` |
 | 2026-10-24 | the hand-edited `watcher-mcu` line of `contracts/install-stack.txt` was held only by its version comment: its commit could be changed, or cut short, and `install_stack --check` and the suite passed. Nothing compared the installed `cns` with the release table's commit for the pinned tag either, so a force-moved `v2.0.0` with the same version would have passed | the round-6 audit | Step 14: `render` refuses a line outside the manifest that is not a full lowercase 40-character commit; `install_stack --installed` compares every installed commit (`direct_url.json`) with the commit named, and the installed `cns` with the table's commit for its tag. `cns_composition/tests/test_install_rendering.py` (the mutated-commit and force-moved-tag cases). The tag-moved case is proven on fake distributions; it fires in the `stack` job on a real install |
+| 2026-10-24 | no linter ran in CI (it would have found unused imports, an ambiguous name, an unused variable and an import below code), `mypy cns_composition` reported 8 errors, every workflow named its actions by a moving tag (`actions/checkout@v4`, including the job that holds a write token), and the release check cut both commits of a mismatch to 12 characters so two commits that differ in the tail read as equal | the round-6 audit | Step 15: `ruff check .` and `mypy cns_composition` are `ci` steps and clean; every `uses:` is a full commit with a version comment; the mismatch message prints both commits whole. `tests/test_workflow_pins.py`, `tests/test_release.py` (the tail-difference case). The commits for upload-artifact and download-artifact were read from the action repositories with `git ls-remote`, because no sibling repository uses them |
 
 ## Ceilings code cannot fix
 

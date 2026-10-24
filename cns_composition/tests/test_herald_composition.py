@@ -7,7 +7,6 @@ Each failure is a requirement for the 5-cycle loop to work.
 import pytest
 from cns.gate import GateOutcome
 from cns_composition.herald_passthrough import (
-    HeraldCompositionResult,
     SwizzleVerdict,
     GhostToolsStatus,
     translate_swizzle_to_canonical,

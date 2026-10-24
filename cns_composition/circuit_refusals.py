@@ -5,7 +5,7 @@ WHY THIS EXISTS
 `circuit_canary` proves the circuit says ACCEPT on a clean stack and a clean target. A check that can only pass is
 half a check: the manifest exists so that Warden refuses a stack that is not what the manifest says, and until
 2.0.0 nothing ran the circuit on such a stack to see that it does. Measured on 2026-10-22 on throwaway clones of
-the pinned stack: Warden 0.13.7 (the pinned governor) refuses a dirty member, a short pin and a wrong commit, and
+the pinned stack: Warden 0.13.7 (then the pinned governor) refuses a dirty member, a short pin and a wrong commit, and
 runs on with a seat the manifest does not name and with a modified seat file hidden from `git status` by
 `assume-unchanged`, `skip-worktree` or the caller's global git configuration. Warden 0.13.8 refuses all of them.
 This module is each of those cases as a check, so the pinned circuit's answer is read on every run and not

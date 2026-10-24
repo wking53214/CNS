@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
-from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
+from cns.gate import GateOutcome, subject_digest
 
 
 # ============================================================================
@@ -65,7 +65,7 @@ class HeraldTranslation:
     canonical_outcome: GateOutcome
     subject: Optional[Any] = None
     subject_hash: Optional[str] = None
-    metadata: Dict[str, Any] = None
+    metadata: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         if self.metadata is None:

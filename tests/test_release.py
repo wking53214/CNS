@@ -158,3 +158,20 @@ def test_the_command_exits_one_on_a_problem_and_zero_when_all_agree(repo, capsys
     assert "cns/__init__.py says 1.9.0" in capsys.readouterr().err
     assert R.main(["--root", str(repo), "--record", "v2.0.0"]) == 2
     assert "not visible" in capsys.readouterr().err
+
+
+def test_a_tag_that_peels_to_another_commit_than_the_table_says_shows_both_commits_in_full(repo):
+    """Step 15: the message cut both commits to 12 characters, so two commits that differ only in their tail read as
+    identical ("peels to abc but the table says abc"). Both are printed whole."""
+    git(repo, "tag", "-a", "-m", "release", "v2.0.0")
+    head = git(repo, "rev-parse", "HEAD")
+    other = head[:-6] + ("000000" if not head.endswith("000000") else "111111")
+    assert other != head and other[:12] == head[:12]
+    table = {**TABLE, "current": "v2.0.0",
+             "releases": [{"ref": "v1.9.0", "commit": "9" * 40, "version": "1.9.0"},
+                          {"ref": "v2.0.0", "commit": other, "version": "2.0.0"}]}
+    write(repo, "contracts/cns-releases.json", json.dumps(table))
+    problems, _ = R.check(repo)
+    mismatch = [p for p in problems if "peels to" in p]
+    assert len(mismatch) == 1
+    assert head in mismatch[0] and other in mismatch[0]

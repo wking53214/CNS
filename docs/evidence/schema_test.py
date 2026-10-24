@@ -139,7 +139,7 @@ for pkg, cs in sorted(control.items(), key=lambda kv: -len(kv[1])):
     out.append(f"| {pkg} (control) | {len(cs)} | " + " | ".join(f"{rate(cs, v):.1f}%" for _, v in STAGES) + " | |")
 co = [c for cs in control.values() for c in cs]
 out.append(f"| **control pooled** | {len(co)} | " + " | ".join(f"**{rate(co, v):.1f}%**" for _, v in STAGES) + " | |")
-out.append(f"| **separation** | | " + " | ".join(f"{rate(ho, v)/max(rate(co, v), 1e-9):.1f}x" for _, v in STAGES) + " | |\n")
+out.append("| **separation** | | " + " | ".join(f"{rate(ho, v)/max(rate(co, v), 1e-9):.1f}x" for _, v in STAGES) + " | |\n")
 hh = Counter(w for n, _ in ho for w in (words(n) & final)); ch = Counter(w for n, _ in co for w in (words(n) & final))
 out.append("## What carries the signal (no-engine vocabulary)\n")
 out.append("- held-out: " + ", ".join(f"`{w}`({n})" for w, n in hh.most_common(15)))

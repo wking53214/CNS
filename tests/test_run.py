@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
@@ -103,8 +104,6 @@ def test_a_null_reason_is_refused_not_read_as_the_word_none():
 # 0.13.6, kept by WATCHER_MCU as tests/fixtures/warden_0_13_6_declined_record.json): unmeasured is empty, converged
 # is true, and seven checks were declined. A narrator that read only the named fields said "gaps: none" of it.
 # ---------------------------------------------------------------------------------------------------------------
-
-import json
 
 FIXTURE = Path(__file__).with_name("fixtures") / "warden_0_13_6_declined_record.json"
 DECLINED = ("mutate", "kernel", "structure", "tests", "project", "secrets", "correlate")

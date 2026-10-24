@@ -7,14 +7,11 @@ each case really changes something. The real circuit is run by the stack workflo
 """
 
 import json
-import os
 import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
-from cns_composition import circuit_refusals as cr, repin
+from cns_composition import circuit_refusals as cr
 
 IDENT = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
 

@@ -100,8 +100,8 @@ def test_no_expression_is_spliced_into_a_shell_block():
 
 
 def test_every_action_is_pinned_to_a_release_tag():
-    uses = re.findall(r"(?m)^\s+- uses: (\S+)$", WORKFLOW)
-    assert uses and all(re.search(r"@v\d+$", u) for u in uses)
+    uses = re.findall(r"(?m)^\s+- uses: (.+)$", WORKFLOW)
+    assert uses and all(re.fullmatch(r"\S+@[0-9a-f]{40} # v\d+\.\d+\.\d+", u) for u in uses)
 
 
 def test_a_failed_pull_request_still_leaves_the_branch_and_a_link():

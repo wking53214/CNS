@@ -119,6 +119,24 @@ being fixed on the repositories' branches; a fix counts only when the manifest i
 - The PyPI name `cns` belongs to an unrelated project. Pins are git URLs, so it only matters for a bare `pip install cns`.
   Renaming the distribution was deferred by the owner.
 
+## Changes to this repository after the audit (2026-10-24), and the tests edited
+
+Steps 10 to 15 on this branch: the README and this page corrected (10, 11), the self-hosting records copied in (12),
+exit codes and `StackPin.problems()` (13), the commit checks in `install_stack` (14), and CI hygiene (15). The suite
+is 996 passed, 0 skipped, on Python 3.11, 3.12 and 3.13 locally (3.10 runs in CI); `ruff check .` and
+`mypy cns_composition` are clean.
+
+Two existing tests were edited under rule 5 of `CLAUDE.md`, both by Step 15 and both only because they asserted the
+exact text the step changed:
+- `tests/test_chains.py::test_nothing_from_the_event_is_spliced_into_a_shell` counted `uses: actions/checkout@v4`; it
+  counts `uses: actions/checkout@`, so it still holds each checkout to `persist-credentials: false`.
+- `tests/test_repin_workflow.py::test_every_action_is_pinned_to_a_release_tag` required `@vN`; it requires a full
+  commit followed by a version comment (the name was not changed).
+
+Also changed, not tests of behaviour: `cns_composition/tests/test_spine_trace.py` gained a type annotation so mypy
+reads it, the two gate test files renamed a variable `O` to `OMEGA`, and unused imports and one unused assignment were
+removed from tests. Nothing was weakened.
+
 ## What code cannot fix
 
 One human maintainer. Repositories under three months old. No outside users. Release tags are the owner's to create,

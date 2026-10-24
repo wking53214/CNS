@@ -128,7 +128,8 @@ def _lost(stream: object, err: BaseException, code: int, program: str) -> int:
     # BrokenPipeError (the reader is gone), ENOSPC (a full device), EIO: the report did not arrive. Park the
     # descriptor and detach stdout, so the interpreter's own flush at exit cannot fail a second time.
     _park(stream)
-    sys.stdout = sys.__stdout__ = None  # type: ignore[assignment]
+    sys.stdout = None  # type: ignore[assignment]
+    setattr(sys, "__stdout__", None)  # not `sys.__stdout__ = None`: typeshed marks that name Final
     _say(program, f"the report could not be delivered ({type(err).__name__})")
     return code or UNDELIVERED
 

@@ -12,7 +12,7 @@ authors = [{ name = "William N. King" }]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "mypy>=1.8"]
+dev = ["pytest>=7", "mypy>=1.8", "ruff==0.17.2"]
 
 [tool.setuptools.packages.find]
 # The wheel carries two packages. `cns` is the shapes package and stays
@@ -28,6 +28,20 @@ exclude = ["cns_composition.tests", "cns_composition.tests.*"]
 # package whose deliverable is typed row shapes is most of the value.
 [tool.setuptools.package-data]
 cns = ["py.typed"]
+
+[tool.ruff]
+# The gate CI runs (`ruff check .`). The rules are named, not left to the default of whichever ruff is installed:
+# pyflakes (unused imports and variables, undefined names), the import, statement and syntax-error checks of
+# pycodestyle. ruff itself is pinned in the dev extra for the same reason. build/ is setuptools output.
+extend-exclude = ["build"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Throwaway generators whose committed output is the evidence (docs/evidence/README.md): the style checks that
+# would only change their layout are off here, the pyflakes checks are on.
+"docs/evidence/*.py" = ["E401", "E402", "E701", "E702", "E731"]
 
 [tool.pytest.ini_options]
 # Every test directory. The composition tests once lived under a directory
