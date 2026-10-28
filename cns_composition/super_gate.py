@@ -100,11 +100,13 @@ class SuperGate:
     """A roster of repository gates that decides on all of them or on none.
 
     Raises ValueError at construction for a gate at an end its repository does not declare, a duplicate seat,
-    a roster that is not complete (no ALPHA gate, or no OMEGA gate) unless `require_complete=False`, and an
-    empty roster. KeyError for a repository with no row in `repo_gates`.
+    a roster that is not complete (no ALPHA gate, or no OMEGA gate) unless `require_complete=False`, a
+    roster missing any seat named in `required`, and an empty roster. KeyError for a repository with no row
+    in `repo_gates`.
     """
 
-    def __init__(self, seats: Iterable[Seat], *, require_complete: bool = True) -> None:
+    def __init__(self, seats: Iterable[Seat], *, require_complete: bool = True,
+                 required: Iterable[str] = ()) -> None:
         self._seats: Tuple[Seat, ...] = tuple(seats)
         self._require_complete = require_complete
         if not self._seats:
@@ -124,6 +126,10 @@ class SuperGate:
             raise ValueError(f"the roster has no {missing} gate, so it is a stratum and not a complete gate; "
                              "pass require_complete=False if that is intended")
         self._keys = tuple(keys)
+        missing = sorted(set(required) - set(keys))
+        if missing:
+            raise ValueError("the roster lacks required seat(s), refusing to decide without them: "
+                             + ", ".join(missing))
 
     @property
     def seats(self) -> Tuple[str, ...]:

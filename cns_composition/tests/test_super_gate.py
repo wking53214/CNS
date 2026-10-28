@@ -71,6 +71,13 @@ def test_the_seats_are_named_repository_then_gate_in_roster_order():
     assert gate.seats == ("Governance_Gateway:door", "DIT:judge")
 
 
+def test_a_roster_missing_a_required_seat_is_refused_at_construction():
+    seats = [("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM))]
+    with pytest.raises(ValueError, match="DIT:identity"):
+        SuperGate(seats, required=("DIT:identity",))
+    assert SuperGate(seats, required=("DIT:judge",)).seats == ("Governance_Gateway:door", "DIT:judge")
+
+
 # ------------------------------------------------------------ deciding
 
 def test_every_gate_passing_and_binding_is_a_go():
