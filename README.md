@@ -74,6 +74,16 @@ Every class is extracted by syntax tree from its canonical source and
 verified structurally identical at extraction; the module docstrings
 name the source and the agreement.
 
+## Required gate rosters
+
+The behavior layer in cns_composition.SuperGate requires callers to pass a
+non-empty required-seat roster separately from the candidate mapping. Build
+that roster from trusted policy/configuration, not from the candidate being
+evaluated. A missing argument or empty roster is an error. The API enforces
+that every required seat is present in the configured gates; it cannot
+authenticate the source of the policy configuration. Existing callers must
+add the required keyword when constructing SuperGate.
+
 ## The stack manifest
 
 `cns.stack` is the contract for a claim no single repository can make

@@ -27,7 +27,12 @@ class FakeGate:
 def roster(**kw):
     door = FakeGate("door", A, kw.get("door", PASS), kw.get("door_bind", True))
     judge = FakeGate("judge", OM, kw.get("judge", PASS), kw.get("judge_bind", True))
-    return door, judge, SuperGate([("Governance_Gateway", door), ("DIT", judge)])
+    return door, judge, policy_gate([("Governance_Gateway", door), ("DIT", judge)])
+
+
+def policy_gate(seats, **kwargs):
+    required = tuple(f"{repo}:{gate.name}" for repo, gate in seats)
+    return SuperGate(seats, required=required, **kwargs)
 
 
 GOOD = {"Governance_Gateway:door": "request", "DIT:judge": "text"}
@@ -37,23 +42,32 @@ GOOD = {"Governance_Gateway:door": "request", "DIT:judge": "text"}
 
 def test_an_empty_roster_decides_nothing():
     with pytest.raises(ValueError, match="decides nothing"):
-        SuperGate([])
+        policy_gate([])
+
+
+def test_required_roster_cannot_be_omitted_or_empty():
+    seats = [("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM))]
+    with pytest.raises(TypeError, match="required"):
+        SuperGate(seats)
+    with pytest.raises(ValueError, match="at least one"):
+        SuperGate(seats, required=())
 
 
 def test_a_gate_at_an_end_its_repository_does_not_declare_is_refused_at_construction():
     with pytest.raises(ValueError, match="DIT declares omega, not alpha"):
-        SuperGate([("DIT", FakeGate("judge", A)), ("Governance_Gateway", FakeGate("door", A))])
+        policy_gate([("DIT", FakeGate("judge", A)), ("Governance_Gateway", FakeGate("door", A))])
 
 
 def test_a_repository_with_no_row_is_refused():
     with pytest.raises(KeyError):
-        SuperGate([("Nowhere", FakeGate("g", A))])
+        policy_gate([("Nowhere", FakeGate("g", A))])
 
 
 def test_a_seat_listed_twice_is_refused():
+    seats = [("Governance_Gateway", FakeGate("door", A)), ("Governance_Gateway", FakeGate("door", A)),
+             ("DIT", FakeGate("judge", OM))]
     with pytest.raises(ValueError, match="appears twice"):
-        SuperGate([("Governance_Gateway", FakeGate("door", A)), ("Governance_Gateway", FakeGate("door", A)),
-                   ("DIT", FakeGate("judge", OM))])
+        SuperGate(seats, required=("Governance_Gateway:door", "DIT:judge"))
 
 
 @pytest.mark.parametrize("seats, missing", [
@@ -62,8 +76,8 @@ def test_a_seat_listed_twice_is_refused():
 ])
 def test_a_roster_with_only_one_end_is_refused_unless_the_caller_says_it_knows(seats, missing):
     with pytest.raises(ValueError, match=f"no {missing} gate"):
-        SuperGate(seats)
-    assert SuperGate(seats, require_complete=False).seats
+        policy_gate(seats)
+    assert policy_gate(seats, require_complete=False).seats
 
 
 def test_the_seats_are_named_repository_then_gate_in_roster_order():
@@ -133,13 +147,13 @@ def test_a_gate_that_raises_is_a_breach_and_not_a_pass():
     class Raises(FakeGate):
         def check(self, candidate):
             raise RuntimeError("boom")
-    gate = SuperGate([("Governance_Gateway", FakeGate("door", A)), ("DIT", Raises("judge", OM))])
+    gate = policy_gate([("Governance_Gateway", FakeGate("door", A)), ("DIT", Raises("judge", OM))])
     decision = gate.decide(GOOD)
     assert not decision.allowed and decision.outcome is BREACH
 
 
 def test_a_roster_the_caller_allowed_to_be_incomplete_never_says_go():
-    gate = SuperGate([("Governance_Gateway", FakeGate("door", A))], require_complete=False)
+    gate = policy_gate([("Governance_Gateway", FakeGate("door", A))], require_complete=False)
     decision = gate.decide({"Governance_Gateway:door": "request"})
     assert decision.outcome is PASS and not decision.allowed
 
@@ -159,7 +173,7 @@ def test_the_root_is_stable_for_the_same_decision_and_differs_when_anything_diff
     assert base == roster()[2].decide(GOOD).root and len(base) == 64
     assert base != roster()[2].decide({**GOOD, "DIT:judge": "other text"}).root       # a candidate changed
     assert base != roster(judge=RETRY)[2].decide(GOOD).root                          # an outcome changed
-    other = SuperGate([("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM)),
+    other = policy_gate([("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM)),
                        ("GEMS", FakeGate("artifact", OM))])
     assert base != other.decide({**GOOD, "GEMS:artifact": "x"}).root                 # the roster changed
 
@@ -167,7 +181,7 @@ def test_the_root_is_stable_for_the_same_decision_and_differs_when_anything_diff
 def test_the_root_pins_the_roster_even_when_the_verdicts_are_the_same():
     """An alpha refusal stops omega, so a roster with one more omega gate gives the same verdicts."""
     short = roster(door=BREACH)[2].decide(GOOD)
-    longer = SuperGate([("Governance_Gateway", FakeGate("door", A, BREACH)), ("DIT", FakeGate("judge", OM)),
+    longer = policy_gate([("Governance_Gateway", FakeGate("door", A, BREACH)), ("DIT", FakeGate("judge", OM)),
                         ("GEMS", FakeGate("artifact", OM))]).decide({**GOOD, "GEMS:artifact": "x"})
     assert [r.gate for r in short.run.results] == [r.gate for r in longer.run.results]
     assert short.root != longer.root
