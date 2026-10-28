@@ -46,6 +46,11 @@ from ecology_cns_connector import answer_content, answer_digest
 
 PASS, RETRY, BREACH = GateOutcome.PASS.value, GateOutcome.RETRY.value, GateOutcome.TERMINAL_BREACH.value
 
+#: The gates policy requires for every answer, written out by hand. It is deliberately not built from the seats
+#: in `judge`: a roster checked against itself passes with a gate missing. Dropping or renaming a DIT gate must
+#: fail, so changing this list is a policy change made in review.
+REQUIRED_SEATS = ("DIT:identity", "DIT:hedging", "DIT:causality")
+
 #: What DIT's connector labels the text it judged (its default).
 DIT_SUBJECT = "payload"
 
@@ -65,13 +70,22 @@ def record(answer: str, sources: list) -> Dict[str, object]:
     return {"query": QUERY, "answer": answer, "sources": sources}
 
 
-def judge(rec: Dict[str, object], leave_out: str = ""):
+def judge(rec: Dict[str, object], leave_out: str = "", drop: str = ""):
     """DIT's default stack over the record's answer text, decided on the whole roster by the super gate."""
     gates = [DitGate(gate) for gate in build_stack(default_rules(), GSA_V13_STACK)]
+    gates = [gate for gate in gates if f"DIT:{gate.name}" != drop]
     candidates = {f"DIT:{gate.name}": Lazy(lambda text=rec["answer"]: text) for gate in gates if f"DIT:{gate.name}" != leave_out}
     seats = [("DIT", gate) for gate in gates]
-    required = tuple(f"{repo}:{gate.name}" for repo, gate in seats)
-    return SuperGate(seats, required=required, require_complete=False).decide(candidates).run
+    return SuperGate(seats, required=REQUIRED_SEATS, require_complete=False).decide(candidates).run
+
+
+def dropped_gate_is_refused() -> str:
+    """Empty if a roster built without DIT:identity is refused at construction, else what happened instead."""
+    try:
+        judge(record(CLEAN, EVIDENCE), drop="DIT:identity")
+    except ValueError as exc:
+        return "" if "DIT:identity" in str(exc) else f"refused, but not for the missing seat: {exc}"
+    return "a roster without DIT:identity was accepted"
 
 
 def sha(text: str) -> str:
@@ -142,6 +156,10 @@ def main() -> int:
               f"verified={seen['ecology_verified']}")
         for key in differs:
             wrong.append(f"{name}: {key} was {seen.get(key)!r}, wanted {wanted[key]!r}")
+    refused = dropped_gate_is_refused()
+    print(f"{'ok  ' if not refused else 'FAIL'} a DIT gate is dropped from the roster: refused at construction")
+    if refused:
+        wrong.append(f"a DIT gate is dropped from the roster: {refused}")
     for line in wrong:
         print(f"chain: {line}", file=sys.stderr)
     return 1 if wrong else 0
