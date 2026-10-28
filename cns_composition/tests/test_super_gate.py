@@ -71,6 +71,13 @@ def test_the_seats_are_named_repository_then_gate_in_roster_order():
     assert gate.seats == ("Governance_Gateway:door", "DIT:judge")
 
 
+def test_a_roster_missing_a_required_seat_is_refused_at_construction():
+    seats = [("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM))]
+    with pytest.raises(ValueError, match="DIT:identity"):
+        SuperGate(seats, required=("DIT:identity",))
+    assert SuperGate(seats, required=("DIT:judge",)).seats == ("Governance_Gateway:door", "DIT:judge")
+
+
 # ------------------------------------------------------------ deciding
 
 def test_every_gate_passing_and_binding_is_a_go():
@@ -171,6 +178,13 @@ def test_an_approval_binds_only_the_decision_it_was_issued_for():
     other = roster()[2].decide({**GOOD, "DIT:judge": "other text"})
     assert decision.binds(decision.root) and not decision.binds(other.root)
     assert not decision.binds("") and isinstance(decision, Decision)
+
+
+def test_a_decision_binds_only_the_root_recomputed_from_its_own_verdicts():
+    real = roster()[2].decide(GOOD)
+    forged = Decision(run=real.run, seats=real.seats, root="f" * 64)
+    assert real.binds(real.root)
+    assert not forged.binds("f" * 64) and not forged.binds(real.root)
 
 
 def test_a_missing_candidate_error_names_the_seat():

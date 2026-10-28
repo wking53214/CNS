@@ -1,5 +1,7 @@
 # Library-Wide Composition Orchestrator
 
+> **Superseded by SuperGate / run_chain.** The orchestrator described here is kept for reference only. The supported composition path is `cns_composition/super_gate.py` (a roster that decides on every gate or on none) over `cns_composition/gate_chain.py` (`run_chain`), and new work belongs there.
+
 ## Overview
 
 The LibraryComposer enables scaling CNS governance across all 67 repositories by allowing any system to declare its outcome model and participate in composition chains. Rather than requiring a universal translator (HERALD), the orchestrator uses targeted translation rules only at system boundaries where outcome models differ.
@@ -328,7 +330,7 @@ if path is None:
 
 ## Testing
 
-See `Tests/test_library_composition.py` for:
+See `cns_composition/tests/test_library_composition.py` for:
 - Adapter registration validation
 - Compatibility graph verification
 - Path-finding correctness
@@ -338,7 +340,7 @@ See `Tests/test_library_composition.py` for:
 - Translation rules
 - CompositionBuilder API
 
-Run: `python -m pytest Tests/test_library_composition.py -v`
+Run: `python -m pytest cns_composition/tests/test_library_composition.py -v`
 
 ## Integration with CNS
 

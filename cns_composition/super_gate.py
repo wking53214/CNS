@@ -88,7 +88,12 @@ class Decision:
 
     def binds(self, root: str) -> bool:
         """Whether an approval carrying `root` was issued for exactly this decision."""
-        return root == self.root
+        return root == self.root == _root(self.seats, self.run.results)
+
+
+def _root(seats: Tuple[str, ...], results: Tuple[GateResult, ...]) -> str:
+    """One digest over the roster and every verdict, recomputed wherever a root is checked."""
+    return subject_digest({"seats": list(seats), "verdicts": [_verdict(r) for r in results]})
 
 
 def _verdict(r: GateResult) -> Mapping[str, object]:
@@ -100,11 +105,13 @@ class SuperGate:
     """A roster of repository gates that decides on all of them or on none.
 
     Raises ValueError at construction for a gate at an end its repository does not declare, a duplicate seat,
-    a roster that is not complete (no ALPHA gate, or no OMEGA gate) unless `require_complete=False`, and an
-    empty roster. KeyError for a repository with no row in `repo_gates`.
+    a roster that is not complete (no ALPHA gate, or no OMEGA gate) unless `require_complete=False`, a
+    roster missing any seat named in `required`, and an empty roster. KeyError for a repository with no row
+    in `repo_gates`.
     """
 
-    def __init__(self, seats: Iterable[Seat], *, require_complete: bool = True) -> None:
+    def __init__(self, seats: Iterable[Seat], *, require_complete: bool = True,
+                 required: Iterable[str] = ()) -> None:
         self._seats: Tuple[Seat, ...] = tuple(seats)
         self._require_complete = require_complete
         if not self._seats:
@@ -124,6 +131,10 @@ class SuperGate:
             raise ValueError(f"the roster has no {missing} gate, so it is a stratum and not a complete gate; "
                              "pass require_complete=False if that is intended")
         self._keys = tuple(keys)
+        missing = sorted(set(required) - set(keys))
+        if missing:
+            raise ValueError("the roster lacks required seat(s), refusing to decide without them: "
+                             + ", ".join(missing))
 
     @property
     def seats(self) -> Tuple[str, ...]:
@@ -141,5 +152,5 @@ class SuperGate:
         steps = [(repo, gate, candidates[key] if key in candidates else _no_candidate(key))
                  for (repo, gate), key in zip(self._seats, self._keys)]
         run = run_repo_chain(steps, require_complete=self._require_complete)
-        root = subject_digest({"seats": list(self._keys), "verdicts": [_verdict(r) for r in run.results]})
+        root = _root(self._keys, run.results)
         return Decision(run=run, seats=self._keys, root=root)

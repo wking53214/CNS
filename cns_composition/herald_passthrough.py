@@ -195,7 +195,7 @@ class HeraldCompositionResult:
 
     def all_pass(self) -> bool:
         """Whether cycle achieved PASS in canonical form."""
-        return all(t.canonical_outcome == GateOutcome.PASS for t in self.canonical_flow)
+        return bool(self.canonical_flow) and all(t.canonical_outcome == GateOutcome.PASS for t in self.canonical_flow)
 
     def any_breach(self) -> bool:
         """Whether cycle hit TERMINAL_BREACH in canonical form."""

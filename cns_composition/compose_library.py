@@ -2,6 +2,9 @@
 
 Discovers systems across 67 repos, builds composition graphs,
 and routes outcomes through compatible chains without universal translation.
+
+
+Superseded by SuperGate / run_chain: the supported path is `super_gate.py` over `gate_chain.py`, and this module is kept for reference only.
 """
 
 from __future__ import annotations
