@@ -3,11 +3,11 @@
   "contract": "1",
   "repos": {
     "ghost_tools": "3df51b374ed016b3f42def17c080700cd770e85a",
-    "SWIZZLE": "6853c92cf000c5b86c6b83090ec192b2974b70aa",
+    "SWIZZLE": "dff2f99b69515df154e66fbe9f5735a726c3dbda",
     "ASSAY": "1de36ca9b56ba51b6b1f577bf046d7270b7e6c2a",
-    "DRAFTER": "76f4241a3f9a67a62d6f000dd8073454a6f86f49",
-    "JUDGE": "3e321d420803dfb9ed163c5b981745ffdd5195c9",
-    "BURNISH": "16a0ef25715dece4cca48d2e62b513083552e4ce",
-    "WARDEN": "9ecd1124e6c1b1c4ad7daed37b17f9009662dd9d"
+    "DRAFTER": "d7a2b4e3c5d2b0e0ae8857b976e7ebfbb4a163b7",
+    "JUDGE": "f23ae927f482b16cb503ad29d248825f587f4a64",
+    "BURNISH": "b3e0d60acee84adae58a2ed99196824184dabaa0",
+    "WARDEN": "68f2a955f486a8ebb230c4395c88f7e99ee47c48"
   }
 }

@@ -13,10 +13,10 @@
 # because pip treats a tag URL and a commit URL as two different sources and refuses to resolve them together.
 cns @ git+https://github.com/wking53214/CNS.git@v2.0.0
 ghost-tools @ git+https://github.com/wking53214/ghost_tools@3df51b374ed016b3f42def17c080700cd770e85a  # 1.10.9
-swizzle @ git+https://github.com/wking53214/SWIZZLE.git@6853c92cf000c5b86c6b83090ec192b2974b70aa  # 0.8.8
+swizzle @ git+https://github.com/wking53214/SWIZZLE.git@dff2f99b69515df154e66fbe9f5735a726c3dbda  # 0.8.9
 assay @ git+https://github.com/wking53214/ASSAY.git@1de36ca9b56ba51b6b1f577bf046d7270b7e6c2a  # 0.11.6
-warden @ git+https://github.com/wking53214/Warden.git@9ecd1124e6c1b1c4ad7daed37b17f9009662dd9d  # 0.13.10
-judge @ git+https://github.com/wking53214/JUDGE.git@3e321d420803dfb9ed163c5b981745ffdd5195c9  # 0.4.11
-drafter @ git+https://github.com/wking53214/DRAFTER.git@76f4241a3f9a67a62d6f000dd8073454a6f86f49  # 0.2.12
-burnish @ git+https://github.com/wking53214/BURNISH.git@16a0ef25715dece4cca48d2e62b513083552e4ce  # 0.3.13
-watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@4b008e14121ebb1305b1028429ebda8e89e34521  # 0.3.9
+warden @ git+https://github.com/wking53214/Warden.git@68f2a955f486a8ebb230c4395c88f7e99ee47c48  # 0.14.0
+judge @ git+https://github.com/wking53214/JUDGE.git@f23ae927f482b16cb503ad29d248825f587f4a64  # 0.5.0
+drafter @ git+https://github.com/wking53214/DRAFTER.git@d7a2b4e3c5d2b0e0ae8857b976e7ebfbb4a163b7  # 0.2.12
+burnish @ git+https://github.com/wking53214/BURNISH.git@b3e0d60acee84adae58a2ed99196824184dabaa0  # 0.3.13
+watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@844487825c8cc131de84a18aa908236b11df734d  # 0.3.9
