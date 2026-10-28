@@ -55,12 +55,22 @@ must. Revisit this entry when a second repository reads the summary.
 | `cns.suite` | `SuiteRun` | new in 1.7.0; what one run of a target's suite reported, with `green` and `describe` |
 | `cns.epistemic` | `EpistemicState` | new in 1.7.0; the vocabulary for what kind of claim a finding makes |
 | `cns.defect` | `Defect`, `DefectSeverity`, `DefectLifecycle` | new in 1.7.0; one defect as the scanner, governor and drafter share it |
-| `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return. 2.0.0 adds `Evidence.finisher_ran` (None when the governor does not say) |
-| `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it). 2.0.0 adds `reobserved`, `declined`, `swizzle_sound` and the pure functions `gaps`, `participants`, `dirty_parts`, `findings_remaining`, `clean`; the schema stays `cns.run/1` |
+| `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return. 2.0.0 adds `Evidence.finisher_ran` (None when the governor does not say); 2.1.0 adds `Evidence.ghost_severity` (finding id -> the scanner's own severity word, None when the writer did not say) |
+| `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it). 2.0.0 adds `reobserved`, `declined`, `swizzle_sound` and the pure functions `gaps`, `participants`, `dirty_parts`, `findings_remaining`, `clean`; 2.1.0 adds the optional mappings `claim` and `evidence`; the schema stays `cns.run/1` |
 | `cns.assay` | `AssaySummary` | new in 1.9.0; the one-line summary ASSAY reports on an answer key (all claims hold, status, counts, failures) |
 | `cns.attack` | `AttackResult` | new in 1.8.0; one attack SWIZZLE reported against the governor (scenario, severity, status) |
 | `cns.finding` | `Finding` | new in 1.8.0; one defect Ghost Tools reported, as Warden, the Drafter and the Finisher read it |
 | `cns.stack` | `StackPin`, `StackManifest` | new in 1.5.0; which checkouts belong together, the join key the governance circuit (Warden) reads |
+
+2.1.0 adds three optional fields and nothing else. `cns.seat.Evidence.ghost_severity` maps a finding id to the
+scanner's own severity word (Ghost: critical, major, minor, informational), so a judge can tell a new minor finding
+from a new critical one without the governor renaming the ids; the bare ids stay in `ghost_before` and `ghost_after`.
+`cns.run.RunRecord.claim` is the row that names the change a run governed (which commit, which diff, which actor;
+Warden writes its keys, CNS types it no further than a mapping), and `RunRecord.evidence` is the Judge's input as
+written. Every one defaults to `None`, which means the writer did not say. A reader built against a CNS before 2.1.0
+ignores all three: a dataclass field with a default costs an older constructor nothing, and `cns.run/1` already
+allowed extra keys, so a 2.0.0 Watcher reads a 2.1.0 record as it always did. The tree is not tagged; see
+`CHANGELOG.md`.
 
 The composition layer is a sibling package in this repository, not part of
 `cns`. It ships in the same wheel as a second top-level package, because other
@@ -186,8 +196,9 @@ Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`). A raw commit SHA still
-works, but a tag says which contract you are joining on. This tree is 2.0.0: what it changes is
-in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says what each consumer does about it.
+works, but a tag says which contract you are joining on. This tree is 2.1.0 and is not yet tagged, so `v2.0.0`
+stays the release a consumer pins: what 2.1.0 adds is in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says
+what each consumer does about 2.0.0.
 
 ## Versioning
 
@@ -284,6 +295,10 @@ Each line names the test or workflow job that holds it. A claim without one is n
 - `repin` cannot be talked out of a dirty checkout by an index flag or the caller's git configuration
   (`cns_composition/tests/test_repin.py`).
 - The six places the release is written agree (`tests/test_release.py`).
+- The three 2.1.0 fields are additive: an `Evidence` built the 2.0.0 way, by keyword or positionally, reads
+  `ghost_severity` as None and keeps `finisher_ran` last (`tests/test_seat_contract.py`); a record with or without
+  `claim` and `evidence` reads, the extra-keys rule still holds and the schema is still `cns.run/1`
+  (`tests/test_run.py`); the public shape records all three (`tests/test_public_shape.py`).
 - No test skips; a skip fails the run (`conftest.py`, held by `tests/test_no_skips.py`).
 
 ## What does not work, or is not proven
@@ -304,6 +319,9 @@ Each line names the test or workflow job that holds it. A claim without one is n
   it open pull requests was off) and #31 was opened by the workflow's own token (`github-actions[bot]`).
 - `cns.assay` has one writer and one reader (ASSAY); it does not meet the two-repository rule and is recorded
   above as the one exception.
+- 2.1.0 is not tagged, so every consumer still installs `v2.0.0` and gets none of the three new fields; the `stack`
+  job installs that tag too, so no CI run here exercises a writer filling `ghost_severity`, `claim` or `evidence`
+  or a reader joining on them. The tests prove the shapes, not a circuit run that carries them.
 
 ## What broke and how it was fixed
 

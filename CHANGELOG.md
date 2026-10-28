@@ -9,6 +9,25 @@ release and "floor" the lowest a consumer may pin; both are defined in `cns_comp
 Tagging is the owner's decision. An entry whose heading says "not yet tagged" describes this tree; after the tag
 exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the table and moves `current`.
 
+## [2.1.0] - 2026-10-28 (not yet tagged)
+
+Three optional fields, nothing removed, renamed or retyped. Not tagged: `contracts/cns-releases.json` keeps
+`current` at `v2.0.0` and the floor at 1.9.0 until the owner tags, and `release --check` calls this tree
+unreleased. A reader built against 2.0.0 ignores every field below, because each has a default and `cns.run/1`
+already allowed extra keys. Each entry names the test that holds it.
+
+### Added
+
+- `cns.seat.Evidence.ghost_severity: Optional[Mapping[str, str]] = None`: finding id -> the scanner's own severity
+  word (Ghost: critical, major, minor, informational); `None` means the writer did not say. The bare ids stay in
+  `ghost_before` and `ghost_after`. Declared right after `ghost_after` and keyword-only, so every existing
+  `Evidence` construction, by keyword or positionally, still works. `tests/test_seat_contract.py`.
+- `cns.run.RunRecord.claim: Optional[Mapping[str, object]] = None`: the row that names the change a run governed
+  (which commit, which diff, which actor). Warden writes its keys; this contract types it no further than a
+  mapping. `RunRecord.evidence: Optional[Mapping[str, object]] = None`: the Judge's input as written. Both are
+  read by `from_dict` when present, `None` when absent or null, refused by name when neither an object nor null.
+  The schema stays `cns.run/1`. `tests/test_run.py`.
+
 ## [2.0.0] - 2026-10-22
 
 The release candidate built from five audit rounds of the circuit. The decision record is
