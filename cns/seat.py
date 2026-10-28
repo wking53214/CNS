@@ -71,6 +71,10 @@ class Evidence:
     #: Scanner finding identities at the start and at the end. None: the scanner never ran.
     ghost_before: Optional[Tuple[str, ...]]
     ghost_after: Optional[Tuple[str, ...]]
+    #: Finding id -> the scanner's own severity word (Ghost: critical, major, minor, informational).
+    #: None means the writer did not say. Added in 2.1.0; the bare ids stay in ghost_before and ghost_after.
+    #: Keyword-only, so it can sit here beside the ids it describes without moving any positional field.
+    ghost_severity: Optional[Mapping[str, str]] = field(default=None, kw_only=True)
     #: Removals that failed a test and were left in place.
     declined: Tuple[str, ...]
     #: True: the attacker's own proofs held. False: they did not. None: not run.

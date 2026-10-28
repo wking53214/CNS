@@ -75,3 +75,35 @@ def test_evidence_says_whether_the_finisher_ran_and_not_said_is_none():
     assert Evidence(**base, finisher_ran=True).finisher_ran is True
     assert Evidence(**base, finisher_ran=False).finisher_ran is False
     assert [f.name for f in dataclasses.fields(Evidence)][-1] == "finisher_ran"
+
+
+def _evidence_base() -> dict:
+    return dict(target="/t", scope="code", cycles=(), changed=(), judging_files_touched=(), suite_before=None,
+                suite_after=None, ghost_before=("ghost-1",), ghost_after=("ghost-1", "ghost-2"), declined=(),
+                swizzle_proofs=None, attacks=None, unmeasured=())
+
+
+def test_evidence_without_ghost_severity_reads_as_none_and_every_old_construction_still_works():
+    """2.1.0. The field is additive: an Evidence built the 2.0.0 way, by keyword or positionally, reads None."""
+    base = _evidence_base()
+    assert Evidence(**base).ghost_severity is None
+    positional = Evidence(*[base[f.name] for f in dataclasses.fields(Evidence) if f.name in base])
+    assert positional.ghost_severity is None and positional == Evidence(**base)
+
+
+def test_evidence_carries_the_scanners_own_severity_word_per_finding_id():
+    """2.1.0. Finding id -> the scanner's own word; the ids themselves stay bare in ghost_before and ghost_after."""
+    e = Evidence(**_evidence_base(), ghost_severity={"ghost-1": "minor", "ghost-2": "informational"})
+    assert e.ghost_severity == {"ghost-1": "minor", "ghost-2": "informational"}
+    assert e.ghost_after == ("ghost-1", "ghost-2")
+    names = [f.name for f in dataclasses.fields(Evidence)]
+    assert names[names.index("ghost_after") + 1] == "ghost_severity"
+
+
+def test_evidence_with_ghost_severity_is_frozen_and_round_trips_through_asdict():
+    """The shape has no from_dict or to_dict of its own, so the round trip is asdict and the constructor."""
+    e = Evidence(**_evidence_base(), ghost_severity={"ghost-2": "major"})
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        setattr(e, "ghost_severity", {})
+    assert Evidence(**dataclasses.asdict(e)) == e
+    assert Evidence(**dataclasses.asdict(Evidence(**_evidence_base()))).ghost_severity is None

@@ -1279,6 +1279,11 @@
               "type": "Optional[Tuple[str, ...]]"
             },
             {
+              "default": "None",
+              "name": "ghost_severity",
+              "type": "Optional[Mapping[str, str]]"
+            },
+            {
               "default": null,
               "name": "declined",
               "type": "Tuple[str, ...]"
