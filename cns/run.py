@@ -30,6 +30,10 @@ each part's `dirty` flag, `dirty_parts` the subset flagged dirty, `findings_rema
 behind "converged", and `clean` the one claim that is stronger than ACCEPT. All of it is read from
 fields Warden already writes; the schema stays `cns.run/1`.
 
+2.1.0 adds two optional mappings, `claim` (the row that names the change a run governed: which commit, which
+diff, which actor) and `evidence` (the Judge's input as written). Both are read when present and None when
+absent; the schema stays `cns.run/1`, and a reader older than this field ignores the keys as it always did.
+
 Reading a file is I/O and stays in the consumer.
 """
 
@@ -76,6 +80,12 @@ class RunRecord:
     declined: Tuple[str, ...] = ()
     #: True: SWIZZLE's own proofs held. False: they did not. None: the record does not say.
     swizzle_sound: Optional[bool] = None
+    #: The row that names the change a run governed: which commit, which diff, which actor. Warden writes its
+    #: keys; this contract types it no further than a mapping. None: the record does not carry one (2.1.0).
+    claim: Optional[Mapping[str, object]] = None
+    #: The Judge's input as written, the `cns.seat.Evidence` the governor assembled, as a mapping. None: the
+    #: record does not carry it (2.1.0).
+    evidence: Optional[Mapping[str, object]] = None
 
     def gaps(self) -> Tuple[str, ...]:
         """Every reason this run was less than fully measured, in words: each check that did not run, each
@@ -165,6 +175,8 @@ class RunRecord:
             reobserved=_texts(data, "reobserved"),
             declined=_texts(ghost_scan, "declined", label="ghost_scan.declined"),
             swizzle_sound=_optional_flag(data, "swizzle_sound"),
+            claim=_optional_object(data, "claim"),
+            evidence=_optional_object(data, "evidence"),
         )
         problems = record.problems()
         if problems:
@@ -212,6 +224,16 @@ def _object(data: Mapping[str, Any], key: str) -> Mapping[str, Any]:
         return {}
     if not isinstance(value, Mapping):
         raise ValueError(f"{key} is {type(value).__name__}, not an object")
+    return dict(value)
+
+
+def _optional_object(data: Mapping[str, Any], key: str) -> Optional[Mapping[str, Any]]:
+    """An object the record may leave out: None when absent or null, the mapping when present."""
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{key} is {type(value).__name__}, not an object or null")
     return dict(value)
 
 

@@ -206,3 +206,40 @@ def test_the_pure_functions_are_pure():
     r = _real()
     assert r.gaps() == r.gaps() and r.participants() == r.participants()
     assert r == _real()
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# 2.1.0: the claim row (which commit, which diff, which actor the run governed) and the Judge's input as written.
+# Both optional, both read when present, None when absent; the schema stays cns.run/1.
+# ---------------------------------------------------------------------------------------------------------------
+
+CLAIM = {"origin": "https://example.invalid/o/r", "base_commit": "a" * 40, "claimed_commit": "b" * 40,
+         "diff_sha256": "c" * 64, "actor": "someone", "files": [{"path": "x.py", "status": "M"}]}
+EVIDENCE = {"target": "/t", "scope": "code", "ghost_before": ["g1"], "ghost_after": ["g1", "g2"],
+            "ghost_severity": {"g2": "minor"}, "finisher_ran": True}
+
+
+def test_a_record_with_a_claim_and_evidence_reads_them_back_as_written():
+    r = RunRecord.from_dict(_good(claim=CLAIM, evidence=EVIDENCE))
+    assert r.claim == CLAIM and r.evidence == EVIDENCE
+    assert r.claim is not CLAIM and r.evidence is not EVIDENCE
+    assert r.problems() == () and r.decision == "ACCEPT_UNVERIFIED"
+
+
+def test_a_record_without_a_claim_or_evidence_reads_them_as_none():
+    r = RunRecord.from_dict(_good())
+    assert r.claim is None and r.evidence is None
+    assert RunRecord.from_dict(_good(claim=None, evidence=None)).claim is None
+    assert _real().claim is None and _real().evidence is None
+
+
+def test_the_claim_and_evidence_are_typed_like_the_other_objects():
+    with pytest.raises(ValueError, match="claim is list, not an object or null"):
+        RunRecord.from_dict(_good(claim=["b" * 40]))
+    with pytest.raises(ValueError, match="evidence is str, not an object or null"):
+        RunRecord.from_dict(_good(evidence="held"))
+
+
+def test_the_schema_is_still_cns_run_1_with_a_claim_present():
+    r = RunRecord.from_dict(_good(claim=CLAIM, evidence=EVIDENCE, brand_new_field="anything"))
+    assert r.schema == "cns.run/1" and not hasattr(r, "brand_new_field")

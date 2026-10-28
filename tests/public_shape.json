@@ -1203,6 +1203,16 @@
               "default": "None",
               "name": "swizzle_sound",
               "type": "Optional[bool]"
+            },
+            {
+              "default": "None",
+              "name": "claim",
+              "type": "Optional[Mapping[str, object]]"
+            },
+            {
+              "default": "None",
+              "name": "evidence",
+              "type": "Optional[Mapping[str, object]]"
             }
           ],
           "frozen": true,
