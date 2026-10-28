@@ -59,8 +59,10 @@ def chain(door: Artifact, request: str, telemetry: dict, produced: str, load: Tu
     for gate in (DitGate(g) for g in build_stack(default_rules(), GSA_V13_STACK)):
         steps.append(("DIT", gate, Lazy(lambda text=produced: text)))
     steps.append(("URE", UREGate(), Lazy(lambda: assessment(*load))))
+    seats = [(repo, gate) for repo, gate, _ in steps]
+    required = tuple(f"{repo}:{gate.name}" for repo, gate in seats)
     candidates = {f"{repo}:{gate.name}": candidate for repo, gate, candidate in steps if f"{repo}:{gate.name}" != leave_out}
-    return SuperGate([(repo, gate) for repo, gate, _ in steps]).decide(candidates)
+    return SuperGate(seats, required=required).decide(candidates)
 
 
 #: (name, how to run it, outcome it must produce, whether the OMEGA gates must have run, gate that must block or None)

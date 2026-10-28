@@ -69,7 +69,9 @@ def judge(rec: Dict[str, object], leave_out: str = ""):
     """DIT's default stack over the record's answer text, decided on the whole roster by the super gate."""
     gates = [DitGate(gate) for gate in build_stack(default_rules(), GSA_V13_STACK)]
     candidates = {f"DIT:{gate.name}": Lazy(lambda text=rec["answer"]: text) for gate in gates if f"DIT:{gate.name}" != leave_out}
-    return SuperGate([("DIT", gate) for gate in gates], require_complete=False).decide(candidates).run
+    seats = [("DIT", gate) for gate in gates]
+    required = tuple(f"{repo}:{gate.name}" for repo, gate in seats)
+    return SuperGate(seats, required=required, require_complete=False).decide(candidates).run
 
 
 def sha(text: str) -> str:
