@@ -180,5 +180,12 @@ def test_an_approval_binds_only_the_decision_it_was_issued_for():
     assert not decision.binds("") and isinstance(decision, Decision)
 
 
+def test_a_decision_binds_only_the_root_recomputed_from_its_own_verdicts():
+    real = roster()[2].decide(GOOD)
+    forged = Decision(run=real.run, seats=real.seats, root="f" * 64)
+    assert real.binds(real.root)
+    assert not forged.binds("f" * 64) and not forged.binds(real.root)
+
+
 def test_a_missing_candidate_error_names_the_seat():
     assert str(MissingCandidate("DIT:judge")) == "DIT:judge"

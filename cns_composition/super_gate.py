@@ -88,7 +88,12 @@ class Decision:
 
     def binds(self, root: str) -> bool:
         """Whether an approval carrying `root` was issued for exactly this decision."""
-        return root == self.root
+        return root == self.root == _root(self.seats, self.run.results)
+
+
+def _root(seats: Tuple[str, ...], results: Tuple[GateResult, ...]) -> str:
+    """One digest over the roster and every verdict, recomputed wherever a root is checked."""
+    return subject_digest({"seats": list(seats), "verdicts": [_verdict(r) for r in results]})
 
 
 def _verdict(r: GateResult) -> Mapping[str, object]:
@@ -147,5 +152,5 @@ class SuperGate:
         steps = [(repo, gate, candidates[key] if key in candidates else _no_candidate(key))
                  for (repo, gate), key in zip(self._seats, self._keys)]
         run = run_repo_chain(steps, require_complete=self._require_complete)
-        root = subject_digest({"seats": list(self._keys), "verdicts": [_verdict(r) for r in run.results]})
+        root = _root(self._keys, run.results)
         return Decision(run=run, seats=self._keys, root=root)
