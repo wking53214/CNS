@@ -1,14 +1,28 @@
 # Status of the eight-repository circuit
 
-Written 2026-10-23, corrected 2026-10-24 after the round-6 audit. Every number here comes from a named run, test or CI
+Written 2026-10-23, corrected 2026-10-24 after the round-6 audit, heads and summary refreshed 2026-10-29. Every number here comes from a named run, test or CI
 job. Where something was not measured, it says so. The audit's scores are not recorded here; what it reproduced is
 under "Known open defects".
 
 ## In one paragraph
 
-The circuit installs together, runs end to end on a throwaway repository and ends ACCEPT, and refuses every bad setup
-it was tested against. Pointed at its own eight repositories it ends ACCEPT on six, holds one (ACCEPT_UNVERIFIED) and
-rejects one, for reasons the records state. The WARDEN and DRAFTER results ran under Burnish 0.3.11 and were not re-run
+At the heads in the table below the circuit installs together, runs end to end on a throwaway repository and ends
+ACCEPT, and refuses every bad setup it was tested against: CNS `stack` job, run 40869555045, at CNS commit
+7b94495c7a824878d0043f8b1bb9e3562f194f8a (canary ACCEPT; `circuit_refusals` 10 of 10 refused). CNS 2.1.0 is tagged
+`v2.1.0` and every circuit repository pins that tag; Warden is at 0.15.1, whose rule (introduced in 0.15.0) lets a pinned
+manifest leave `drafter` and `burnish` out. The owner released DRAFTER, BURNISH and WATCHER_MCU from the circuit on
+2026-10-29 ([RELEASED_SEATS.md](RELEASED_SEATS.md)); this manifest still names them, and the edit that leaves them out is
+a separate step. ASSAY stays, because the Judge uses its grade. Two bodies of evidence newer than the self-hosting
+runs are copied unaltered into this repository. The falsifier run of 2026-10-28
+([evidence/falsifier-2026-10-28/](evidence/falsifier-2026-10-28/)) put 20 real AI co-authored commits of ghost_tools
+through the circuit as built: all 20 ended REJECT at the guard, and with throwaway rule changes 3 ran to completion
+with one rule and 3 with two, none ending ACCEPT. The proof run of 2026-10-29 ([evidence/proof-2026-10-29/](evidence/proof-2026-10-29/))
+put three of those commits through the branch code: all three ended ACCEPT_UNVERIFIED (exit 3), held under a digest with
+a claim row that names the commit and its diff. Everything in them is held, not accepted: no human has kept or dropped a
+held result. They cover one repository, Python only, one AI author, and the proof did not exercise the removal gate.
+The self-hosting runs of 2026-10-22 and 2026-10-23, made at the older heads named in their record, were not repeated at
+the new heads: pointed at its own eight repositories the circuit ended ACCEPT on six, held one (ACCEPT_UNVERIFIED) and
+rejected one, for reasons the records state. The WARDEN and DRAFTER results ran under Burnish 0.3.11 and were not re-run
 after the Burnish 0.3.12 fix (nor were ghost_tools and ASSAY, which stopped for baseline reasons). Every ACCEPT still
 carries seven gaps (checks declined by design), so an ACCEPT never means "no secrets, no weak tests". An ACCEPT also
 depends on ASSAY's grading of Ghost (5 of 7 failure modes caught; the floor is 3) and was given over suites that list
@@ -25,35 +39,36 @@ in the pinned commit; the `.git/info/exclude` case is a known open defect with n
 
 | Claim | Evidence |
 |---|---|
-| All eight repositories install together, pip is satisfied, exactly one `cns` is installed, every shared pin agrees | CNS `stack` job (run 39985525221) at CNS commit 7a8f2b3, plus `seat_pins`, `cns_versions --spelling tag`, `install_stack --check`, `repin --check` |
+| All eight repositories install together, pip is satisfied, exactly one `cns` is installed, every shared pin agrees | CNS `stack` job (run 40869555045) at CNS commit 7b94495, plus `seat_pins`, `cns_versions --spelling tag`, `install_stack --check`, `repin --check`, same job |
 | The whole circuit ends ACCEPT on a throwaway target | `circuit_canary`, same `stack` job |
 | The circuit refuses a dirty member, an omitted seat, a short, uppercase or wrong pin, hidden git changes, and a red suite | `circuit_refusals`, 10 of 10 refused, same `stack` job |
-| CNS's own suite | 970 passed, 0 skipped at 7a8f2b3; CNS `ci` run 39985525256 (Python 3.10 to 3.13, packaging) |
+| CNS's own suite | 1003 passed, 0 skipped at 7b94495, a local run on Python 3.13; CNS `ci` run 40869555078 (Python 3.10 to 3.13, packaging) |
 | Each repository's own suite and lint | the CI runs in the table below, all jobs green |
 
 ## Heads and their CI (all on branch `claude/horsemen-production-status-5wsndb`)
 
-The CNS row names the commit its two runs read, 7a8f2b3 (Step 9), which is the commit before the corrections of
-2026-10-24. This page changes with every later commit, so the CI runs of a later head are on the Actions page and are
-not copied here.
+The CNS row names the commit its two runs read, 7b94495 (Pin21 step 4b), which is the commit before this refresh. This
+page changes with every later commit, so the CI runs of a later head are on the Actions page and are not copied here.
+Each other row is the final head of that repository after the 2026-10-29 pin move, and the run is the CI run on that
+head.
 
 | Repository | Version | Commit | CI run, all jobs green |
 |---|---|---|---|
-| CNS | 2.0.0 | 7a8f2b3f1bcb225890a5ea557fe42f744a070333 (the `v2.0.0` tag is at b13e5d2f9e0e4291725f82794b89117c3d840ac1) | 39985525256 (`ci`) and 39985525221 (`stack`) |
-| ghost_tools | 1.10.8 | 5a9154d3c76670f5bf1f46d845acadfed46d7bc8 | 39835317208 |
-| SWIZZLE | 0.8.7 | 3f35dad5568b590c2ee36e60533d50a35db94aa2 | 39831790877 |
-| ASSAY | 0.11.5 | 184679c06e0a636a9a08a8403efa410b375c9429 | 39831807651 |
-| WARDEN | 0.13.9 | b57b81e1c98333c43d422666c89a8fcf3ae6eaca | 39844663962 |
-| JUDGE | 0.4.10 | c3001b86764c8946dbc3d367c977aed53cbab9b7 | 39849525741 |
-| DRAFTER | 0.2.11 | 715b657c0c5080f4b6082b5cd94a38e693c600e7 | 39852431051 |
-| BURNISH | 0.3.12 | c23ed874ef2599085bf1bb1ec6f0861ea5b7bd7d | 39980913437 |
-| WATCHER_MCU | 0.3.8 | b25d8522301005ba764783927f43abfeb9f18f5c | 39856188387 |
+| CNS | 2.1.0 | 7b94495c7a824878d0043f8b1bb9e3562f194f8a (the `v2.1.0` tag is at fde931ffa89aebec95647742256ad53033bd3d02; the tag object is 0cc90472f7edc46c3bf40079e69fb03a06718e29) | 40869555078 (`ci`) and 40869555045 (`stack`) |
+| ghost_tools | 1.10.10 | 99f3d5209bc98657db91eea1c25e833136ea61ab | 40860011776 |
+| SWIZZLE | 0.8.10 | b7451ad417cd166d10d4897a6b7dbe076ec02029 | 40857189603 |
+| ASSAY | 0.11.7 | 8f6ef8599d9acb2a2672a5a78c36ec0e276fa78c | 40859982413 |
+| WARDEN | 0.15.1 | fe9c8b35778de680d04b2a57775ac6a6831f4799 | 40864994829 |
+| JUDGE | 0.5.1 | ad3d66f84a15ad7c320285e4d9ab006de90bdfdd | 40867003165 |
+| DRAFTER | 0.2.14 | 9da8da2cfc0250be3cd189e04abfa539a46a1d2d | 40868360550 |
+| BURNISH | 0.3.15 | 14c61d08efedb66ce9db4fdf58fba733c43e8748 | 40867226378 |
+| WATCHER_MCU | 0.3.11 | 9012651f005f4dd56810b1d37d25b1cc053460c7 | 40867339191 |
 
 CNS is pinned by its tag in every repository; every other cross-repository pin is a full commit.
 
 ## Self-hosting: the circuit governing its own repositories
 
-Run on 2026-10-22 and 2026-10-23, in a throwaway clone of each repository at the commit above, one run at a time,
+Run on 2026-10-22 and 2026-10-23, in a throwaway clone of each repository at the heads of that time (named in the record, not the heads in the table above), one run at a time,
 scope `documentation`, nothing tuned and nothing kept. The full record, including the commands and every run's
 decision, is in [evidence/SELFHOSTING_2026-10-23.md](evidence/SELFHOSTING_2026-10-23.md). The raw run records it reads
 (Warden's JSON, receipts, exit codes, stderr logs and the README diffs the circuit kept) are in
@@ -83,7 +98,7 @@ Limits of this record:
 
 ## Known open defects (each is also in the owning repository's README)
 
-Open at the pinned commits above. Several were reproduced by the round-6 audit on 2026-10-23 and 2026-10-24 and are
+Open at the commits of the 2026-10-24 correction; some have been fixed since in the repositories' own branches (their CHANGELOGs say which), and this list was not re-audited at the new heads. Several were reproduced by the round-6 audit on 2026-10-23 and 2026-10-24 and are
 being fixed on the repositories' branches; a fix counts only when the manifest is re-pinned to it.
 
 - JUDGE: a `replace` edit on a `.py` file slips its "tests did not run" rule (reproduced; no test yet). Its skip rule
@@ -137,6 +152,15 @@ Also changed, not tests of behaviour: `cns_composition/tests/test_spine_trace.py
 reads it, the two gate test files renamed a variable `O` to `OMEGA`, and unused imports and one unused assignment were
 removed from tests. Nothing was weakened.
 
+## Changes since the 2026-10-24 correction
+
+CNS 2.1.0 (the three optional fields) and its tag, the decision record for the three released repositories, the
+falsifier and proof evidence folders, and the 2026-10-29 pin move (Pin21 steps 4a to 4c: the release table records
+`v2.1.0`, the manifest and the install file move to the heads above, this page). The suite is 1003 passed, 0 skipped
+locally at 7b94495. The `stack` run on the intermediate commit 344276b (Pin21 step 4a, the install file moved to
+`v2.1.0` while the other pins had not) was red at the install step, with pip reporting ResolutionImpossible (run 40869231873). The
+next commit moved the rest and the run above is green.
+
 ## What code cannot fix
 
 One human maintainer. Repositories under three months old. No outside users. Release tags are the owner's to create,
@@ -146,5 +170,5 @@ evidence.
 
 ## Independent audit
 
-Round 6, nine independent auditors, on the commits above. No scores are recorded on this page; the defects the audit
+Round 6, nine independent auditors, on the commits of 2026-10-24 (not the heads in the table above). No scores are recorded on this page; the defects the audit
 reproduced are listed above, and the corrections to this page and to the README were made from them.
