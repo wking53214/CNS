@@ -7,6 +7,7 @@ Each failure is a requirement for the 5-cycle loop to work.
 import pytest
 from cns.gate import GateOutcome
 from cns_composition.herald_passthrough import (
+    HeraldCompositionResult,
     SwizzleVerdict,
     GhostToolsStatus,
     translate_swizzle_to_canonical,
@@ -272,3 +273,12 @@ class TestSubjectBinding:
         )
         # Different state → different hash
         assert t1.subject_hash != t2.subject_hash
+
+
+class TestEmptyFlow:
+    """A cycle that translated nothing has not passed anything."""
+
+    def test_an_empty_canonical_flow_is_not_all_pass(self):
+        result = HeraldCompositionResult(cycle=1, swizzle_verdict=None, ghost_tools_status=None,
+                                         canonical_flow=[], overall_outcome=GateOutcome.PASS)
+        assert result.all_pass() is False

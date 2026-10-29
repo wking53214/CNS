@@ -2,6 +2,9 @@
 
 One unified interface to chain systems without needing HERALD unless a semantic
 gap is unavoidable. Translates only at system boundaries where outcome models differ.
+
+
+Superseded by SuperGate / run_chain: the supported path is `super_gate.py` over `gate_chain.py`, and this module is kept for reference only.
 """
 
 from __future__ import annotations

@@ -35,6 +35,19 @@ PASS, RETRY, BREACH = GateOutcome.PASS, GateOutcome.RETRY, GateOutcome.TERMINAL_
 HEALTHY = {"latency": 120.0, "abort_rate": 0.01, "reentry_rate": 0.1, "load_depth": 200.0, "determinism_index": 0.99}
 GOOD_TEXT = "Revenue was 4.2 million in the third quarter."
 
+#: The gates policy requires in every decision, written out by hand. It is deliberately not built from the seats
+#: below: a roster checked against itself passes with a gate missing, because whatever is missing is missing from
+#: both. Dropping or renaming a gate must fail here, so changing this list is a policy change made in review.
+REQUIRED_SEATS = (
+    "Governance_Gateway:governance_gateway",
+    "DGK:dgk.perimeter",
+    "DGK:dgk.health",
+    "DIT:identity",
+    "DIT:hedging",
+    "DIT:causality",
+    "URE:ure.assessment",
+)
+
 
 def artifact(text: str) -> Artifact:
     return Artifact.create(
@@ -54,13 +67,25 @@ def assessment(latency: float, error: float):
     return seen
 
 
-def chain(door: Artifact, request: str, telemetry: dict, produced: str, load: Tuple[float, float], leave_out: str = ""):
+def chain(door: Artifact, request: str, telemetry: dict, produced: str, load: Tuple[float, float], leave_out: str = "",
+          drop: str = ""):
     steps = [("Governance_Gateway", GatewayGate(), door), ("DGK", PerimeterGate(), request), ("DGK", HealthGate(), telemetry)]
     for gate in (DitGate(g) for g in build_stack(default_rules(), GSA_V13_STACK)):
         steps.append(("DIT", gate, Lazy(lambda text=produced: text)))
     steps.append(("URE", UREGate(), Lazy(lambda: assessment(*load))))
+    steps = [step for step in steps if f"{step[0]}:{step[1].name}" != drop]
+    seats = [(repo, gate) for repo, gate, _ in steps]
     candidates = {f"{repo}:{gate.name}": candidate for repo, gate, candidate in steps if f"{repo}:{gate.name}" != leave_out}
-    return SuperGate([(repo, gate) for repo, gate, _ in steps]).decide(candidates)
+    return SuperGate(seats, required=REQUIRED_SEATS).decide(candidates)
+
+
+def dropped_gate_is_refused() -> str:
+    """Empty if a roster built without DIT:identity is refused at construction, else what happened instead."""
+    try:
+        chain(artifact("summarise"), "summarise", HEALTHY, GOOD_TEXT, (50, 0.0), drop="DIT:identity")
+    except ValueError as exc:
+        return "" if "DIT:identity" in str(exc) else f"refused, but not for the missing seat: {exc}"
+    return "a roster without DIT:identity was accepted"
 
 
 #: (name, how to run it, outcome it must produce, whether the OMEGA gates must have run, gate that must block or None)
@@ -96,6 +121,10 @@ def main() -> int:
               f"gates={len(result.results)} blocking={names}")
         if not ok:
             wrong.append(f"{name}: wanted {outcome.value} (omega_ran={omega_ran}, blocked by {blocker or 'nothing'})")
+    refused = dropped_gate_is_refused()
+    print(f"{'ok  ' if not refused else 'FAIL'} {'a gate is dropped from the roster':40} -> refused at construction")
+    if refused:
+        wrong.append(f"a gate is dropped from the roster: {refused}")
     for line in wrong:
         print(f"chain: {line}", file=sys.stderr)
     return 1 if wrong else 0

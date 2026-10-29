@@ -89,6 +89,44 @@ Every class is extracted by syntax tree from its canonical source and
 verified structurally identical at extraction; the module docstrings
 name the source and the agreement.
 
+## Required gate rosters
+
+The behavior layer in cns_composition.SuperGate requires callers to pass a
+non-empty required-seat roster separately from the candidate mapping. Build
+that roster from trusted policy/configuration, not from the candidate being
+evaluated. A missing argument or empty roster is an error. The API enforces
+that every required seat is present in the configured gates; it cannot
+authenticate the source of the policy configuration. Existing callers must
+add the required keyword when constructing SuperGate.
+
+### The same subject
+
+Every verdict binds to what its own gate judged, and nothing else makes two
+gates judge the same document. `SuperGate(..., same_subject={seat: reader})`
+names two or more seats and, for each, a reader that says which document its
+candidate is about and the digest of that document's content (a `Judged`). The
+super gate adds `CNS:same_subject` as its first ALPHA seat and refuses the
+decision unless every named seat reads the same identity and the same digest.
+A seat that cannot be read is a refusal, not a skipped comparison. Put
+`CNS:same_subject` in `required` so that dropping the check is refused too.
+The readers are policy: write them beside the required roster. The check
+compares what the readers say, so it is only as honest as they are.
+`chains/evidence_spine.py` uses it across HERALD, the kernel and the gateway.
+
+A passing decision records the one document its seats agreed on (`Decision.subject`).
+`cns_composition.decision_guard.DecisionGuard` turns that into a permission for
+another repository's action: hand it to a kernel as its `root_guard`, call
+`authorize(decision)` once the decision is a go, and the kernel registers a root
+only if it reads as exactly the approved document, and only once. A guard that
+was never authorized, or was given a refused decision, stays shut, and so does
+one given a decision the roster did not issue: `Decision.issued` is a
+process-local proof that `SuperGate.decide` made it, so a decision written or
+copied by hand cannot open a guard. The proof means nothing to another process. It protects
+the kernels built with it. A roster can insist on that: seat the kernel's root
+gate with `require_guard=True` and a kernel built without a guard gets no
+approval. A caller who builds an unguarded kernel and calls it directly is
+still not stopped.
+
 ## The stack manifest
 
 `cns.stack` is the contract for a claim no single repository can make
