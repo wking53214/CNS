@@ -38,6 +38,11 @@ def test_the_doors_stand_at_alpha_the_judges_at_omega_and_two_repos_have_both():
     assert ends_of("DGK") == {A}
 
 
+def test_cns_itself_has_one_row_and_it_stands_only_at_alpha():
+    """The composition layer's own check is seated like a repository's gate, but only at the door end."""
+    assert ends_of("CNS") == {A}
+
+
 def test_an_unknown_repository_has_no_ends():
     with pytest.raises(KeyError, match="add its row first"):
         ends_of("Nowhere")

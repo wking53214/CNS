@@ -203,3 +203,140 @@ def test_a_decision_binds_only_the_root_recomputed_from_its_own_verdicts():
 
 def test_a_missing_candidate_error_names_the_seat():
     assert str(MissingCandidate("DIT:judge")) == "DIT:judge"
+
+
+# ------------------------------------------------------------ the same subject
+
+from cns_composition.gate_chain import Lazy
+from cns_composition.super_gate import Judged, SubjectAgreement
+
+SUBJECT = "CNS:same_subject"
+
+
+def reads(candidate):
+    """Candidates in these tests are (identity, digest) pairs."""
+    return Judged(*candidate)
+
+
+def subject_roster(**kw):
+    door = FakeGate("door", A)
+    judge = FakeGate("judge", OM)
+    seats = [("Governance_Gateway", door), ("DIT", judge)]
+    both = {"Governance_Gateway:door": reads, "DIT:judge": reads}
+    required = ("Governance_Gateway:door", "DIT:judge", SUBJECT)
+    return door, judge, SuperGate(seats, required=required, same_subject=kw.get("same_subject", both))
+
+
+def test_seats_that_read_the_same_subject_are_allowed_and_the_agreement_is_a_bound_seat_of_the_roster():
+    _, _, gate = subject_roster()
+    assert gate.seats == (SUBJECT, "Governance_Gateway:door", "DIT:judge")
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": ("doc-1", "abc")})
+    assert decision.allowed and decision.outcome is PASS
+    agreement = decision.run.results[0]
+    assert agreement.gate == "same_subject" and agreement.position is A and agreement.outcome is PASS
+    assert agreement.binds("same_subject", subject_digest({"identity": "doc-1", "digest": "abc",
+                                                           "seats": ["DIT:judge", "Governance_Gateway:door"]}))
+    assert decision.binds(decision.root)
+
+
+def test_a_different_document_identity_is_refused_at_alpha_and_the_omega_gates_do_not_run():
+    door, judge, gate = subject_roster()
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": ("doc-7", "abc")})
+    assert not decision.allowed and decision.outcome is BREACH and not decision.run.omega_ran
+    assert judge.seen == []
+    assert "different subjects" in decision.reasons()[0] and "doc-1" in decision.reasons()[0] and "doc-7" in decision.reasons()[0]
+
+
+def test_the_same_identity_with_different_content_is_refused():
+    _, _, gate = subject_roster()
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "412"), "DIT:judge": ("doc-1", "4120")})
+    assert not decision.allowed and decision.outcome is BREACH
+    assert [r.gate for r in decision.run.blocking()] == ["same_subject"]
+
+
+def test_a_refusal_for_a_different_subject_is_itself_bound_to_what_each_seat_said():
+    _, _, gate = subject_roster()
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "a"), "DIT:judge": ("doc-2", "b")})
+    refusal = decision.run.results[0]
+    assert refusal.bound() and refusal.binds("same_subject", subject_digest(
+        {"views": {"Governance_Gateway:door": ["doc-1", "a"], "DIT:judge": ["doc-2", "b"]}}))
+
+
+def test_a_named_seat_with_no_candidate_is_refused_by_the_comparison_as_well_as_by_the_seat():
+    _, _, gate = subject_roster()
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc")})
+    assert not decision.allowed and decision.outcome is BREACH
+    assert any("DIT:judge: has no candidate" in line for line in decision.reasons())
+
+
+@pytest.mark.parametrize("reader, why", [
+    (lambda c: (_ for _ in ()).throw(KeyError("x")), "could not be read (KeyError)"),
+    (lambda c: ("doc-1", "abc"), "does not name a document identity"),          # not a Judged
+    (lambda c: Judged("", "abc"), "does not name a document identity"),         # nothing named
+    (lambda c: Judged("doc-1", ""), "does not name a document identity"),
+])
+def test_a_seat_that_cannot_be_read_is_a_breach_never_a_skipped_comparison(reader, why):
+    _, _, gate = subject_roster(same_subject={"Governance_Gateway:door": reads, "DIT:judge": reader})
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": ("doc-1", "abc")})
+    assert not decision.allowed and decision.outcome is BREACH
+    assert any(why in line for line in decision.reasons())
+
+
+def test_a_lazy_candidate_for_a_named_seat_is_built_once_and_the_gate_judges_what_was_compared():
+    door, judge, gate = subject_roster()
+    built = []
+
+    def build():
+        built.append(1)
+        return ("doc-1", "abc")
+
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": Lazy(build)})
+    assert decision.allowed and len(built) == 1 and judge.seen == [("doc-1", "abc")]
+
+
+def test_a_lazy_candidate_that_cannot_be_built_is_a_breach_for_the_comparison_and_for_its_own_seat():
+    _, judge, gate = subject_roster()
+
+    def build():
+        raise RuntimeError("no")
+
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": Lazy(build)})
+    assert not decision.allowed and decision.outcome is BREACH
+    assert decision.run.omega_ran is False and judge.seen == []
+    assert any("could not be read (RuntimeError)" in line for line in decision.reasons())
+
+
+def test_the_agreement_seat_cannot_be_supplied_by_the_caller():
+    _, _, gate = subject_roster()
+    with pytest.raises(ValueError, match="built by the super gate"):
+        gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": ("doc-1", "abc"), SUBJECT: {}})
+
+
+def test_same_subject_needs_two_seats_that_are_on_the_roster_and_readable():
+    seats = [("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM))]
+    required = ("Governance_Gateway:door", "DIT:judge")
+    with pytest.raises(ValueError, match="at least two seats"):
+        SuperGate(seats, required=required, same_subject={"DIT:judge": reads})
+    with pytest.raises(ValueError, match="at least two seats"):
+        SuperGate(seats, required=required, same_subject={})
+    with pytest.raises(ValueError, match="not on the roster"):
+        SuperGate(seats, required=required, same_subject={"DIT:judge": reads, "DIT:other": reads})
+    with pytest.raises(ValueError, match="function that reads"):
+        SuperGate(seats, required=required, same_subject={"DIT:judge": reads, "Governance_Gateway:door": "doc"})
+
+
+def test_requiring_the_agreement_seat_means_dropping_same_subject_is_refused_at_construction():
+    seats = [("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM))]
+    with pytest.raises(ValueError, match="lacks required seat.*same_subject"):
+        SuperGate(seats, required=("Governance_Gateway:door", "DIT:judge", SUBJECT))
+
+
+def test_the_agreement_seat_does_not_stand_in_for_a_missing_alpha_gate():
+    seats = [("DIT", FakeGate("judge", OM)), ("GEMS", FakeGate("maker", OM))]
+    with pytest.raises(ValueError, match="no alpha gate"):
+        SuperGate(seats, required=("DIT:judge", "GEMS:maker"), same_subject={"DIT:judge": reads, "GEMS:maker": reads})
+
+
+def test_the_comparison_gate_alone_refuses_a_candidate_that_is_not_a_reading():
+    gate = SubjectAgreement()
+    assert gate.check("nothing").outcome is BREACH and gate.check({}).outcome is BREACH

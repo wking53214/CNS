@@ -119,8 +119,8 @@ def test_each_chain_requires_a_hand_written_roster_and_never_one_derived_from_it
         seats, passed = _required_seats(path)
         assert seats and all(isinstance(s, str) and s.count(":") == 1 for s in seats) and len(set(seats)) == len(seats)
         assert {s.split(":")[0] for s in seats} <= set(ENDS)
-        assert len(passed) == 1 and isinstance(passed[0], ast.Name) and passed[0].id == "REQUIRED_SEATS", \
-            f"{path.name} must pass the literal REQUIRED_SEATS to SuperGate"
+        assert passed and all(isinstance(p, ast.Name) and p.id == "REQUIRED_SEATS" for p in passed), \
+            f"{path.name} must pass the literal REQUIRED_SEATS to every SuperGate it builds"
 
 
 def test_both_chains_check_that_a_gate_dropped_from_the_roster_is_refused():
@@ -150,5 +150,5 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
-    assert sum(name.startswith("GAP: ") for name in names) == 6
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 2
+    assert sum(name.startswith("GAP: ") for name in names) == 4
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 5

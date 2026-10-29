@@ -84,6 +84,20 @@ that every required seat is present in the configured gates; it cannot
 authenticate the source of the policy configuration. Existing callers must
 add the required keyword when constructing SuperGate.
 
+### The same subject
+
+Every verdict binds to what its own gate judged, and nothing else makes two
+gates judge the same document. `SuperGate(..., same_subject={seat: reader})`
+names two or more seats and, for each, a reader that says which document its
+candidate is about and the digest of that document's content (a `Judged`). The
+super gate adds `CNS:same_subject` as its first ALPHA seat and refuses the
+decision unless every named seat reads the same identity and the same digest.
+A seat that cannot be read is a refusal, not a skipped comparison. Put
+`CNS:same_subject` in `required` so that dropping the check is refused too.
+The readers are policy: write them beside the required roster. The check
+compares what the readers say, so it is only as honest as they are.
+`chains/evidence_spine.py` uses it across HERALD, the kernel and the gateway.
+
 ## The stack manifest
 
 `cns.stack` is the contract for a claim no single repository can make
