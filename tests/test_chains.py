@@ -119,8 +119,8 @@ def test_each_chain_requires_a_hand_written_roster_and_never_one_derived_from_it
         seats, passed = _required_seats(path)
         assert seats and all(isinstance(s, str) and s.count(":") == 1 for s in seats) and len(set(seats)) == len(seats)
         assert {s.split(":")[0] for s in seats} <= set(ENDS)
-        assert len(passed) == 1 and isinstance(passed[0], ast.Name) and passed[0].id == "REQUIRED_SEATS", \
-            f"{path.name} must pass the literal REQUIRED_SEATS to SuperGate"
+        assert passed and all(isinstance(p, ast.Name) and p.id == "REQUIRED_SEATS" for p in passed), \
+            f"{path.name} must pass the literal REQUIRED_SEATS to every SuperGate it builds"
 
 
 def test_both_chains_check_that_a_gate_dropped_from_the_roster_is_refused():
