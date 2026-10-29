@@ -1,15 +1,15 @@
-"""One document through the evidence spine: HERALD reads it, TIE records it, Conservation_Kernel admits it, the Governance_Gateway lets it in.
+"""One document through the evidence spine: HERALD reads it, TIE records it, Conservation_Kernel admits it, the Governance_Gateway lets it in, CCC takes it into its store.
 
 WHY THIS EXISTS
 
-Each of the four repositories is tested alone, and each binds its own verdict with `cns.gate.subject_digest`. What no
+Each of the five repositories is tested alone, and each binds its own verdict with `cns.gate.subject_digest`. What no
 suite can see is the seams: whether the evidence that reaches the door is the evidence that was read, and whether a
-verdict at one repository says anything about the next. This script runs one document through all four, then breaks
+verdict at one repository says anything about the next. This script runs one document through all five, then breaks
 the run at each seam and states what happens. It adds no judgment and changes no repository. Where a seam holds, the
 scenario says so; where nothing checks a seam, the scenario states that as a fact, so the day a repository starts
 checking it, this script goes red and the fact is updated on purpose.
 
-THE FOUR HOPS, AND WHAT CONNECTS THEM
+THE FIVE HOPS, AND WHAT CONNECTS THEM
 
   HERALD             reads the document and extracts claims (`herald.cns_connector.run_governed`), judging the
                      document at ALPHA and each claim at OMEGA, then exports the admitted claims (`herald.build_handoff`).
@@ -17,18 +17,20 @@ THE FOUR HOPS, AND WHAT CONNECTS THEM
                      with HERALD's own `verify_export`. This is real code on both sides: TIE reads HERALD's export by key.
   Conservation_Kernel  judges a root artifact before it becomes ancestry (`CnsRootAdmissionGate`).
   Governance_Gateway   judges the artifact at the admission door (`CnsGate`).
+  CCC                  judges the attempt to ingest the document into its store (`CccGate`, ALPHA only), on a scratch
+                       copy of the store, so deciding registers nothing.
 
 No repository ships the step from TIE evidence to a kernel root, or from a kernel root to a gateway artifact. This
-script writes that step itself (`kernel_root`, `door`), the way any caller has to, and says so. That is the point of
+script writes that step itself (`kernel_root`, `door`, `ccc_ingest`), the way any caller has to, and says so. That is the point of
 two scenarios: the kernel and the gateway cannot tell whether a caller's step was honest.
 
 The roster is held once by `cns_composition.super_gate.SuperGate`: HERALD's source gate, the kernel's root gate and
-the gateway at ALPHA, HERALD's confidence gate at OMEGA on the claim the decision rests on (the invoice amount).
+the gateway and CCC at ALPHA, HERALD's confidence gate at OMEGA on the claim the decision rests on (the invoice amount).
 
-The four gates each bind their verdict to what they judged, and nothing makes them judge the same document. So the
-roster also names `same_subject`: for each of the four seats, a reader (`reads_*` below) says which document its
+The five gates each bind their verdict to what they judged, and nothing makes them judge the same document. So the
+roster also names `same_subject`: for each of the five seats, a reader (`reads_*` below) says which document its
 candidate is about and the SHA-256 of that document's text, and the super gate's first seat refuses the decision
-unless all four agree. The readers are written here with the other caller steps, so they are only as honest as those
+unless all five agree. The readers are written here with the other caller steps, so they are only as honest as those
 steps; what changed is that a hop which drifts from the document HERALD read is now caught, where before every
 verdict was bound, PASS, and about a different thing.
 
@@ -53,12 +55,16 @@ and text, not standing, so only the re-check can refuse it, and it does.
 
 WHAT THIS DOES NOT COVER
 
-CCC (its CNS gate judges Triad output only), ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need
-PostgreSQL, Redis and a vendored kernel to run). Their seams are not exercised here and nothing below speaks for them.
+ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need PostgreSQL, Redis and a vendored kernel to
+run). Their seams are not exercised here and nothing below speaks for them.
+
+CCC is covered only as far as its gate goes. The gate judges an attempted `ingest`; CCC's own `ingest` asks no guard and
+no decision, so a caller who runs it directly registers the document whatever the roster said. A scenario records that
+as the second GAP, and it goes red the day CCC grows a guard like the kernel's.
 
 This is a check, not a demonstration: every scenario states the facts it must produce, and the script exits 1 if any
 differs, naming the scenario and the fact. Run with HERALD (at its root), TIE, Conservation_Kernel and
-Governance_Gateway (each under src/) importable.
+Governance_Gateway (each under src/) and CCC (at its root) importable.
 """
 
 from __future__ import annotations
@@ -69,6 +75,12 @@ import logging
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
+from ccc.cns_connector import Attempt, CccGate
+from ccc.cns_connector import attempt as ccc_attempt
+from ccc.models import Actor as CccActor
+from ccc.models import EpistemicStatus as CccStatus
+from ccc.models import ProvenanceStatus
+from ccc.system import CCCSystem
 from cns.gate import GateOutcome
 from cns_composition.decision_guard import DecisionGuard
 from cns_composition.super_gate import Decision, Judged, SuperGate
@@ -96,6 +108,7 @@ REQUIRED_SEATS = (
     "Conservation_Kernel:root_admission",
     "Governance_Gateway:governance_gateway",
     "HERALD:herald_confidence",
+    "CCC:ccc.transition",
     "CNS:same_subject",
 )
 
@@ -175,6 +188,13 @@ def door(root: RootArtifact, source_id: str) -> DoorArtifact:
                                authority=Authority(actor="evidence-spine", grant="read"), scope=Scope.READ_ONLY)
 
 
+def ccc_ingest(text: str, source_id: str, **more) -> Attempt:
+    """The caller's step from the document to the attempt CCC judges: HERALD's reading, ingested as an inference by a
+    model actor. No repository ships this either. `more` overrides what the attempt asks CCC to record."""
+    return ccc_attempt("ingest", text, actor=CccActor.model("herald"), epistemic_status=CccStatus.INFERENCE,
+                       metadata={"source_id": source_id}, reason="document read by HERALD", **more)
+
+
 def tampered(artifact: DoorArtifact) -> DoorArtifact:
     """A door artifact whose payload changed after its integrity digest was computed."""
     return dataclasses.replace(artifact, payload={**artifact.payload, "root": "edited after sealing"})
@@ -198,13 +218,19 @@ def reads_door(entry: DoorArtifact) -> Judged:
     return Judged(entry.provenance["source_id"], entry.payload["content_sha256"])
 
 
+def reads_attempt(att: Attempt) -> Judged:
+    """The source CCC is asked to record the document under, and the digest of the text it is asked to ingest."""
+    return Judged(att.kwargs["metadata"]["source_id"], sha256(att.args[0]))
+
+
 def reads_claim(claim) -> Judged:
     return Judged(claim.source_id, claim.source_hash or "")
 
 
 #: How each seat's candidate says which document it is about. Policy, like REQUIRED_SEATS: reviewed with it.
 READERS = {"HERALD:herald_source": reads_document, "Conservation_Kernel:root_admission": reads_root,
-           "Governance_Gateway:governance_gateway": reads_door, "HERALD:herald_confidence": reads_claim}
+           "Governance_Gateway:governance_gateway": reads_door, "HERALD:herald_confidence": reads_claim,
+           "CCC:ccc.transition": reads_attempt}
 
 
 def fresh_guard() -> DecisionGuard:
@@ -242,11 +268,16 @@ class _Unchecked(logging.Handler):
             self.count += 1
 
 
-def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: DoorArtifact, drop: str = ""):
-    """The whole roster, decided once. Returns the decision and how many claims HERALD judged without their document."""
+def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: DoorArtifact, drop: str = "",
+           ccc: Optional[Attempt] = None, system: Optional[CCCSystem] = None):
+    """The whole roster, decided once. Returns the decision and how many claims HERALD judged without their document.
+
+    CCC judges `ccc` (by default, the document HERALD read) against `system` (by default, an empty store)."""
     steps = [("HERALD", HeraldSourceGate(), read.document),
              ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True), root),
              ("Governance_Gateway", GatewayGate(), entry),
+             ("CCC", CccGate(CCCSystem() if system is None else system),
+              ccc or ccc_ingest(read.document.text, read.document.source_id)),
              ("HERALD", HeraldConfidenceGate(read.gate, document=read.document), read.amount())]
     steps = [step for step in steps if f"{step[0]}:{step[1].name}" != drop]
     seats = [(repo, gate) for repo, gate, _ in steps]
@@ -443,16 +474,59 @@ def approval_used_on_another_document() -> Dict[str, object]:
                  refused_by_guard=by_guard)
 
 
-def dropped_gate_is_refused() -> str:
-    """Empty if a roster built without the kernel's root gate is refused at construction, else what happened instead."""
+def ccc_other_text() -> Dict[str, object]:
+    """HERALD, the kernel and the gateway judge the true invoice; CCC is asked to ingest the inflated one."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    return facts(decide(read, kernel, root, door(root, "doc-1"), ccc=ccc_ingest(INFLATED, "doc-1")), evidence, refusal)
+
+
+def ccc_self_promoted() -> Dict[str, object]:
+    """Everything agrees, but the attempt has a model actor ingest the text with user-level provenance, which CCC reserves for a human."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"),
+                     ccc=ccc_ingest(INVOICE, "doc-1", provenance_status=ProvenanceStatus.USER_ESTABLISHED))
+    why = next((r.reason for r in decided[0].run.blocking() if r.gate == "ccc.transition"), "")
+    return facts(decided, evidence, refusal, ccc_reason=why.split(":", 1)[0])
+
+
+def ccc_deciding_registers_nothing() -> Dict[str, object]:
+    """The roster allows the document. CCC's gate judged the ingest on a scratch copy, so its store is still empty."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    system = CCCSystem()
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), system=system)
+    return facts(decided, evidence, refusal, ccc_artifacts=len(system.store.artifacts))
+
+
+def door_refused_ccc_proceeds() -> Dict[str, object]:
+    """The gateway refuses the door and the roster says no. Then the same ingest is run on CCC directly.
+
+    CCC's `ingest` asks no guard and no decision, so it registers the document whatever the roster said."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    system, attempt_ = CCCSystem(), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, tampered(door(root, "doc-1")), ccc=attempt_, system=system)
+    before = len(system.store.artifacts)
+    attempt_.run(system)
+    return facts(decided, evidence, refusal, ccc_artifacts_before=before, ccc_artifacts_after_refusal=len(system.store.artifacts))
+
+
+def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
+    """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
     evidence, _ = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     try:
-        decide(read, kernel, root, door(root, "doc-1"), drop="Conservation_Kernel:root_admission")
+        decide(read, kernel, root, door(root, "doc-1"), drop=seat)
     except ValueError as exc:
-        return "" if "Conservation_Kernel:root_admission" in str(exc) else f"refused, but not for the missing seat: {exc}"
-    return "a roster without Conservation_Kernel:root_admission was accepted"
+        return "" if seat in str(exc) else f"refused, but not for the missing seat: {exc}"
+    return f"a roster without {seat} was accepted"
 
 
 def dropped_agreement_is_refused() -> str:
@@ -461,7 +535,8 @@ def dropped_agreement_is_refused() -> str:
     evidence, _ = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     seats = [("HERALD", HeraldSourceGate()), ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True)),
-             ("Governance_Gateway", GatewayGate()), ("HERALD", HeraldConfidenceGate(read.gate, document=read.document))]
+             ("Governance_Gateway", GatewayGate()), ("CCC", CccGate(CCCSystem())),
+             ("HERALD", HeraldConfidenceGate(read.gate, document=read.document))]
     try:
         SuperGate(seats, required=REQUIRED_SEATS)
     except ValueError as exc:
@@ -476,7 +551,7 @@ NOT_REACHED = {"outcome": "not reached", "allowed": False, "tie_refused": True, 
 
 #: (name, how to observe it, the facts it must produce)
 SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] = [
-    ("one document through all four repositories: every gate passes and the roster allows it",
+    ("one document through all five repositories: every gate passes and the roster allows it",
      run, HELD),
     ("SEAM HOLDS: HERALD's confidence gate, given its document by the roster, re-checks the amount claim's citation against it",
      run, {"outcome": PASS, "allowed": True, "omega_source_checked": True}),
@@ -516,6 +591,16 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("SEAM HOLDS: the approval for the true invoice cannot register a root built from the inflated one",
      approval_used_on_another_document, {**HELD, "guard_opened": True, "inflated_root_registered": False,
                                          "refused_by_guard": True}),
+    ("SEAM HOLDS: CCC is asked to ingest the inflated invoice while the other four judge the true one; same_subject refuses it",
+     ccc_other_text, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"]}),
+    ("SEAM HOLDS: a model actor's ingest claiming user-level provenance is refused by CCC's own gate, for CCC's own reason",
+     ccc_self_promoted, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["ccc.transition"],
+                         "ccc_reason": "CCC-PROVENANCE-002"}),
+    ("SEAM HOLDS: the roster allows the document and CCC's store is still empty, because its gate judges on a scratch copy",
+     ccc_deciding_registers_nothing, {**HELD, "ccc_artifacts": 0}),
+    ("GAP: the roster says no, yet CCC's ingest called directly registers the document",
+     door_refused_ccc_proceeds, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"],
+                                 "ccc_artifacts_before": 0, "ccc_artifacts_after_refusal": 1}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
@@ -533,6 +618,7 @@ def main() -> int:
         for key in differs:
             wrong.append(f"{name}: {key} was {seen.get(key)!r}, wanted {wanted[key]!r}")
     for what, check in (("a gate is dropped from the roster", dropped_gate_is_refused),
+                        ("CCC's gate is dropped from the roster", lambda: dropped_gate_is_refused("CCC:ccc.transition")),
                         ("the same_subject check is dropped from the roster", dropped_agreement_is_refused)):
         refused = check()
         print(f"{'ok  ' if not refused else 'FAIL'} {what}: refused at construction")

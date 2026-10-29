@@ -111,7 +111,7 @@ A seat that cannot be read is a refusal, not a skipped comparison. Put
 `CNS:same_subject` in `required` so that dropping the check is refused too.
 The readers are policy: write them beside the required roster. The check
 compares what the readers say, so it is only as honest as they are.
-`chains/evidence_spine.py` uses it across HERALD, the kernel and the gateway.
+`chains/evidence_spine.py` uses it across HERALD, the kernel, the gateway and CCC.
 
 A passing decision records the one document its seats agreed on (`Decision.subject`).
 `cns_composition.decision_guard.DecisionGuard` turns that into a permission for
