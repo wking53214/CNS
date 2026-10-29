@@ -4,7 +4,8 @@ The central nervous system of the library: one package holding
 the contracts every repo joins on.
 
 Where the eight-repository circuit stands today (what was checked, what it found when it ran on itself, what is
-still open): [docs/STATUS.md](docs/STATUS.md).
+still open): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
+remains to be done: [docs/RELEASED_SEATS.md](docs/RELEASED_SEATS.md).
 
 ## The rule
 
