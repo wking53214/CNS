@@ -235,8 +235,8 @@ Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`). A raw commit SHA still
-works, but a tag says which contract you are joining on. This tree is 2.1.0, tagged `v2.1.0`, the release a consumer pins:
-what 2.1.0 adds is in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
+works, but a tag says which contract you are joining on. This tree is 2.2.0, not yet tagged, so `v2.1.0` stays the pin until it is:
+what 2.2.0 adds is in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
 
 ## Versioning
 

@@ -9,6 +9,28 @@ release and "floor" the lowest a consumer may pin; both are defined in `cns_comp
 Tagging is the owner's decision. An entry whose heading says "not yet tagged" describes this tree; after the tag
 exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the table and moves `current`.
 
+## [2.2.0] - 2026-10-29 (not yet tagged)
+
+The decision guard, in `cns_composition` only. The `cns` package is untouched: no shape changed, so `tests/public_shape.json`
+moves only its version. Not tagged: `contracts/cns-releases.json` keeps `current` at `v2.1.0` and the floor at 1.9.0 until
+the owner tags, and `release --check` calls this tree unreleased. The 2.x line lacked main's SuperGate work, so this also
+carries the required-roster fix; merged by #48.
+
+### Added
+
+- `cns_composition.decision_guard.DecisionGuard(subject_of)`: a one-use guard that authorizes a super gate decision for
+  the one subject it judged. `cns_composition/tests/test_decision_guard.py`.
+- `SuperGate(..., same_subject=...)`: readers for each seat; the gate adds `CNS:same_subject` as the first ALPHA seat and
+  refuses a roster whose seats judged different documents. `Decision.subject` names what they agreed on.
+- `Decision.proof` and `Decision.issued`: an issuance proof (a process-local HMAC) so a decision cannot be assembled by
+  hand. It means nothing to another process. `cns_composition/tests/test_super_gate.py`.
+- `chains/evidence_spine.py`: the spine run end to end, held by `tests/test_chains.py`.
+
+### Changed
+
+- `SuperGate(..., required=...)`: a roster that lacks a required seat is refused at construction.
+- `HeraldCompositionResult.all_pass()` is false for an empty flow.
+
 ## [2.1.0] - 2026-10-29
 
 Three optional fields, nothing removed, renamed or retyped. Tagged `v2.1.0` by the owner (the annotated tag object is
