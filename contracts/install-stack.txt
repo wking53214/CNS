@@ -9,9 +9,9 @@
 # Running Warden on a target also needs pytest in the same environment (it runs the target's own suite):
 #     .venv/bin/pip install 'pytest>=8' "numpy==2.4.6; python_version < '3.12'" "numpy==2.5.4; python_version >= '3.12'" matplotlib==3.11.2
 # (ASSAY grades Ghost with numpy and matplotlib; numpy 2.5 needs Python 3.12 or newer, hence the two markers.)
-# Every entry that needs CNS pins it the same way, the tag v2.1.0 (the commit fde931ffa89aebec95647742256ad53033bd3d02),
+# Every entry that needs CNS pins it the same way, the tag v2.2.0 (the commit ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f),
 # because pip treats a tag URL and a commit URL as two different sources and refuses to resolve them together.
-cns @ git+https://github.com/wking53214/CNS.git@v2.1.0
+cns @ git+https://github.com/wking53214/CNS.git@v2.2.0
 ghost-tools @ git+https://github.com/wking53214/ghost_tools@99f3d5209bc98657db91eea1c25e833136ea61ab  # 1.10.10
 swizzle @ git+https://github.com/wking53214/SWIZZLE.git@b7451ad417cd166d10d4897a6b7dbe076ec02029  # 0.8.10
 assay @ git+https://github.com/wking53214/ASSAY.git@8f6ef8599d9acb2a2672a5a78c36ec0e276fa78c  # 0.11.7
