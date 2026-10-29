@@ -42,6 +42,9 @@ select = ["E4", "E7", "E9", "F"]
 # Throwaway generators whose committed output is the evidence (docs/evidence/README.md): the style checks that
 # would only change their layout are off here, the pyflakes checks are on.
 "docs/evidence/*.py" = ["E401", "E402", "E701", "E702", "E731"]
+# The 2026-10-29 proof run's check script is copied unaltered because the copy is the evidence; three pyflakes and
+# pycodestyle checks that it trips are off for that one file rather than editing it.
+"docs/evidence/proof-2026-10-29/scripts/check7.py" = ["F401", "E703", "E741"]
 
 [tool.pytest.ini_options]
 # Every test directory. The composition tests once lived under a directory
