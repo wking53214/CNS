@@ -37,7 +37,7 @@ def test_nothing_from_the_event_is_spliced_into_a_shell():
 
 def test_every_repository_the_chains_use_is_checked_out():
     declared = set(re.findall(r"repository: \$\{\{ github\.repository_owner \}\}/(\S+)", WORKFLOW))
-    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", "HERALD", "TIE", "Conservation_Kernel", *SPINE}
+    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", "HERALD", "TIE", "Conservation_Kernel", "ccc", *SPINE}
 
 
 def test_the_full_chain_names_only_repositories_whose_gate_ends_cns_declares():
@@ -134,7 +134,8 @@ def test_the_evidence_script_runs_with_exactly_its_four_repositories_importable(
     assert "run: python hub/chains/evidence_spine.py" in step.split("\n      - ", 1)[0]
     path = re.search(r"PYTHONPATH: (.+)", step).group(1).split(":")
     assert path == ["${{ github.workspace }}/stack/HERALD", "${{ github.workspace }}/stack/TIE/src",
-                    "${{ github.workspace }}/stack/Conservation_Kernel/src", "${{ github.workspace }}/stack/Governance_Gateway/src"]
+                    "${{ github.workspace }}/stack/Conservation_Kernel/src", "${{ github.workspace }}/stack/Governance_Gateway/src",
+                    "${{ github.workspace }}/stack/ccc"]
 
 
 def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repositories():
@@ -142,7 +143,7 @@ def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repo
     tree = ast.parse(text)
     assert "SCENARIOS" in text and "return 1 if" in text and "raise SystemExit(main())" in text
     imported = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-    assert imported == {"__future__", "cns", "cns_composition", "conservation_kernel", "governance_gateway", "herald", "tie", "typing"}
+    assert imported == {"__future__", "ccc", "cns", "cns_composition", "conservation_kernel", "governance_gateway", "herald", "tie", "typing"}
 
 
 def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact():
@@ -150,5 +151,5 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
-    assert sum(name.startswith("GAP: ") for name in names) == 1
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 14
+    assert sum(name.startswith("GAP: ") for name in names) == 2
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 17
