@@ -40,7 +40,9 @@ decision was a go, and then once, for the root that decision judged. A refused d
 did not issue (`Decision.issued`). A
 kernel built without a guard cannot be stopped from outside, but the roster refuses to approve one (the kernel's
 seat is built with `require_guard=True`), so no approval is ever issued for it. Calling such a kernel directly still
-registers a root, and a scenario records that as the one GAP left: the guard protects the kernels that carry it.
+registers a root, and a scenario records that as the one GAP left: the guard protects the kernels that carry it. Newer
+kernels refuse to be built that way unless the builder passes `allow_unguarded_roots=True`, which this script does
+only for that scenario, so the gap is reachable only by saying so.
 
 Two other seams are closed in the repositories themselves, and the scenarios check them from here. The kernel refuses a
 root stated as FACT that cites no evidence. A person's sign-off at HERALD reaches TIE on its own path
@@ -145,7 +147,7 @@ def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = 
 
     The kernel is built with a guard (the one given, else a fresh one that nothing opens): it registers a root only
     when the guard says so. `unguarded=True` builds the kernel without one, which registers any root it admits."""
-    kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard())
+    kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded)
     propositions = []
     for n, record in enumerate(evidence):
         pid = f"p{n}"
