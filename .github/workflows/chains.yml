@@ -8,7 +8,7 @@
 #                        verdicts bound to the answer text and tied to Ecology's record by its answer hash. Six scenarios, one of
 #                        them a DIT gate left out of the request, which cns_composition.super_gate refuses as a breach.
 # chains/evidence_spine.py  one document through HERALD, TIE, Conservation_Kernel and Governance_Gateway, then broken at
-#                        each seam. Nine scenarios: two seams that hold, six gaps stated as facts, and the clean run.
+#                        each seam. Thirteen scenarios: ten seams that hold, two gaps stated as facts, and the clean run.
 #
 # Each script exits 1 when a scenario differs from what it states, so this goes red the day a repository changes in a
 # way that breaks a chain: the failure points at the scenario, and the repositories' own suites cannot see it.

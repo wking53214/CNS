@@ -142,6 +142,9 @@ class Decision:
     seats: Tuple[str, ...]
     #: One digest over the roster and every verdict.
     root: str
+    #: The one document every `same_subject` seat judged, when the roster has that check and the decision passed.
+    #: The `CNS:same_subject` verdict binds it, so `root` covers it. None otherwise, never a guess.
+    subject: Optional[Judged] = None
 
     @property
     def outcome(self) -> GateOutcome:
@@ -279,9 +282,16 @@ class SuperGate:
             for key in self._subject_of:
                 if isinstance(given.get(key), Lazy):
                     given[key] = Lazy(_Once(given[key].build))
-            given[SUBJECT_SEAT] = Lazy(lambda: self._read_subjects(given))
+            views = _Once(lambda: self._read_subjects(given))
+            given[SUBJECT_SEAT] = Lazy(views)
         steps = [(repo, gate, given[key] if key in given else _no_candidate(key))
                  for (repo, gate), key in zip(self._seats, self._keys)]
         run = run_repo_chain(steps, require_complete=self._require_complete)
         root = _root(self._keys, run.results)
-        return Decision(run=run, seats=self._keys, root=root)
+        subject = None
+        if self._subject_of and run.outcome is GateOutcome.PASS:
+            # Every gate ran, so the readings were taken; this is the agreement the gate passed, not a second reading.
+            read = set(views().values())
+            if len(read) == 1 and all(isinstance(j, Judged) for j in read):
+                subject = next(iter(read))
+        return Decision(run=run, seats=self._keys, root=root, subject=subject)

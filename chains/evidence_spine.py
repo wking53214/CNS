@@ -32,6 +32,18 @@ unless all four agree. The readers are written here with the other caller steps,
 steps; what changed is that a hop which drifts from the document HERALD read is now caught, where before every
 verdict was bound, PASS, and about a different thing.
 
+THE LAST HOP: A PERMISSION, NOT A HOPE
+
+The roster decides, but registering the root is an action in another repository, and the kernel imports no CNS. So
+the kernel here is built with `root_guard=DecisionGuard(reads_root)`: it registers a root only after the roster's
+decision was a go, and then once, for the root that decision judged. A refused decision leaves the guard shut. A
+kernel built without a guard is not stopped, and a scenario records that as a GAP: the guard protects the kernels
+that carry it.
+
+Two other seams are closed in the repositories themselves, and the scenarios check them from here. The kernel refuses a
+root stated as FACT that cites no evidence. A person's sign-off at HERALD reaches TIE on its own path
+(`signoffs_from_herald_export`), naming who confirmed it, apart from machine readings.
+
 WHAT THIS DOES NOT COVER
 
 CCC (its CNS gate judges Triad output only), ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need
@@ -51,6 +63,7 @@ import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
 from cns.gate import GateOutcome
+from cns_composition.decision_guard import DecisionGuard
 from cns_composition.super_gate import Judged, SuperGate
 from conservation_kernel import Actor, Artifact as RootArtifact, ConservationKernel, EvidenceRecord, Proposition
 from conservation_kernel.cns_connector import CnsRootAdmissionGate
@@ -63,7 +76,7 @@ from herald import ConfidenceGate, HumanConfirmation, build_handoff
 from herald.cns_connector import HeraldConfidenceGate, HeraldSourceGate, run_governed
 from herald.handoff import verify_export
 from herald.source import STANDING_RECORD, SourceDocument
-from tie.evidence.herald_intake import HeraldIntakeRefused, evidence_from_herald_export
+from tie.evidence.herald_intake import HeraldIntakeRefused, evidence_from_herald_export, signoffs_from_herald_export
 from tie.models import SourceRecord
 
 PASS, BREACH = GateOutcome.PASS.value, GateOutcome.TERMINAL_BREACH.value
@@ -123,9 +136,11 @@ def tie(export: dict, source_id: str, text: str) -> Tuple[list, str]:
 
 
 def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = RootStatus.INFERENCE,
-                cite_evidence: bool = True) -> Tuple[ConservationKernel, RootArtifact]:
-    """The caller's step from TIE evidence to a kernel root. No repository ships this; it is written here."""
-    kernel = ConservationKernel()
+                cite_evidence: bool = True, guard: Optional[DecisionGuard] = None) -> Tuple[ConservationKernel, RootArtifact]:
+    """The caller's step from TIE evidence to a kernel root. No repository ships this; it is written here.
+
+    With a `guard`, the kernel registers a root only when the guard says so; without one it registers any root it admits."""
+    kernel = ConservationKernel(root_guard=guard)
     propositions = []
     for n, record in enumerate(evidence):
         pid = f"p{n}"
@@ -181,6 +196,29 @@ def reads_claim(claim) -> Judged:
 #: How each seat's candidate says which document it is about. Policy, like REQUIRED_SEATS: reviewed with it.
 READERS = {"HERALD:herald_source": reads_document, "Conservation_Kernel:root_admission": reads_root,
            "Governance_Gateway:governance_gateway": reads_door, "HERALD:herald_confidence": reads_claim}
+
+
+def fresh_guard() -> DecisionGuard:
+    """A closed guard that will open, once, for the root the roster's decision judged. Policy, like READERS."""
+    return DecisionGuard(reads_root)
+
+
+def register(kernel: ConservationKernel, root: RootArtifact) -> Tuple[bool, bool]:
+    """Ask the kernel to register the root: (registered, refused by the root guard)."""
+    try:
+        kernel.register_root(root)
+        return True, False
+    except Exception as exc:  # noqa: BLE001 - any refusal counts as the kernel declining
+        return False, "root guard" in str(exc)
+
+
+def authorize(guard: DecisionGuard, decision) -> bool:
+    """Hand the guard the decision. It stays closed, and this says False, unless the decision is a go."""
+    try:
+        guard.authorize(decision)
+        return True
+    except ValueError:
+        return False
 
 
 class _Unchecked(logging.Handler):
@@ -283,9 +321,9 @@ def mixed_run() -> Dict[str, object]:
 
 
 def root_from_unread_source() -> Dict[str, object]:
-    """The kernel root is a FACT citing a source no hop ever read, and no evidence at all."""
+    """The kernel root is an inference citing a source no hop ever read, and no evidence at all."""
     read = herald(INVOICE, "doc-1")
-    kernel, root = kernel_root([], "doc-never-read", "The invoice came to $41,200.00.", status=RootStatus.FACT)
+    kernel, root = kernel_root([], "doc-never-read", "The invoice came to $41,200.00.")
     return facts(decide(read, kernel, root, door(root, "doc-never-read")), [], "")
 
 
@@ -297,28 +335,67 @@ def fact_without_evidence() -> Dict[str, object]:
 
 
 def human_signoff() -> Dict[str, object]:
-    """HERALD holds the amount for a human (threshold raised above its confidence); a named reviewer confirms it."""
+    """HERALD holds the amount for a human (threshold raised above its confidence); a named reviewer confirms it.
+
+    TIE takes the confirmation on its own path, not as a machine reading: the machine path still leaves it out."""
     read = herald(INVOICE, "doc-1", gate=ConfidenceGate(thresholds={"amount": 0.99}), confirm=True)
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    signoffs = signoffs_from_herald_export(SourceRecord(source_id="doc-1", content=INVOICE), read.export, verify=verify_export)
+    amounts = [e for e in signoffs if e.statement.startswith("amount:")]
     return {"herald_confirmed_amounts": sum(1 for e in read.export["admitted"]
                                             if e["kind"] == "amount" and e["reading"] == "HUMAN_CONFIRMED"),
             "tie_refused": bool(refusal),
             "tie_amounts": sum(1 for e in evidence if e.statement.startswith("amount:")),
-            "tie_evidence": len(evidence)}
+            "tie_evidence": len(evidence),
+            "signoff_amounts": len(amounts),
+            "signoff_confirmers": sorted({n.split(": ", 1)[1] for e in amounts for n in e.notes if n.startswith("confirmed_by: ")}),
+            "signoff_origin": sorted({e.provenance.origin.name for e in amounts})}
 
 
-def door_refused_kernel_proceeds() -> Dict[str, object]:
-    """The gateway refuses the door and the roster says no. Then the kernel is called on its own."""
+def door_refused_kernel_proceeds(guarded: bool) -> Dict[str, object]:
+    """The gateway refuses the door and the roster says no. Then the kernel is called on its own.
+
+    A kernel built with the guard stays shut because no approved decision opened it. A kernel built without one has
+    nothing to ask, so it registers the root whatever the roster said."""
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
-    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    guard = fresh_guard() if guarded else None
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
     decided = decide(read, kernel, root, tampered(door(root, "doc-1")))
-    try:
-        kernel.register_root(root)
-        registered = True
-    except Exception:  # noqa: BLE001 - any refusal counts as the kernel declining
-        registered = False
-    return facts(decided, evidence, refusal, kernel_registered_after_refusal=registered)
+    opened = authorize(guard, decided[0]) if guard else False
+    registered, by_guard = register(kernel, root)
+    return facts(decided, evidence, refusal, guard_opened=opened, kernel_registered_after_refusal=registered,
+                 refused_by_guard=by_guard)
+
+
+def approved_registration() -> Dict[str, object]:
+    """The roster allows the document. The guard opens for the root it judged, once: a second root is refused."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_guard()
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+    decided = decide(read, kernel, root, door(root, "doc-1"))
+    opened = authorize(guard, decided[0])
+    registered, _ = register(kernel, root)
+    second, by_guard = register(kernel, RootArtifact(artifact_id="root:doc-1:again", content=root.content,
+                                                propositions=root.propositions, producer=root.producer))
+    return facts(decided, evidence, refusal, guard_opened=opened, kernel_registered=registered,
+                 second_root_registered=second, second_refused_by_guard=by_guard)
+
+
+def approval_used_on_another_document() -> Dict[str, object]:
+    """The roster allows the true invoice. The approval is then used to register a root built from the inflated one."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_guard()
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+    decided = decide(read, kernel, root, door(root, "doc-1"))
+    opened = authorize(guard, decided[0])
+    inflated_evidence, _ = tie(herald(INFLATED).export, "doc-1", INFLATED)
+    other_kernel, other_root = kernel_root(inflated_evidence, "doc-1", INFLATED, guard=guard)
+    registered, by_guard = register(other_kernel, other_root)
+    return facts(decided, evidence, refusal, guard_opened=opened, inflated_root_registered=registered,
+                 refused_by_guard=by_guard)
 
 
 def dropped_gate_is_refused() -> str:
@@ -370,14 +447,26 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("SEAM HOLDS: a kernel root stated as FACT, citing a source no hop read and no evidence, is refused by same_subject",
      root_from_unread_source, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"],
                                "tie_evidence": 0, "tie_source": []}),
-    ("GAP: a kernel root stated as FACT about the document HERALD read, citing no evidence, is admitted and the roster allows it",
-     fact_without_evidence, {**HELD, "tie_evidence": 0, "tie_source": []}),
-    ("GAP: a named human confirms the amount at HERALD and the confirmed amount never reaches TIE",
-     human_signoff, {"herald_confirmed_amounts": 2, "tie_refused": False, "tie_amounts": 0, "tie_evidence": 3}),
-    ("GAP: the gateway refuses the door and the roster says no, yet the kernel called directly registers the root",
-     door_refused_kernel_proceeds,
-     {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"],
-      "kernel_registered_after_refusal": True}),
+    ("SEAM HOLDS: a kernel root stated as FACT about the document HERALD read, citing no evidence, is refused by the kernel",
+     fact_without_evidence, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"],
+                             "tie_evidence": 0, "tie_source": []}),
+    ("SEAM HOLDS: a named human confirms the amount at HERALD; TIE takes it on its sign-off path, naming the confirmer, and the machine path still leaves it out",
+     human_signoff, {"herald_confirmed_amounts": 2, "tie_refused": False, "tie_amounts": 0, "tie_evidence": 3,
+                     "signoff_amounts": 2, "signoff_confirmers": ["dana.reviewer"], "signoff_origin": ["HUMAN_ACCEPTED_AI"]}),
+    ("SEAM HOLDS: the gateway refuses the door and the roster says no; the kernel built with the guard refuses to register the root",
+     lambda: door_refused_kernel_proceeds(True),
+     {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "guard_opened": False,
+      "kernel_registered_after_refusal": False, "refused_by_guard": True}),
+    ("SEAM HOLDS: an approved decision opens the guard for the root it judged, once; a second root is refused",
+     approved_registration, {**HELD, "guard_opened": True, "kernel_registered": True, "second_root_registered": False,
+                             "second_refused_by_guard": True}),
+    ("SEAM HOLDS: the approval for the true invoice cannot register a root built from the inflated one",
+     approval_used_on_another_document, {**HELD, "guard_opened": True, "inflated_root_registered": False,
+                                         "refused_by_guard": True}),
+    ("GAP: the gateway refuses the door and the roster says no, yet a kernel built without the guard registers the root",
+     lambda: door_refused_kernel_proceeds(False),
+     {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "guard_opened": False,
+      "kernel_registered_after_refusal": True, "refused_by_guard": False}),
 ]
 
 

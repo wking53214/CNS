@@ -98,6 +98,14 @@ The readers are policy: write them beside the required roster. The check
 compares what the readers say, so it is only as honest as they are.
 `chains/evidence_spine.py` uses it across HERALD, the kernel and the gateway.
 
+A passing decision records the one document its seats agreed on (`Decision.subject`).
+`cns_composition.decision_guard.DecisionGuard` turns that into a permission for
+another repository's action: hand it to a kernel as its `root_guard`, call
+`authorize(decision)` once the decision is a go, and the kernel registers a root
+only if it reads as exactly the approved document, and only once. A guard that
+was never authorized, or was given a refused decision, stays shut. It protects
+the kernels built with it; a kernel built without one is not stopped.
+
 ## The stack manifest
 
 `cns.stack` is the contract for a claim no single repository can make

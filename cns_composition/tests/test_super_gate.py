@@ -340,3 +340,32 @@ def test_the_agreement_seat_does_not_stand_in_for_a_missing_alpha_gate():
 def test_the_comparison_gate_alone_refuses_a_candidate_that_is_not_a_reading():
     gate = SubjectAgreement()
     assert gate.check("nothing").outcome is BREACH and gate.check({}).outcome is BREACH
+
+
+# ------------------------------------------------- the decision remembers the agreed subject
+
+def test_a_passing_decision_records_the_one_subject_the_seats_agreed_on():
+    _, _, gate = subject_roster()
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": ("doc-1", "abc")})
+    assert decision.allowed and decision.subject == Judged("doc-1", "abc")
+
+
+def test_a_refused_decision_records_no_subject():
+    _, _, gate = subject_roster()
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": ("doc-1", "other")})
+    assert not decision.allowed and decision.subject is None
+
+
+def test_a_roster_without_same_subject_records_no_subject():
+    _, _, gate = roster()
+    decision = gate.decide(GOOD)
+    assert decision.allowed and decision.subject is None
+
+
+def test_the_recorded_subject_is_the_one_the_agreement_verdict_bound():
+    _, _, gate = subject_roster()
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": ("doc-1", "abc")})
+    agreement = decision.run.results[0]
+    assert agreement.binds("same_subject", subject_digest({"identity": decision.subject.identity,
+                                                           "digest": decision.subject.digest,
+                                                           "seats": ["DIT:judge", "Governance_Gateway:door"]}))
