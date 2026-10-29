@@ -12,11 +12,11 @@
 # Every entry that needs CNS pins it the same way, the tag v2.1.0 (the commit fde931ffa89aebec95647742256ad53033bd3d02),
 # because pip treats a tag URL and a commit URL as two different sources and refuses to resolve them together.
 cns @ git+https://github.com/wking53214/CNS.git@v2.1.0
-ghost-tools @ git+https://github.com/wking53214/ghost_tools@3df51b374ed016b3f42def17c080700cd770e85a  # 1.10.9
-swizzle @ git+https://github.com/wking53214/SWIZZLE.git@dff2f99b69515df154e66fbe9f5735a726c3dbda  # 0.8.9
-assay @ git+https://github.com/wking53214/ASSAY.git@1de36ca9b56ba51b6b1f577bf046d7270b7e6c2a  # 0.11.6
-warden @ git+https://github.com/wking53214/Warden.git@68f2a955f486a8ebb230c4395c88f7e99ee47c48  # 0.14.0
-judge @ git+https://github.com/wking53214/JUDGE.git@f23ae927f482b16cb503ad29d248825f587f4a64  # 0.5.0
-drafter @ git+https://github.com/wking53214/DRAFTER.git@d7a2b4e3c5d2b0e0ae8857b976e7ebfbb4a163b7  # 0.2.12
-burnish @ git+https://github.com/wking53214/BURNISH.git@b3e0d60acee84adae58a2ed99196824184dabaa0  # 0.3.13
-watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@844487825c8cc131de84a18aa908236b11df734d  # 0.3.9
+ghost-tools @ git+https://github.com/wking53214/ghost_tools@99f3d5209bc98657db91eea1c25e833136ea61ab  # 1.10.10
+swizzle @ git+https://github.com/wking53214/SWIZZLE.git@b7451ad417cd166d10d4897a6b7dbe076ec02029  # 0.8.10
+assay @ git+https://github.com/wking53214/ASSAY.git@8f6ef8599d9acb2a2672a5a78c36ec0e276fa78c  # 0.11.7
+warden @ git+https://github.com/wking53214/Warden.git@fe9c8b35778de680d04b2a57775ac6a6831f4799  # 0.15.1
+judge @ git+https://github.com/wking53214/JUDGE.git@ad3d66f84a15ad7c320285e4d9ab006de90bdfdd  # 0.5.1
+drafter @ git+https://github.com/wking53214/DRAFTER.git@9da8da2cfc0250be3cd189e04abfa539a46a1d2d  # 0.2.14
+burnish @ git+https://github.com/wking53214/BURNISH.git@14c61d08efedb66ce9db4fdf58fba733c43e8748  # 0.3.15
+watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@9012651f005f4dd56810b1d37d25b1cc053460c7  # 0.3.11
