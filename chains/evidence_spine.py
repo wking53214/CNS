@@ -25,6 +25,13 @@ two scenarios: the kernel and the gateway cannot tell whether a caller's step wa
 The roster is held once by `cns_composition.super_gate.SuperGate`: HERALD's source gate, the kernel's root gate and
 the gateway at ALPHA, HERALD's confidence gate at OMEGA on the claim the decision rests on (the invoice amount).
 
+The four gates each bind their verdict to what they judged, and nothing makes them judge the same document. So the
+roster also names `same_subject`: for each of the four seats, a reader (`reads_*` below) says which document its
+candidate is about and the SHA-256 of that document's text, and the super gate's first seat refuses the decision
+unless all four agree. The readers are written here with the other caller steps, so they are only as honest as those
+steps; what changed is that a hop which drifts from the document HERALD read is now caught, where before every
+verdict was bound, PASS, and about a different thing.
+
 WHAT THIS DOES NOT COVER
 
 CCC (its CNS gate judges Triad output only), ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need
@@ -38,12 +45,13 @@ Governance_Gateway (each under src/) importable.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import logging
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
 from cns.gate import GateOutcome
-from cns_composition.super_gate import SuperGate
+from cns_composition.super_gate import Judged, SuperGate
 from conservation_kernel import Actor, Artifact as RootArtifact, ConservationKernel, EvidenceRecord, Proposition
 from conservation_kernel.cns_connector import CnsRootAdmissionGate
 from conservation_kernel.enums import EpistemicStatus as RootStatus
@@ -68,6 +76,7 @@ REQUIRED_SEATS = (
     "Conservation_Kernel:root_admission",
     "Governance_Gateway:governance_gateway",
     "HERALD:herald_confidence",
+    "CNS:same_subject",
 )
 
 INVOICE = ("Invoice INV-2207 dated 2026-03-04 came to $412.00 for the burst kitchen pipe. "
@@ -135,7 +144,8 @@ def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = 
 
 def door(root: RootArtifact, source_id: str) -> DoorArtifact:
     """The caller's step from a kernel root to the artifact the gateway judges. No repository ships this either."""
-    return DoorArtifact.create(artifact_id=f"door:{source_id}", payload={"root": root.artifact_digest},
+    return DoorArtifact.create(artifact_id=f"door:{source_id}",
+                               payload={"root": root.artifact_digest, "content_sha256": sha256(root.content)},
                                provenance={"origin": "conservation_kernel", "source_id": source_id},
                                epistemic_status=EpistemicStatus.INFERENCE,
                                authority=Authority(actor="evidence-spine", grant="read"), scope=Scope.READ_ONLY)
@@ -143,7 +153,34 @@ def door(root: RootArtifact, source_id: str) -> DoorArtifact:
 
 def tampered(artifact: DoorArtifact) -> DoorArtifact:
     """A door artifact whose payload changed after its integrity digest was computed."""
-    return dataclasses.replace(artifact, payload={"root": "edited after sealing"})
+    return dataclasses.replace(artifact, payload={**artifact.payload, "root": "edited after sealing"})
+
+
+def sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def reads_document(document: SourceDocument) -> Judged:
+    return Judged(document.source_id, sha256(document.text))
+
+
+def reads_root(root: RootArtifact) -> Judged:
+    """The one source the root's propositions cite, and the digest of the root's content."""
+    cited = {ref for proposition in root.propositions for ref in proposition.source_refs}
+    return Judged(next(iter(cited)) if len(cited) == 1 else "", sha256(root.content))
+
+
+def reads_door(entry: DoorArtifact) -> Judged:
+    return Judged(entry.provenance["source_id"], entry.payload["content_sha256"])
+
+
+def reads_claim(claim) -> Judged:
+    return Judged(claim.source_id, claim.source_hash or "")
+
+
+#: How each seat's candidate says which document it is about. Policy, like REQUIRED_SEATS: reviewed with it.
+READERS = {"HERALD:herald_source": reads_document, "Conservation_Kernel:root_admission": reads_root,
+           "Governance_Gateway:governance_gateway": reads_door, "HERALD:herald_confidence": reads_claim}
 
 
 class _Unchecked(logging.Handler):
@@ -170,7 +207,9 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
     propagate, log.propagate = log.propagate, False
     log.addHandler(unchecked)
     try:
-        decision = SuperGate(seats, required=REQUIRED_SEATS).decide({f"{repo}:{gate.name}": c for repo, gate, c in steps})
+        readers = {seat: reads for seat, reads in READERS.items() if seat != drop}
+        decision = SuperGate(seats, required=REQUIRED_SEATS, same_subject=readers).decide(
+            {f"{repo}:{gate.name}": c for repo, gate, c in steps})
     finally:
         log.removeHandler(unchecked)
         log.propagate = propagate
@@ -243,11 +282,18 @@ def mixed_run() -> Dict[str, object]:
                  root_text_is_what_herald_read=root.content == true_read.document.text)
 
 
-def root_from_nowhere() -> Dict[str, object]:
+def root_from_unread_source() -> Dict[str, object]:
     """The kernel root is a FACT citing a source no hop ever read, and no evidence at all."""
     read = herald(INVOICE, "doc-1")
     kernel, root = kernel_root([], "doc-never-read", "The invoice came to $41,200.00.", status=RootStatus.FACT)
     return facts(decide(read, kernel, root, door(root, "doc-never-read")), [], "")
+
+
+def fact_without_evidence() -> Dict[str, object]:
+    """The kernel root is a FACT about the very document HERALD read, citing no evidence at all."""
+    read = herald(INVOICE, "doc-1")
+    kernel, root = kernel_root([], "doc-1", INVOICE, status=RootStatus.FACT)
+    return facts(decide(read, kernel, root, door(root, "doc-1")), [], "")
 
 
 def human_signoff() -> Dict[str, object]:
@@ -287,6 +333,20 @@ def dropped_gate_is_refused() -> str:
     return "a roster without Conservation_Kernel:root_admission was accepted"
 
 
+def dropped_agreement_is_refused() -> str:
+    """Empty if a roster built without `same_subject` is refused at construction, else what happened instead."""
+    read = herald(INVOICE, "doc-1")
+    evidence, _ = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    seats = [("HERALD", HeraldSourceGate()), ("Conservation_Kernel", CnsRootAdmissionGate(kernel)),
+             ("Governance_Gateway", GatewayGate()), ("HERALD", HeraldConfidenceGate(read.gate))]
+    try:
+        SuperGate(seats, required=REQUIRED_SEATS)
+    except ValueError as exc:
+        return "" if "CNS:same_subject" in str(exc) else f"refused, but not for the missing seat: {exc}"
+    return "a roster without same_subject was accepted"
+
+
 #: The facts of the clean run. A scenario states only how it differs.
 HELD = {"outcome": PASS, "allowed": True, "blocked_by": [], "tie_refused": False, "tie_evidence": 5,
         "tie_source": ["doc-1"]}
@@ -302,12 +362,16 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      export_to_other_text, {**NOT_REACHED, "tie_refused_because": "different text"}),
     ("SEAM HOLDS: HERALD's export edited after it was signed is refused by TIE",
      export_edited, {**NOT_REACHED, "tie_refused_because": "export did not verify"}),
-    ("GAP: HERALD read doc-1, TIE is told the same text is doc-7 and records it as doc-7; the roster allows it",
-     export_relabelled, {**HELD, "tie_source": ["doc-7"]}),
-    ("GAP: HERALD judged the true invoice, kernel and gateway judged the inflated one; every gate passes and the roster allows it",
-     mixed_run, {**HELD, "root_text_is_what_herald_read": False}),
-    ("GAP: a kernel root stated as FACT, citing a source no hop read and no evidence, is admitted and the roster allows it",
-     root_from_nowhere, {**HELD, "tie_evidence": 0, "tie_source": []}),
+    ("SEAM HOLDS: HERALD read doc-1, TIE is told the same text is doc-7 and records it as doc-7; same_subject refuses it",
+     export_relabelled, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"], "tie_source": ["doc-7"]}),
+    ("SEAM HOLDS: HERALD judged the true invoice, kernel and gateway judged the inflated one; same_subject refuses it",
+     mixed_run, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"],
+                 "root_text_is_what_herald_read": False}),
+    ("SEAM HOLDS: a kernel root stated as FACT, citing a source no hop read and no evidence, is refused by same_subject",
+     root_from_unread_source, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"],
+                               "tie_evidence": 0, "tie_source": []}),
+    ("GAP: a kernel root stated as FACT about the document HERALD read, citing no evidence, is admitted and the roster allows it",
+     fact_without_evidence, {**HELD, "tie_evidence": 0, "tie_source": []}),
     ("GAP: a named human confirms the amount at HERALD and the confirmed amount never reaches TIE",
      human_signoff, {"herald_confirmed_amounts": 2, "tie_refused": False, "tie_amounts": 0, "tie_evidence": 3}),
     ("GAP: the gateway refuses the door and the roster says no, yet the kernel called directly registers the root",
@@ -326,10 +390,12 @@ def main() -> int:
         print("       " + " ".join(f"{key}={seen.get(key)!r}" for key in wanted))
         for key in differs:
             wrong.append(f"{name}: {key} was {seen.get(key)!r}, wanted {wanted[key]!r}")
-    refused = dropped_gate_is_refused()
-    print(f"{'ok  ' if not refused else 'FAIL'} a gate is dropped from the roster: refused at construction")
-    if refused:
-        wrong.append(f"a gate is dropped from the roster: {refused}")
+    for what, check in (("a gate is dropped from the roster", dropped_gate_is_refused),
+                        ("the same_subject check is dropped from the roster", dropped_agreement_is_refused)):
+        refused = check()
+        print(f"{'ok  ' if not refused else 'FAIL'} {what}: refused at construction")
+        if refused:
+            wrong.append(f"{what}: {refused}")
     for line in wrong:
         print(f"chain: {line}", file=sys.stderr)
     return 1 if wrong else 0
