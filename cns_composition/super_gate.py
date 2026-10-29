@@ -14,6 +14,13 @@ all:
     cannot silently drop a gate either.
   `allowed` is True only when every verdict is PASS, every verdict records what it judged, both ends ran, and
     both ends are on the roster. A pass that binds to nothing is not a go.
+  Seats that judge one thing can be required to judge the same thing. Each verdict is bound to what its own gate
+    judged, and nothing else makes two gates judge the same document: a gate can pass the true invoice while its
+    neighbour passes an inflated one, and every verdict is bound and PASS. `same_subject` names those seats and, for
+    each, how to read from its candidate WHICH document it is about and the digest of that document's content. A
+    built-in gate, `CNS:same_subject`, runs first and refuses the decision unless every named seat reads the same
+    identity and the same digest. It only compares what the extractors read, so an extractor is policy: write it
+    beside the required roster, where it is reviewed with it.
   `root` is one digest over the whole decision (the roster, then each verdict's gate, end, outcome and what it
     bound), so a single approval can be tied to the entire run and not to one gate.
 
@@ -31,14 +38,14 @@ single control point that cannot be talked out of a gate, which is this.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Tuple
+from typing import Callable, Iterable, Mapping, Optional, Tuple
 
 from cns.gate import Gate, GateOutcome, GatePosition, GateResult, subject_digest
 
 from .gate_chain import ChainRun, Lazy
 from .repo_gates import ends_of, run_repo_chain
 
-__all__ = ["Decision", "MissingCandidate", "SuperGate"]
+__all__ = ["Decision", "Judged", "MissingCandidate", "SubjectAgreement", "SuperGate"]
 
 #: A seat on the roster: the repository the gate came from, and the gate.
 Seat = Tuple[str, Gate]
@@ -46,6 +53,74 @@ Seat = Tuple[str, Gate]
 
 class MissingCandidate(Exception):
     """A seat on the roster was given nothing to judge."""
+
+
+@dataclass(frozen=True)
+class Judged:
+    """What a candidate is about: which document, and the digest of that document's content."""
+
+    identity: str
+    digest: str
+
+
+#: How to read what a seat's candidate is about.
+SubjectOf = Callable[[object], Judged]
+
+#: The seat the super gate adds when `same_subject` is given.
+SUBJECT_REPO, SUBJECT_GATE = "CNS", "same_subject"
+SUBJECT_SEAT = f"{SUBJECT_REPO}:{SUBJECT_GATE}"
+
+
+class SubjectAgreement:
+    """ALPHA gate: every seat that was read judged the same document identity and the same content digest.
+
+    Its candidate is the mapping the super gate builds, seat to `Judged` or to the reason the seat could not be
+    read. A seat that cannot be read is a TERMINAL_BREACH, never a skipped comparison.
+    """
+
+    name = SUBJECT_GATE
+    position = GatePosition.ALPHA
+
+    def check(self, candidate: object) -> GateResult:
+        def verdict(outcome: GateOutcome, reason: str, bound: object = None) -> GateResult:
+            return GateResult(gate=self.name, position=self.position, outcome=outcome, reason=reason,
+                              subject=self.name if bound is not None else "",
+                              subject_digest=subject_digest(bound) if bound is not None else "")
+
+        if not isinstance(candidate, Mapping) or not candidate:
+            return verdict(GateOutcome.TERMINAL_BREACH, "no seats were read, so there is nothing to compare")
+        unread = {seat: why for seat, why in candidate.items() if not isinstance(why, Judged)}
+        if unread:
+            return verdict(GateOutcome.TERMINAL_BREACH, "; ".join(f"{seat}: {why}" for seat, why in sorted(unread.items())))
+        views = {seat: [j.identity, j.digest] for seat, j in candidate.items()}
+        groups: dict = {}
+        for seat, j in candidate.items():
+            groups.setdefault((j.identity, j.digest), []).append(seat)
+        if len(groups) > 1:
+            said = "; ".join(f"{', '.join(sorted(seats))} judged {identity} ({digest[:12]})"
+                             for (identity, digest), seats in sorted(groups.items()))
+            return verdict(GateOutcome.TERMINAL_BREACH, "the seats judged different subjects: " + said, {"views": views})
+        (identity, digest), seats = next(iter(groups.items()))
+        return verdict(GateOutcome.PASS, f"{len(seats)} seats judged the same subject, {identity}",
+                       {"identity": identity, "digest": digest, "seats": sorted(seats)})
+
+
+class _Once:
+    """A Lazy candidate's build, run once: the comparison and the gate see the same object."""
+
+    def __init__(self, build: Callable[[], object]) -> None:
+        self._build, self._done, self._value, self._error = build, False, None, None
+
+    def __call__(self) -> object:
+        if not self._done:
+            try:
+                self._value = self._build()
+            except Exception as exc:  # kept, and raised again for the gate that asks next
+                self._error = exc
+            self._done = True
+        if self._error is not None:
+            raise self._error
+        return self._value
 
 
 def _key(repo: str, gate: Gate) -> str:
@@ -108,12 +183,17 @@ class SuperGate:
     independent of candidates passed to decide. This API makes omission explicit;
     it cannot authenticate who supplied the policy configuration.
 
+    `same_subject` maps two or more seats to a reader of what each one's candidate is about (a `Judged`). The
+    super gate then adds `CNS:same_subject` as the first ALPHA seat, built from those candidates, and the decision
+    is refused unless they all agree. Add `CNS:same_subject` to `required` so dropping `same_subject` is refused
+    too. A candidate for a named seat that is `Lazy` is built when the comparison runs, once.
+
     Raises ValueError for invalid or incomplete rosters and KeyError for a
     repository with no row in repo_gates.
     """
 
     def __init__(self, seats: Iterable[Seat], *, required: Iterable[str],
-                 require_complete: bool = True) -> None:
+                 require_complete: bool = True, same_subject: Optional[Mapping[str, SubjectOf]] = None) -> None:
         self._seats: Tuple[Seat, ...] = tuple(seats)
         self._require_complete = require_complete
         if not self._seats:
@@ -139,6 +219,20 @@ class SuperGate:
             missing = "alpha" if GatePosition.ALPHA not in ends else "omega"
             raise ValueError(f"the roster has no {missing} gate, so it is a stratum and not a complete gate; "
                              "pass require_complete=False if that is intended")
+        self._subject_of = dict(same_subject) if same_subject is not None else {}
+        if same_subject is not None:
+            if len(self._subject_of) < 2:
+                raise ValueError("same_subject must name at least two seats; one seat agrees with itself")
+            if any(not callable(of) for of in self._subject_of.values()):
+                raise ValueError("same_subject must map each seat to a function that reads its subject")
+            off = sorted(set(self._subject_of) - set(keys))
+            if off:
+                raise ValueError("same_subject names seat(s) not on the roster: " + ", ".join(off))
+            if SUBJECT_SEAT in keys:
+                raise ValueError(f"{SUBJECT_SEAT} is added by the super gate and cannot be seated by hand")
+            # Added after the completeness check above, so it never stands in for a real ALPHA gate.
+            self._seats = ((SUBJECT_REPO, SubjectAgreement()),) + self._seats
+            keys = [SUBJECT_SEAT] + keys
         self._keys = tuple(keys)
         missing = sorted(set(required_keys) - set(keys))
         if missing:
@@ -149,6 +243,26 @@ class SuperGate:
     def seats(self) -> Tuple[str, ...]:
         return self._keys
 
+    def _read_subjects(self, given: Mapping[str, object]) -> Mapping[str, object]:
+        """Each named seat's subject, or the reason it could not be read."""
+        views: dict = {}
+        for key, subject_of in self._subject_of.items():
+            if key not in given:
+                views[key] = "has no candidate, so there is nothing to compare"
+                continue
+            try:
+                candidate = given[key]
+                seen = subject_of(candidate.build() if isinstance(candidate, Lazy) else candidate)
+            except Exception as exc:  # a seat that cannot be read is a breach, whatever it raised
+                views[key] = f"its subject could not be read ({type(exc).__name__})"
+                continue
+            if not (isinstance(seen, Judged) and isinstance(seen.identity, str) and isinstance(seen.digest, str)
+                    and seen.identity and seen.digest):
+                views[key] = "its subject does not name a document identity and a content digest"
+                continue
+            views[key] = seen
+        return views
+
     def decide(self, candidates: Mapping[str, object]) -> Decision:
         """Decide on the whole roster. `candidates` maps each seat (`repository:gate`) to what it judges.
 
@@ -158,7 +272,15 @@ class SuperGate:
         unknown = sorted(set(candidates) - set(self._keys))
         if unknown:
             raise ValueError("candidates for seats that are not on the roster: " + ", ".join(unknown))
-        steps = [(repo, gate, candidates[key] if key in candidates else _no_candidate(key))
+        if self._subject_of and SUBJECT_SEAT in candidates:
+            raise ValueError(f"{SUBJECT_SEAT} is built by the super gate from the other candidates, not supplied")
+        given = dict(candidates)
+        if self._subject_of:
+            for key in self._subject_of:
+                if isinstance(given.get(key), Lazy):
+                    given[key] = Lazy(_Once(given[key].build))
+            given[SUBJECT_SEAT] = Lazy(lambda: self._read_subjects(given))
+        steps = [(repo, gate, given[key] if key in given else _no_candidate(key))
                  for (repo, gate), key in zip(self._seats, self._keys)]
         run = run_repo_chain(steps, require_complete=self._require_complete)
         root = _root(self._keys, run.results)
