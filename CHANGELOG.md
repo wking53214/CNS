@@ -9,11 +9,11 @@ release and "floor" the lowest a consumer may pin; both are defined in `cns_comp
 Tagging is the owner's decision. An entry whose heading says "not yet tagged" describes this tree; after the tag
 exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the table and moves `current`.
 
-## [2.1.0] - 2026-10-28 (not yet tagged)
+## [2.1.0] - 2026-10-29
 
-Three optional fields, nothing removed, renamed or retyped. Not tagged: `contracts/cns-releases.json` keeps
-`current` at `v2.0.0` and the floor at 1.9.0 until the owner tags, and `release --check` calls this tree
-unreleased. A reader built against 2.0.0 ignores every field below, because each has a default and `cns.run/1`
+Three optional fields, nothing removed, renamed or retyped. Tagged `v2.1.0` by the owner (the annotated tag object is
+`0cc90472f7edc46c3bf40079e69fb03a06718e29`, peeling to `fde931ffa89aebec95647742256ad53033bd3d02`):
+`contracts/cns-releases.json` has `current` at `v2.1.0` and keeps the floor at 1.9.0, which is the owner's decision. A reader built against 2.0.0 ignores every field below, because each has a default and `cns.run/1`
 already allowed extra keys. Each entry names the test that holds it.
 
 ### Added

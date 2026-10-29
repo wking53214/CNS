@@ -70,7 +70,7 @@ from a new critical one without the governor renaming the ids; the bare ids stay
 Warden writes its keys, CNS types it no further than a mapping), and `RunRecord.evidence` is the Judge's input as
 written. Every one defaults to `None`, which means the writer did not say. A reader built against a CNS before 2.1.0
 ignores all three: a dataclass field with a default costs an older constructor nothing, and `cns.run/1` already
-allowed extra keys, so a 2.0.0 Watcher reads a 2.1.0 record as it always did. The tree is not tagged; see
+allowed extra keys, so a 2.0.0 Watcher reads a 2.1.0 record as it always did. 2.1.0 is tagged `v2.1.0`; see
 `CHANGELOG.md`.
 
 The composition layer is a sibling package in this repository, not part of
@@ -167,14 +167,14 @@ Pin a tag, the way sentinel_os already pins Conservation_Kernel. In a requiremen
 `pyproject.toml` dependency list the line is:
 
 ```
-cns @ git+https://github.com/wking53214/CNS.git@v2.0.0
+cns @ git+https://github.com/wking53214/CNS.git@v2.1.0
 ```
 
 and to put it in an environment by hand:
 
 ```
 python3 -m venv .venv
-.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.0.0"
+.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.1.0"
 ```
 
 Then `from cns.graph import Node, Edge, Graph` and delete the vendored
@@ -196,10 +196,9 @@ markers). `tests/test_install_stack.py` holds `contracts/install-stack.txt` equa
 Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
-and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`). A raw commit SHA still
-works, but a tag says which contract you are joining on. This tree is 2.1.0 and is not yet tagged, so `v2.0.0`
-stays the release a consumer pins: what 2.1.0 adds is in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says
-what each consumer does about 2.0.0.
+and the circuit's manifest in `contracts/`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`). A raw commit SHA still
+works, but a tag says which contract you are joining on. This tree is 2.1.0, tagged `v2.1.0`, the release a consumer pins:
+what 2.1.0 adds is in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
 
 ## Versioning
 
@@ -320,9 +319,9 @@ Each line names the test or workflow job that holds it. A claim without one is n
   it open pull requests was off) and #31 was opened by the workflow's own token (`github-actions[bot]`).
 - `cns.assay` has one writer and one reader (ASSAY); it does not meet the two-repository rule and is recorded
   above as the one exception.
-- 2.1.0 is not tagged, so every consumer still installs `v2.0.0` and gets none of the three new fields; the `stack`
-  job installs that tag too, so no CI run here exercises a writer filling `ghost_severity`, `claim` or `evidence`
-  or a reader joining on them. The tests prove the shapes, not a circuit run that carries them.
+- 2.1.0 is tagged and the circuit repositories pin it, but the tests here prove the shapes, not a circuit run that
+  carries `ghost_severity`, `claim` or `evidence`: no CI job here asserts a writer filling them or a reader joining on
+  them. `docs/evidence/proof-2026-10-29` holds the run records of three such runs; they are records, not checks.
 
 ## What broke and how it was fixed
 
