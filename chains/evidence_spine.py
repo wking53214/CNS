@@ -22,6 +22,12 @@ No repository ships the step from TIE evidence to a kernel root, or from a kerne
 script writes that step itself (`kernel_root`, `door`), the way any caller has to, and says so. That is the point of
 two scenarios: the kernel and the gateway cannot tell whether a caller's step was honest.
 
+`cns_composition.evidence_trace` is the CNS-side check that the four hops describe one document: the caller reads the
+hashes and ids each repository already computes off the real objects (`trace` below) and `problems` names every
+disagreement. Each scenario states whether that check holds (`one_document`). It closes the relabel, the mixed run
+and the root citing a source no hop read; it cannot see the human sign-off that never reaches TIE, HERALD's gate
+judging without its document, or a kernel asked behind the roster's back, and those stay stated as gaps.
+
 The roster is held once by `cns_composition.super_gate.SuperGate`: HERALD's source gate, the kernel's root gate and
 the gateway at ALPHA, HERALD's confidence gate at OMEGA on the claim the decision rests on (the invoice amount).
 
@@ -38,11 +44,13 @@ Governance_Gateway (each under src/) importable.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import logging
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
 from cns.gate import GateOutcome
+from cns_composition.evidence_trace import EvidenceTrace, problems
 from cns_composition.super_gate import SuperGate
 from conservation_kernel import Actor, Artifact as RootArtifact, ConservationKernel, EvidenceRecord, Proposition
 from conservation_kernel.cns_connector import CnsRootAdmissionGate
@@ -177,14 +185,30 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
     return decision, unchecked.count
 
 
-def facts(decided, evidence: list, refusal: str, **extra) -> Dict[str, object]:
+def trace(read: Read, tie_source_id: str, tie_text: str, evidence: list, root: RootArtifact, entry: DoorArtifact) -> EvidenceTrace:
+    """The facts each hop states about the document, read off the real objects. Every value is the repository's own."""
+    return EvidenceTrace(
+        herald_source_id=read.document.source_id, herald_text_sha256=read.document.content_hash,
+        claim_source_hashes=tuple(e["source_hash"] for e in read.export["admitted"]),
+        tie_source_id=tie_source_id, tie_text_sha256=hashlib.sha256(tie_text.encode("utf-8")).hexdigest(),
+        tie_evidence_ids=tuple(e.evidence_id for e in evidence),
+        tie_evidence_source_ids=tuple(e.source_ref.source_id for e in evidence),
+        root_text_sha256=root.content_digest,
+        root_source_refs=tuple(ref for prop in root.propositions for ref in prop.source_refs),
+        root_evidence_refs=tuple(ref for prop in root.propositions for ref in prop.evidence_refs),
+        root_artifact_digest=root.artifact_digest,
+        door_root_digest=str(entry.payload["root"]), door_source_id=str(entry.provenance["source_id"]))
+
+
+def facts(decided, evidence: list, refusal: str, seen: Optional[EvidenceTrace] = None, **extra) -> Dict[str, object]:
     decision, unchecked = decided
     run = decision.run
     return {"outcome": run.outcome.value, "allowed": decision.allowed,
             "blocked_by": sorted(r.gate for r in run.blocking()),
             "tie_refused": bool(refusal), "tie_evidence": len(evidence),
             "tie_source": sorted({e.source_ref.source_id for e in evidence}),
-            "omega_source_checked": run.omega_ran and unchecked == 0, **extra}
+            "omega_source_checked": run.omega_ran and unchecked == 0,
+            "one_document": problems(seen) == [] if seen is not None else None, **extra}
 
 
 def stopped(refusal: str, **extra) -> Dict[str, object]:
@@ -209,7 +233,8 @@ def run(text: str = INVOICE, source_id: str = "doc-1") -> Dict[str, object]:
     if refusal:
         return stopped(refusal)
     kernel, root = kernel_root(evidence, source_id, text)
-    return facts(decide(read, kernel, root, door(root, source_id)), evidence, refusal)
+    entry = door(root, source_id)
+    return facts(decide(read, kernel, root, entry), evidence, refusal, trace(read, source_id, text, evidence, root, entry))
 
 
 def export_to_other_text() -> Dict[str, object]:
@@ -230,7 +255,8 @@ def export_relabelled() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-7", INVOICE)
     kernel, root = kernel_root(evidence, "doc-7", INVOICE)
-    return facts(decide(read, kernel, root, door(root, "doc-7")), evidence, refusal)
+    entry = door(root, "doc-7")
+    return facts(decide(read, kernel, root, entry), evidence, refusal, trace(read, "doc-7", INVOICE, evidence, root, entry))
 
 
 def mixed_run() -> Dict[str, object]:
@@ -239,7 +265,9 @@ def mixed_run() -> Dict[str, object]:
     inflated_read = herald(INFLATED, "doc-1")
     evidence, refusal = tie(inflated_read.export, "doc-1", INFLATED)
     kernel, root = kernel_root(evidence, "doc-1", INFLATED)
-    return facts(decide(true_read, kernel, root, door(root, "doc-1")), evidence, refusal,
+    entry = door(root, "doc-1")
+    return facts(decide(true_read, kernel, root, entry), evidence, refusal,
+                 trace(true_read, "doc-1", INFLATED, evidence, root, entry),
                  root_text_is_what_herald_read=root.content == true_read.document.text)
 
 
@@ -247,7 +275,8 @@ def root_from_nowhere() -> Dict[str, object]:
     """The kernel root is a FACT citing a source no hop ever read, and no evidence at all."""
     read = herald(INVOICE, "doc-1")
     kernel, root = kernel_root([], "doc-never-read", "The invoice came to $41,200.00.", status=RootStatus.FACT)
-    return facts(decide(read, kernel, root, door(root, "doc-never-read")), [], "")
+    entry = door(root, "doc-never-read")
+    return facts(decide(read, kernel, root, entry), [], "", trace(read, "doc-1", INVOICE, [], root, entry))
 
 
 def human_signoff() -> Dict[str, object]:
@@ -266,13 +295,15 @@ def door_refused_kernel_proceeds() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
-    decided = decide(read, kernel, root, tampered(door(root, "doc-1")))
+    entry = tampered(door(root, "doc-1"))
+    decided = decide(read, kernel, root, entry)
     try:
         kernel.register_root(root)
         registered = True
     except Exception:  # noqa: BLE001 - any refusal counts as the kernel declining
         registered = False
-    return facts(decided, evidence, refusal, kernel_registered_after_refusal=registered)
+    return facts(decided, evidence, refusal, trace(read, "doc-1", INVOICE, evidence, root, entry),
+                 kernel_registered_after_refusal=registered)
 
 
 def dropped_gate_is_refused() -> str:
@@ -289,7 +320,7 @@ def dropped_gate_is_refused() -> str:
 
 #: The facts of the clean run. A scenario states only how it differs.
 HELD = {"outcome": PASS, "allowed": True, "blocked_by": [], "tie_refused": False, "tie_evidence": 5,
-        "tie_source": ["doc-1"]}
+        "tie_source": ["doc-1"], "one_document": True}
 NOT_REACHED = {"outcome": "not reached", "allowed": False, "tie_refused": True, "tie_evidence": 0}
 
 #: (name, how to observe it, the facts it must produce)
@@ -302,18 +333,18 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      export_to_other_text, {**NOT_REACHED, "tie_refused_because": "different text"}),
     ("SEAM HOLDS: HERALD's export edited after it was signed is refused by TIE",
      export_edited, {**NOT_REACHED, "tie_refused_because": "export did not verify"}),
-    ("GAP: HERALD read doc-1, TIE is told the same text is doc-7 and records it as doc-7; the roster allows it",
-     export_relabelled, {**HELD, "tie_source": ["doc-7"]}),
-    ("GAP: HERALD judged the true invoice, kernel and gateway judged the inflated one; every gate passes and the roster allows it",
-     mixed_run, {**HELD, "root_text_is_what_herald_read": False}),
-    ("GAP: a kernel root stated as FACT, citing a source no hop read and no evidence, is admitted and the roster allows it",
-     root_from_nowhere, {**HELD, "tie_evidence": 0, "tie_source": []}),
+    ("GAP: HERALD read doc-1, TIE is told the same text is doc-7 and records it as doc-7; the roster allows it, evidence_trace does not",
+     export_relabelled, {**HELD, "tie_source": ["doc-7"], "one_document": False}),
+    ("GAP: HERALD judged the true invoice, kernel and gateway judged the inflated one; every gate passes and the roster allows it, evidence_trace does not",
+     mixed_run, {**HELD, "root_text_is_what_herald_read": False, "one_document": False}),
+    ("GAP: a kernel root stated as FACT, citing a source no hop read and no evidence, is admitted and the roster allows it, evidence_trace does not",
+     root_from_nowhere, {**HELD, "tie_evidence": 0, "tie_source": [], "one_document": False}),
     ("GAP: a named human confirms the amount at HERALD and the confirmed amount never reaches TIE",
      human_signoff, {"herald_confirmed_amounts": 2, "tie_refused": False, "tie_amounts": 0, "tie_evidence": 3}),
     ("GAP: the gateway refuses the door and the roster says no, yet the kernel called directly registers the root",
      door_refused_kernel_proceeds,
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"],
-      "kernel_registered_after_refusal": True}),
+      "kernel_registered_after_refusal": True, "one_document": False}),
 ]
 
 
