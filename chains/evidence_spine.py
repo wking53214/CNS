@@ -48,6 +48,8 @@ Two other seams are closed in the repositories themselves, and the scenarios che
 root stated as FACT that cites no evidence. A person's sign-off at HERALD reaches TIE on its own path
 (`signoffs_from_herald_export`), naming who confirmed it, why and when, apart from machine readings. HERALD's
 confidence gate is given its document, so it re-checks each claim's citation instead of logging that it did not.
+A scenario hands it the text HERALD read as a record relabelled as an attestation: same_subject compares identity
+and text, not standing, so only the re-check can refuse it, and it does.
 
 WHAT THIS DOES NOT COVER
 
@@ -80,7 +82,7 @@ from governance_gateway.models import Authority, EpistemicStatus, Scope
 from herald import ConfidenceGate, HumanConfirmation, build_handoff
 from herald.cns_connector import HeraldConfidenceGate, HeraldSourceGate, run_governed
 from herald.handoff import verify_export
-from herald.source import STANDING_RECORD, SourceDocument
+from herald.source import STANDING_ATTESTATION, STANDING_RECORD, SourceDocument
 from tie.evidence.herald_intake import HeraldIntakeRefused, evidence_from_herald_export, signoffs_from_herald_export
 from tie.models import SourceRecord
 
@@ -377,6 +379,18 @@ def door_refused_kernel_proceeds(guarded: bool) -> Dict[str, object]:
                  refused_by_guard=by_guard)
 
 
+def standing_relabelled() -> Dict[str, object]:
+    """HERALD read the invoice as the system of record. Every HERALD seat is then handed the same text relabelled as
+    one party's attestation. same_subject reads identity and text, which match, so the refusal can only come from
+    HERALD's confidence gate re-checking the claim against the document it is handed."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    relabelled = SourceDocument(source_id="doc-1", text=INVOICE, standing=STANDING_ATTESTATION)
+    return facts(decide(dataclasses.replace(read, document=relabelled), kernel, root, door(root, "doc-1")),
+                 evidence, refusal)
+
+
 def unguarded_kernel_gets_no_approval() -> Dict[str, object]:
     """Everything is in order except that the kernel was built without a guard: the roster does not approve it."""
     read = herald(INVOICE, "doc-1")
@@ -466,6 +480,8 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      run, HELD),
     ("SEAM HOLDS: HERALD's confidence gate, given its document by the roster, re-checks the amount claim's citation against it",
      run, {"outcome": PASS, "allowed": True, "omega_source_checked": True}),
+    ("SEAM HOLDS: the record HERALD read is handed to the roster relabelled as an attestation; same_subject cannot see standing, and HERALD's confidence gate refuses the claim against it",
+     standing_relabelled, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["herald_confidence"]}),
     ("SEAM HOLDS: HERALD's export offered to TIE with different text is refused before anything downstream runs",
      export_to_other_text, {**NOT_REACHED, "tie_refused_because": "different text"}),
     ("SEAM HOLDS: HERALD's export edited after it was signed is refused by TIE",
