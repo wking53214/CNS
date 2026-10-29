@@ -188,9 +188,19 @@ def facts(decided, evidence: list, refusal: str, **extra) -> Dict[str, object]:
 
 
 def stopped(refusal: str, **extra) -> Dict[str, object]:
-    """TIE refused, so nothing downstream had anything to judge."""
+    """TIE refused, so nothing downstream had anything to judge. The reason is a fact: a refusal for the wrong
+    reason (any failure at all) would otherwise vouch for a seam it never tested."""
     return {"outcome": "not reached", "allowed": False, "blocked_by": [], "tie_refused": bool(refusal),
-            "tie_evidence": 0, "tie_source": [], **extra}
+            "tie_refused_because": _because(refusal), "tie_evidence": 0, "tie_source": [], **extra}
+
+
+#: TIE's own words for the two refusals the seams rest on (tie.evidence.herald_intake).
+REFUSAL_PHRASES = {"different text": "read from different text", "export did not verify": "export did not verify"}
+
+
+def _because(refusal: str) -> str:
+    """Which of TIE's refusals this was, by its own wording, or the raw text if it was neither."""
+    return next((label for label, phrase in REFUSAL_PHRASES.items() if phrase in refusal), refusal)
 
 
 def run(text: str = INVOICE, source_id: str = "doc-1") -> Dict[str, object]:
@@ -289,9 +299,9 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("GAP: HERALD's confidence gate, seated through CNS, judges the amount claim without its document",
      run, {"outcome": PASS, "allowed": True, "omega_source_checked": False}),
     ("SEAM HOLDS: HERALD's export offered to TIE with different text is refused before anything downstream runs",
-     export_to_other_text, NOT_REACHED),
+     export_to_other_text, {**NOT_REACHED, "tie_refused_because": "different text"}),
     ("SEAM HOLDS: HERALD's export edited after it was signed is refused by TIE",
-     export_edited, NOT_REACHED),
+     export_edited, {**NOT_REACHED, "tie_refused_because": "export did not verify"}),
     ("GAP: HERALD read doc-1, TIE is told the same text is doc-7 and records it as doc-7; the roster allows it",
      export_relabelled, {**HELD, "tie_source": ["doc-7"]}),
     ("GAP: HERALD judged the true invoice, kernel and gateway judged the inflated one; every gate passes and the roster allows it",
