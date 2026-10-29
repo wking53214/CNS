@@ -7,6 +7,8 @@
 # chains/ecology_answer.py  an Ecology answer record judged by DIT's gates through cns_composition.super_gate, the
 #                        verdicts bound to the answer text and tied to Ecology's record by its answer hash. Six scenarios, one of
 #                        them a DIT gate left out of the request, which cns_composition.super_gate refuses as a breach.
+# chains/evidence_spine.py  one document through HERALD, TIE, Conservation_Kernel and Governance_Gateway, then broken at
+#                        each seam. Fifteen scenarios: thirteen seams that hold, one gap stated as a fact, and the clean run.
 #
 # Each script exits 1 when a scenario differs from what it states, so this goes red the day a repository changes in a
 # way that breaks a chain: the failure points at the scenario, and the repositories' own suites cannot see it.
@@ -85,6 +87,21 @@ jobs:
           repository: ${{ github.repository_owner }}/Ecology
           path: stack/Ecology
           persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ github.repository_owner }}/HERALD
+          path: stack/HERALD
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ github.repository_owner }}/TIE
+          path: stack/TIE
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ github.repository_owner }}/Conservation_Kernel
+          path: stack/Conservation_Kernel
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
@@ -102,3 +119,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/Ecology:${{ github.workspace }}/stack/DIT/src
         run: python hub/chains/ecology_answer.py
+      - name: One document through the evidence spine
+        env:
+          PYTHONPATH: ${{ github.workspace }}/stack/HERALD:${{ github.workspace }}/stack/TIE/src:${{ github.workspace }}/stack/Conservation_Kernel/src:${{ github.workspace }}/stack/Governance_Gateway/src
+        run: python hub/chains/evidence_spine.py
