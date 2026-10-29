@@ -104,7 +104,10 @@ another repository's action: hand it to a kernel as its `root_guard`, call
 `authorize(decision)` once the decision is a go, and the kernel registers a root
 only if it reads as exactly the approved document, and only once. A guard that
 was never authorized, or was given a refused decision, stays shut. It protects
-the kernels built with it; a kernel built without one is not stopped.
+the kernels built with it. A roster can insist on that: seat the kernel's root
+gate with `require_guard=True` and a kernel built without a guard gets no
+approval. A caller who builds an unguarded kernel and calls it directly is
+still not stopped.
 
 ## The stack manifest
 
