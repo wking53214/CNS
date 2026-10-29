@@ -37,6 +37,9 @@ single control point that cannot be talked out of a gate, which is this.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
 from dataclasses import dataclass
 from typing import Callable, Iterable, Mapping, Optional, Tuple
 
@@ -46,6 +49,11 @@ from .gate_chain import ChainRun, Lazy
 from .repo_gates import ends_of, run_repo_chain
 
 __all__ = ["Decision", "Judged", "MissingCandidate", "SubjectAgreement", "SuperGate"]
+
+#: Process-local key. Only `SuperGate.decide` uses it, to prove it issued a Decision. It is never exported, written
+#: or logged. Like HERALD's issuer key it proves origin only inside this process: a proof means nothing to another
+#: process, and code in this process that is willing to read a private name can still reach it.
+_ISSUER_KEY: bytes = secrets.token_bytes(32)
 
 #: A seat on the roster: the repository the gate came from, and the gate.
 Seat = Tuple[str, Gate]
@@ -145,6 +153,17 @@ class Decision:
     #: The one document every `same_subject` seat judged, when the roster has that check and the decision passed.
     #: The `CNS:same_subject` verdict binds it, so `root` covers it. None otherwise, never a guess.
     subject: Optional[Judged] = None
+    #: Proof that `SuperGate.decide` issued this decision, over everything `allowed` and the guard rely on. Empty
+    #: for a decision built any other way. See `issued`.
+    proof: str = ""
+
+    @property
+    def issued(self) -> bool:
+        """Whether `SuperGate.decide` issued exactly this decision in this process. A decision written by hand,
+        copied field by field, or edited after issue is not. `allowed` does not ask this; anything that acts on a
+        decision (the `DecisionGuard`) should."""
+        return (bool(self.proof) and self.binds(self.root)
+                and hmac.compare_digest(self.proof, _proof(self.run, self.root, self.subject)))
 
     @property
     def outcome(self) -> GateOutcome:
@@ -167,6 +186,15 @@ class Decision:
     def binds(self, root: str) -> bool:
         """Whether an approval carrying `root` was issued for exactly this decision."""
         return root == self.root == _root(self.seats, self.run.results)
+
+
+def _proof(run: ChainRun, root: str, subject: Optional[Judged]) -> str:
+    """HMAC over what a decision's `allowed` turns on: the root (roster and every verdict), the run's own
+    outcome and flags, and the agreed subject."""
+    body = subject_digest({"root": root, "outcome": run.outcome.value, "omega_ran": run.omega_ran,
+                           "complete": run.complete,
+                           "subject": [subject.identity, subject.digest] if subject is not None else None})
+    return hmac.new(_ISSUER_KEY, body.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _root(seats: Tuple[str, ...], results: Tuple[GateResult, ...]) -> str:
@@ -294,4 +322,4 @@ class SuperGate:
             read = set(views().values())
             if len(read) == 1 and all(isinstance(j, Judged) for j in read):
                 subject = next(iter(read))
-        return Decision(run=run, seats=self._keys, root=root, subject=subject)
+        return Decision(run=run, seats=self._keys, root=root, subject=subject, proof=_proof(run, root, subject))

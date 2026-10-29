@@ -103,7 +103,10 @@ A passing decision records the one document its seats agreed on (`Decision.subje
 another repository's action: hand it to a kernel as its `root_guard`, call
 `authorize(decision)` once the decision is a go, and the kernel registers a root
 only if it reads as exactly the approved document, and only once. A guard that
-was never authorized, or was given a refused decision, stays shut. It protects
+was never authorized, or was given a refused decision, stays shut, and so does
+one given a decision the roster did not issue: `Decision.issued` is a
+process-local proof that `SuperGate.decide` made it, so a decision written or
+copied by hand cannot open a guard. The proof means nothing to another process. It protects
 the kernels built with it. A roster can insist on that: seat the kernel's root
 gate with `require_guard=True` and a kernel built without a guard gets no
 approval. A caller who builds an unguarded kernel and calls it directly is

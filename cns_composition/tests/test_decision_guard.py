@@ -90,3 +90,63 @@ def test_a_reader_that_raises_or_returns_the_wrong_thing_never_permits():
 def test_the_reader_must_be_callable():
     with pytest.raises(ValueError, match="subject_of"):
         DecisionGuard("not callable")
+
+
+# ------------------------------------------------- only a SuperGate can issue a decision
+
+import dataclasses  # noqa: E402
+
+from cns_composition.gate_chain import ChainRun  # noqa: E402
+from cns_composition.super_gate import Decision  # noqa: E402
+
+
+def test_a_decision_the_super_gate_issued_says_so():
+    assert decision().issued is True
+
+
+def test_a_decision_copied_field_by_field_is_not_issued_and_cannot_authorize():
+    real = decision()
+    copy = Decision(run=real.run, seats=real.seats, root=real.root, subject=real.subject)
+    assert copy.allowed and not copy.issued
+    g = guard()
+    with pytest.raises(ValueError, match="not issued"):
+        g.authorize(copy)
+    assert not g.authorized and g(("doc-1", "abc")) is False
+
+
+def test_a_decision_with_no_gate_ever_run_is_not_issued():
+    from cns.gate import GateResult, subject_digest
+    from cns_composition.super_gate import _root
+    seats = ("Governance_Gateway:door",)
+    results = (GateResult(gate="door", position=A, outcome=GateOutcome.PASS, reason="trust me",
+                          subject="door", subject_digest=subject_digest({"x": 1})),)
+    run = ChainRun(results=results, outcome=GateOutcome.PASS, omega_ran=True, complete=True)
+    made_up = Decision(run=run, seats=seats, root=_root(seats, results), subject=Judged("doc-1", "abc"))
+    assert made_up.allowed and not made_up.issued
+    with pytest.raises(ValueError, match="not issued"):
+        guard().authorize(made_up)
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: dataclasses.replace(d, subject=Judged("doc-1", "other")),
+    lambda d: dataclasses.replace(d, run=dataclasses.replace(d.run, outcome=GateOutcome.TERMINAL_BREACH)),
+    lambda d: dataclasses.replace(d, run=dataclasses.replace(d.run, complete=False)),
+    lambda d: dataclasses.replace(d, run=dataclasses.replace(d.run, omega_ran=False)),
+    lambda d: dataclasses.replace(d, root="0" * 64),
+    lambda d: dataclasses.replace(d, proof=""),
+])
+def test_editing_an_issued_decision_after_issue_voids_the_proof(edit):
+    assert decision().issued and not edit(decision()).issued
+
+
+def test_a_decision_from_a_refused_roster_is_issued_but_still_cannot_authorize():
+    refused = decision(door=GateOutcome.TERMINAL_BREACH)
+    assert refused.issued and not refused.allowed
+    with pytest.raises(ValueError, match="not a go"):
+        guard().authorize(refused)
+
+
+def test_swapping_a_verdict_inside_an_issued_decision_voids_it():
+    real = decision()
+    swapped = dataclasses.replace(real.run, results=(real.run.results[0],) + real.run.results[:1] + real.run.results[2:])
+    assert not dataclasses.replace(real, run=swapped).issued

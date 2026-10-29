@@ -36,7 +36,8 @@ THE LAST HOP: A PERMISSION, NOT A HOPE
 
 The roster decides, but registering the root is an action in another repository, and the kernel imports no CNS. So
 the kernel here is built with `root_guard=DecisionGuard(reads_root)`: it registers a root only after the roster's
-decision was a go, and then once, for the root that decision judged. A refused decision leaves the guard shut. A
+decision was a go, and then once, for the root that decision judged. A refused decision leaves the guard shut, and so does one the roster
+did not issue (`Decision.issued`). A
 kernel built without a guard cannot be stopped from outside, but the roster refuses to approve one (the kernel's
 seat is built with `require_guard=True`), so no approval is ever issued for it. Calling such a kernel directly still
 registers a root, and a scenario records that as the one GAP left: the guard protects the kernels that carry it.
@@ -66,7 +67,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from cns.gate import GateOutcome
 from cns_composition.decision_guard import DecisionGuard
-from cns_composition.super_gate import Judged, SuperGate
+from cns_composition.super_gate import Decision, Judged, SuperGate
 from conservation_kernel import Actor, Artifact as RootArtifact, ConservationKernel, EvidenceRecord, Proposition
 from conservation_kernel.cns_connector import CnsRootAdmissionGate
 from conservation_kernel.enums import EpistemicStatus as RootStatus
@@ -397,6 +398,20 @@ def approved_registration() -> Dict[str, object]:
                  second_root_registered=second, second_refused_by_guard=by_guard)
 
 
+def handmade_decision() -> Dict[str, object]:
+    """The roster allows the document. A caller copies that decision field by field into one of their own and offers it."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_guard()
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+    real = decide(read, kernel, root, door(root, "doc-1"))[0]
+    copy = Decision(run=real.run, seats=real.seats, root=real.root, subject=real.subject)
+    opened = authorize(guard, copy)
+    registered, by_guard = register(kernel, root)
+    return facts((real, 0), evidence, refusal, copy_looks_allowed=copy.allowed, copy_issued=copy.issued,
+                 guard_opened=opened, kernel_registered=registered, refused_by_guard=by_guard)
+
+
 def approval_used_on_another_document() -> Dict[str, object]:
     """The roster allows the true invoice. The approval is then used to register a root built from the inflated one."""
     read = herald(INVOICE, "doc-1")
@@ -477,6 +492,9 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("SEAM HOLDS: an approved decision opens the guard for the root it judged, once; a second root is refused",
      approved_registration, {**HELD, "guard_opened": True, "kernel_registered": True, "second_root_registered": False,
                              "second_refused_by_guard": True}),
+    ("SEAM HOLDS: a decision copied field by field, never issued by the roster, cannot open the guard",
+     handmade_decision, {**HELD, "copy_looks_allowed": True, "copy_issued": False, "guard_opened": False,
+                         "kernel_registered": False, "refused_by_guard": True}),
     ("SEAM HOLDS: the approval for the true invoice cannot register a root built from the inflated one",
      approval_used_on_another_document, {**HELD, "guard_opened": True, "inflated_root_registered": False,
                                          "refused_by_guard": True}),
