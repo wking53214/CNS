@@ -50,6 +50,7 @@ ENDS: Mapping[str, FrozenSet[GatePosition]] = {
     "DGK": frozenset({_A}),                       # perimeter rules and health limits judge a request before anything commits
     "URE": frozenset({_A, _O}),                   # omega by default (the state the work left), alpha on request
     "CNS": frozenset({_A}),                       # the composition layer's own checks (super_gate's same_subject), run first
+    "CCC": frozenset({_A}),                       # ccc.transition judges an attempted store change before it commits
 }
 
 #: A step: the repository the gate came from, the gate, and the candidate it judges.
