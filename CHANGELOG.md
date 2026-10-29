@@ -9,11 +9,10 @@ release and "floor" the lowest a consumer may pin; both are defined in `cns_comp
 Tagging is the owner's decision. An entry whose heading says "not yet tagged" describes this tree; after the tag
 exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the table and moves `current`.
 
-## [2.2.0] - 2026-10-29 (not yet tagged)
+## [2.2.0] - 2026-10-29
 
 The decision guard, in `cns_composition` only. The `cns` package is untouched: no shape changed, so `tests/public_shape.json`
-moves only its version. Not tagged: `contracts/cns-releases.json` keeps `current` at `v2.1.0` and the floor at 1.9.0 until
-the owner tags, and `release --check` calls this tree unreleased. The 2.x line lacked main's SuperGate work, so this also
+moves only its version. Tagged `v2.2.0` (commit `ce6bd05`). The 2.x line lacked main's SuperGate work, so this also
 carries the required-roster fix; merged by #48.
 
 ### Added
