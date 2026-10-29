@@ -17,6 +17,7 @@ WORKFLOW = (ROOT / ".github" / "workflows" / "chains.yml").read_text(encoding="u
 FULL = ROOT / "chains" / "full_chain.py"
 SPINE_RUN = ROOT / "chains" / "spine_run.py"
 ECOLOGY = ROOT / "chains" / "ecology_answer.py"
+EVIDENCE = ROOT / "chains" / "evidence_spine.py"
 
 
 def test_the_workflow_can_only_read_and_runs_on_a_schedule_by_hand_and_for_its_own_paths():
@@ -36,7 +37,7 @@ def test_nothing_from_the_event_is_spliced_into_a_shell():
 
 def test_every_repository_the_chains_use_is_checked_out():
     declared = set(re.findall(r"repository: \$\{\{ github\.repository_owner \}\}/(\S+)", WORKFLOW))
-    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", *SPINE}
+    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", "HERALD", "TIE", "Conservation_Kernel", *SPINE}
 
 
 def test_the_full_chain_names_only_repositories_whose_gate_ends_cns_declares():
@@ -114,7 +115,7 @@ def _required_seats(path: Path) -> tuple:
 
 def test_each_chain_requires_a_hand_written_roster_and_never_one_derived_from_its_own_seats():
     """A roster checked against itself passes with a gate missing, because it is missing from both."""
-    for path in (FULL, ECOLOGY):
+    for path in (FULL, ECOLOGY, EVIDENCE):
         seats, passed = _required_seats(path)
         assert seats and all(isinstance(s, str) and s.count(":") == 1 for s in seats) and len(set(seats)) == len(seats)
         assert {s.split(":")[0] for s in seats} <= set(ENDS)
@@ -123,6 +124,31 @@ def test_each_chain_requires_a_hand_written_roster_and_never_one_derived_from_it
 
 
 def test_both_chains_check_that_a_gate_dropped_from_the_roster_is_refused():
-    for path in (FULL, ECOLOGY):
+    for path in (FULL, ECOLOGY, EVIDENCE):
         text = path.read_text(encoding="utf-8")
         assert "dropped_gate_is_refused" in text and "drop=" in text
+
+
+def test_the_evidence_script_runs_with_exactly_its_four_repositories_importable():
+    step = WORKFLOW.split("name: One document through the evidence spine\n", 1)[1]
+    assert "run: python hub/chains/evidence_spine.py" in step.split("\n      - ", 1)[0]
+    path = re.search(r"PYTHONPATH: (.+)", step).group(1).split(":")
+    assert path == ["${{ github.workspace }}/stack/HERALD", "${{ github.workspace }}/stack/TIE/src",
+                    "${{ github.workspace }}/stack/Conservation_Kernel/src", "${{ github.workspace }}/stack/Governance_Gateway/src"]
+
+
+def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repositories():
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    assert "SCENARIOS" in text and "return 1 if" in text and "raise SystemExit(main())" in text
+    imported = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert imported == {"__future__", "cns", "cns_composition", "conservation_kernel", "governance_gateway", "herald", "tie", "typing"}
+
+
+def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact():
+    """A recorded gap is an assertion, never a skip: each GAP scenario names the fact it must produce."""
+    tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
+    names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
+             and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
+    assert sum(name.startswith("GAP: ") for name in names) == 6
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 2
