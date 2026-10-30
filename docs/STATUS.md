@@ -9,7 +9,7 @@ under "Known open defects".
 At the heads in the table below the circuit installs together, runs end to end on a throwaway repository and ends
 ACCEPT, and refuses every bad setup it was tested against: CNS `stack` job, run 41018093667, at CNS commit
 5c0dbc9ef27c0409b302694411d4dd727b008319 (canary ACCEPT on Warden's claim seat, in a stack with no Drafter and no
-Burnish; `circuit_refusals` 13 of 13 refused, run with Warden 0.16.2). CNS 2.2.0 is tagged `v2.2.0` (the owner's tag; the `cns` package is the
+Burnish; `circuit_refusals` 13 of 13 refused, run with Warden 0.16.2; the case list has grown to sixteen since, see below). CNS 2.2.0 is tagged `v2.2.0` (the owner's tag; the `cns` package is the
 same as 2.1.0 apart from its version string, the release adds the decision guard in `cns_composition`) and every
 repository pins that tag, the circuit's five and the three released ones; Warden is at 0.16.2 (0.16.2 fixed its roster rule, below; 0.16.0 added the removal
 gate for claimed commits, moved the Judge tested set to JUDGE 0.5.1 and added opt-in suite reuse across runs). The owner
@@ -51,7 +51,7 @@ in the pinned commit; the `.git/info/exclude` case is a known open defect with n
 |---|---|
 | The five circuit repositories install together, pip is satisfied, exactly one `cns` is installed, every shared pin agrees (the three released repositories' pins too) | CNS `stack` job (run 41018093667) at CNS commit 5c0dbc9, plus `seat_pins --consumers`, `cns_versions --consumers --spelling tag`, `install_stack --check`, `repin --check`, same job |
 | The whole circuit ends ACCEPT on a throwaway target, through the claim seat, with no Drafter and no Burnish | `circuit_canary`, same `stack` job |
-| The circuit refuses a dirty member, an omitted seat, a short, uppercase or wrong pin, hidden git changes, a red suite, a seat the manifest names that the folder lacks, and a Burnish or a Drafter checkout the manifest does not name | `circuit_refusals`, 13 of 13 refused, same `stack` job |
+| The circuit refuses a dirty member, an omitted seat, a short, uppercase or wrong pin, hidden git changes, a red suite, a seat the manifest names that the folder lacks, and a Burnish or a Drafter checkout the manifest does not name | `circuit_refusals`, 13 of 13 refused, same `stack` job (sixteen cases now: Stage 4 added three, and the roster cases also require the reason to name the seat) |
 | CNS's own suite | 1096 passed, 0 skipped at 5c0dbc9, a local run on Python 3.12; CNS `ci` run 41018093622 (Python 3.10 to 3.13, packaging) |
 | Each repository's own suite and lint | the CI runs in the table below, all jobs green |
 
@@ -221,7 +221,7 @@ moved `contracts/warden-stack.json` (WARDEN and JUDGE), `contracts/install-stack
 41017661736 green), and `circuit_refusals` gained the case `unnamed_drafter` in step 2 (commit 5c0dbc9, `ci` 41018093622 and
 `stack` 41018093667 green): 13 of 13 refused at Warden 0.16.2, canary ACCEPT. The count is stated in
 `.github/workflows/stack.yml` (comment), this page (the opening paragraph and the table of claims) and
-[RELEASED_SEATS.md](RELEASED_SEATS.md), and all three say thirteen now.
+[RELEASED_SEATS.md](RELEASED_SEATS.md), and all three said thirteen then; Stage 4 raised the count to sixteen and changed all three.
 
 Existing tests edited under rule 5 of `CLAUDE.md`, each only because it asserted the exact text or case list the named step
 changed:

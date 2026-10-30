@@ -21,8 +21,10 @@
 #   circuit_refusals  on throwaway copies of the stack, each thing the manifest exists to refuse (a dirty member, a
 #                   seat the manifest does not name, a short, uppercase or wrong pin, a change hidden from git status
 #                   by an index flag or the caller's git configuration, a seat the manifest names that the folder lacks,
-#                   a Burnish or a Drafter checkout the manifest does not name) is refused, and a red target suite is not
-#                   accepted. At the pinned Warden all thirteen cases are refused. A manifest at a Warden that does not
+#                   a Burnish or a Drafter checkout the manifest does not name, whether the change is claimed by commit or by diff, or
+#                   a seat is named with --drafter or --finisher) is refused, and a red target suite is not
+#                   accepted. At the pinned Warden all sixteen cases are refused, and each roster case also requires that
+#                   Warden's reason names the seat. A manifest at a Warden that does not
 #                   refuse one of them (0.13.7 did not refuse four) makes this step red, and the red is the finding.
 #
 # It runs on pushes and pull requests to main and to the horsemen branch, and weekly, because the stack can break

@@ -64,6 +64,15 @@ class Case:
     red_target: bool = False
     #: Stack folders left out of the throwaway copy (a seat the manifest names but the folder lacks).
     leave_out: Tuple[str, ...] = ()
+    #: How the run supplies the Drafter seat (and, for "finisher", the finisher): "claim-commit" (the default, as the
+    #: canary does), "claim-diff" (the same change as a diff file), "drafter" (an explicit `--drafter`, no claim) or
+    #: "finisher" (the claimed commit plus an explicit `--finisher`). A roster rule that holds for one of these and not
+    #: for another is a defect, so each path has a case.
+    supply: str = "claim-commit"
+    #: A seat or repository the refusal reason must name (compared without regard to case); empty for no requirement.
+    #: A refusal on exit 2 and USAGE_ERROR alone could be a refusal for another reason, so the roster cases also ask
+    #: that Warden say which seat it refused.
+    reason_names: str = ""
 
 
 @dataclass(frozen=True)
@@ -158,7 +167,8 @@ def _add_unnamed_seat(name: str) -> Callable[[Path, Path, Dict[str, str], Dict[s
 CASES: Tuple[Case, ...] = (
     Case("dirty_tracked", f"a tracked file of {_SEAT} is modified after the pin", _REFUSED, _edit_seat_file),
     Case("dirty_untracked", f"an untracked file is added to {_SEAT}", _REFUSED, _add_untracked),
-    Case("omitted_seat", f"{_SEAT} is in the stack but not in the manifest", _REFUSED, _omit_seat),
+    Case("omitted_seat", f"{_SEAT} is in the stack but not in the manifest", _REFUSED, _omit_seat,
+         reason_names=_SEAT),
     Case("short_pin", f"the manifest pins {_SEAT} by a 7-character prefix", _REFUSED, _pin_as(lambda c: c[:7])),
     Case("uppercase_pin", f"the manifest pins {_SEAT} in uppercase hex", _REFUSED, _pin_as(str.upper)),
     Case("wrong_commit", f"the manifest pins {_SEAT} to a commit the checkout is not at", _REFUSED, _pin_as(lambda c: "0" * 40)),
@@ -172,11 +182,22 @@ CASES: Tuple[Case, ...] = (
     # Warden's roster rule, and nothing else: a seat the manifest names must be in the folder, and a seat the folder
     # holds must be named by the manifest, including the releasable one. Configuration integrity, not a detector.
     Case("missing_seat", "SWIZZLE is in the manifest but not in the stack folder", _REFUSED, _nothing,
-         leave_out=("SWIZZLE",)),
+         leave_out=("SWIZZLE",), reason_names="swizzle"),
     Case("unnamed_burnish", "a BURNISH checkout is in the stack folder but not in the manifest", _REFUSED,
-         _add_unnamed_seat("burnish")),
+         _add_unnamed_seat("burnish"), reason_names="burnish"),
     Case("unnamed_drafter", "a DRAFTER checkout is in the stack folder but not in the manifest, and the claim seat "
-         "proposes", _REFUSED, _add_unnamed_seat("drafter")),
+         "proposes", _REFUSED, _add_unnamed_seat("drafter"), reason_names="drafter"),
+    # The same roster rule through each other path that supplies a seat (Warden 0.16.1 compared the folder with the
+    # manifest only for a seat whose option was still unset, so the path mattered). Configuration integrity again.
+    Case("unnamed_drafter_claim_diff", "a DRAFTER checkout is in the stack folder but not in the manifest, and the "
+         "change is claimed as a diff file", _REFUSED, _add_unnamed_seat("drafter"), supply="claim-diff",
+         reason_names="drafter"),
+    Case("unnamed_drafter_explicit", "a DRAFTER checkout is in the stack folder but not in the manifest, and "
+         "--drafter names the seat", _REFUSED, _add_unnamed_seat("drafter"), supply="drafter",
+         reason_names="drafter"),
+    Case("unnamed_burnish_explicit", "a BURNISH checkout is in the stack folder but not in the manifest, and "
+         "--finisher names the seat", _REFUSED, _add_unnamed_seat("burnish"), supply="finisher",
+         reason_names="burnish"),
 )
 
 
@@ -216,6 +237,25 @@ def _make_target(root: Path, red: bool) -> Tuple[Path, str]:
     return target, canary._claim_commit(target)
 
 
+_SUPPLIES = ("claim-commit", "claim-diff", "drafter", "finisher")
+
+
+def _supply_args(supply: str, target: Path, claimed: str, root: Path) -> List[str]:
+    """The Warden options that put a proposer (and for "finisher" a finisher) into the run, one path per supply."""
+    if supply == "claim-commit":
+        return ["--claim-commit", claimed]
+    if supply == "claim-diff":
+        diff = root / "claimed.diff"
+        diff.write_text(_git(target, "diff", "--no-color", f"{claimed}^", claimed) + "\n", encoding="utf-8")
+        return ["--claim-diff", str(diff), "--claim-subject", "write the circle area with a power",
+                "--claim-author", "circuit-refusals <circuit-refusals@example.org>"]
+    if supply == "drafter":
+        return ["--drafter", "drafter.seat:Drafter"]
+    if supply == "finisher":
+        return ["--claim-commit", claimed, "--finisher", "burnish.finisher:Burnish"]
+    raise OSError(f"unknown supply {supply!r}")
+
+
 def run_case(case: Case, stack: Path, cns: Path, *, python: Optional[str] = None,
              timeout: int = _TIMEOUT_SECONDS) -> Outcome:
     """Build the case on throwaway clones of `stack` and say what Warden answered."""
@@ -235,8 +275,12 @@ def run_case(case: Case, stack: Path, cns: Path, *, python: Optional[str] = None
             return Outcome(case.name, False, "REFUSAL_ERROR", -1, f"the case could not be built: {type(err).__name__}: {err}")
         paths = [str(canary._folder(copy, name)) for name in canary._IMPORTED] + [str(hub)]
         env["PYTHONPATH"] = os.pathsep.join(paths)
+        try:
+            supply = _supply_args(case.supply, target, claimed, root)
+        except (OSError, subprocess.SubprocessError) as err:
+            return Outcome(case.name, False, "REFUSAL_ERROR", -1, f"the case could not be built: {type(err).__name__}: {err}")
         cmd = [python or sys.executable, "-m", "warden.cli", "tagteam", str(target),
-               "--stack", str(copy), "--cns", str(hub), "--claim-commit", claimed,
+               "--stack", str(copy), "--cns", str(hub), *supply,
                "--authorize", "circuit-refusals", "--reason", f"must the circuit refuse: {case.what}",
                "--scope", "code"]
         try:
@@ -256,6 +300,9 @@ def run_case(case: Case, stack: Path, cns: Path, *, python: Optional[str] = None
         return Outcome(case.name, False, "REFUSAL_ERROR", done.returncode, "Warden's run record is not an object")
     decision, reason = str(record.get("decision", "")), str(record.get("reason", ""))
     ok = (decision, done.returncode) in case.expected
+    if ok and case.reason_names and case.reason_names.casefold() not in reason.casefold():
+        return Outcome(case.name, False, decision, done.returncode,
+                       f"refused, but the reason does not name {case.reason_names}: {reason[:300]}")
     return Outcome(case.name, ok, decision, done.returncode, reason)
 
 

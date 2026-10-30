@@ -40,7 +40,7 @@ for name, pinned in manifest.items():
     head = subprocess.run(["git", "-C", str(folder), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     if head != pinned:
         out("USAGE_ERROR", 2, f"the stack manifest pins {name!r} to {pinned[:12]}, but the checkout is at {head[:12]}")
-if "drafter" not in folders and "--claim-commit" not in args:
+if "drafter" not in folders and not {"--claim-commit", "--claim-diff", "--drafter"} & set(args):
     out("USAGE_ERROR", 2, "this stack has no drafter and nothing to propose; give --claim-commit, --claim-diff or --drafter")
 for used in ("drafter", "judge", "burnish"):
     if used in folders and used not in {n.lower() for n in manifest}:
@@ -64,6 +64,20 @@ if "assert circle(1) == 0" in (target / "tests" / "test_area.py").read_text():
     out("INCONCLUSIVE", 6, "Cycle 1: the suite is not green; nothing was written")
 out("ACCEPT", 0, "")
 '''
+
+#: Warden 0.16.1 as the 2026-10-30 work found it: the folder was compared with the manifest only for a seat whose option was
+#: still unset, so a DRAFTER folder was let through when --claim-diff or --drafter supplied the seat (--claim-commit already
+#: did too), and a BURNISH folder when --finisher supplied the finisher.
+LEGACY_CLI = STRICT_CLI.replace(
+    '''    if used in folders and used not in {n.lower() for n in manifest}:''',
+    '''    supplied = (used == "drafter" and {"--claim-commit", "--claim-diff", "--drafter"} & set(args)) or (
+        used == "burnish" and "--finisher" in args)
+    if used in folders and used not in {n.lower() for n in manifest} and not supplied:''')
+
+#: A Warden that refuses every stack problem for the same vague reason, which names no seat.
+VAGUE_CLI = STRICT_CLI.replace("the stack manifest does not name {used!r}, yet this run uses it as a seat",
+                               "the stack is not what the manifest says").replace(
+    "the stack manifest names {name!r}, which is not in the --stack folder", "the stack is not what the manifest says")
 
 LENIENT_CLI = '''
 import json
@@ -146,11 +160,11 @@ def test_no_case_is_refused_for_want_of_a_proposer(circuit, case):
     assert "nothing to propose" not in outcome.reason
 
 
-def test_the_ten_cases_the_decision_record_promises_and_the_three_roster_cases_are_all_here():
+def test_the_ten_cases_the_decision_record_promises_the_three_roster_cases_and_the_three_other_paths_are_all_here():
     assert [c.name for c in cr.CASES] == [
         "dirty_tracked", "dirty_untracked", "omitted_seat", "short_pin", "uppercase_pin", "wrong_commit",
         "assume_unchanged", "skip_worktree", "global_excludes", "red_suite", "missing_seat", "unnamed_burnish",
-        "unnamed_drafter"]
+        "unnamed_drafter", "unnamed_drafter_claim_diff", "unnamed_drafter_explicit", "unnamed_burnish_explicit"]
     assert all(c.expected == cr._REFUSED for c in cr.CASES[:9] + cr.CASES[10:])
     assert cr.CASES[9].expected == frozenset({("INCONCLUSIVE", 6), ("FINISH_REJECTED", 1), ("JUDGE_REJECTED", 1)})
 
@@ -210,3 +224,74 @@ def test_an_interpreter_that_cannot_import_what_the_circuit_needs_is_named(circu
     monkeypatch.setattr(cr.canary, "_missing_modules", lambda python, modules=cr.canary._NEEDED: ["numpy"])
     assert cr.main(["--stack", str(stack), "--cns", str(cns)]) == 2
     assert "cannot import numpy" in capsys.readouterr().err
+
+
+ROSTER = ("omitted_seat", "missing_seat", "unnamed_burnish", "unnamed_drafter", "unnamed_drafter_claim_diff",
+          "unnamed_drafter_explicit", "unnamed_burnish_explicit")
+
+
+def _case(name):
+    return next(c for c in cr.CASES if c.name == name)
+
+
+def test_each_path_that_supplies_a_seat_has_a_case_and_the_original_cases_keep_the_claim_commit_path():
+    paths = {c.name: c.supply for c in cr.CASES}
+    assert paths["unnamed_drafter_claim_diff"] == "claim-diff"
+    assert paths["unnamed_drafter_explicit"] == "drafter"
+    assert paths["unnamed_burnish_explicit"] == "finisher"
+    assert all(paths[c.name] == "claim-commit" for c in cr.CASES[:13])
+    assert set(paths.values()) == set(cr._SUPPLIES)
+
+
+def test_every_roster_case_requires_the_reason_to_name_the_seat():
+    assert {c.name for c in cr.CASES if c.reason_names} == set(ROSTER)
+    assert {c.name: c.reason_names.casefold() for c in cr.CASES if c.reason_names} == {
+        "omitted_seat": "judge", "missing_seat": "swizzle", "unnamed_burnish": "burnish", "unnamed_drafter": "drafter",
+        "unnamed_drafter_claim_diff": "drafter", "unnamed_drafter_explicit": "drafter",
+        "unnamed_burnish_explicit": "burnish"}
+
+
+@pytest.mark.parametrize("case", ROSTER)
+def test_a_circuit_that_refuses_for_a_reason_that_names_no_seat_fails_the_roster_case(circuit, case):
+    """Exit 2 and USAGE_ERROR alone could be a refusal for any other reason; a roster case must hear the seat named."""
+    stack, cns = circuit
+    (stack / "WARDEN" / "warden" / "cli.py").write_text(VAGUE_CLI)
+    git(stack / "WARDEN", "commit", "-q", "-am", "vague")
+    data = json.loads((cns / "contracts" / "warden-stack.json").read_text())
+    data["repos"]["WARDEN"] = git(stack / "WARDEN", "rev-parse", "HEAD")
+    (cns / "contracts" / "warden-stack.json").write_text(json.dumps(data, indent=2) + "\n")
+    outcome = cr.run_case(_case(case), stack, cns)
+    assert not outcome.ok and (outcome.decision, outcome.exit_code) == ("USAGE_ERROR", 2)
+    assert "does not name" in outcome.reason
+
+
+@pytest.mark.parametrize("case", ["unnamed_drafter", "unnamed_drafter_claim_diff", "unnamed_drafter_explicit",
+                                  "unnamed_burnish_explicit"])
+def test_a_circuit_that_lets_a_folder_through_when_an_option_supplies_the_seat_fails_the_case(circuit, case):
+    """Warden 0.16.1's defect: each supply path is its own case, so a gap on one path cannot hide behind the others.
+    (0.16.1 did refuse a BURNISH folder when no --finisher supplied the seat, so `unnamed_burnish` passes there.)"""
+    stack, cns = circuit
+    (stack / "WARDEN" / "warden" / "cli.py").write_text(LEGACY_CLI)
+    git(stack / "WARDEN", "commit", "-q", "-am", "legacy")
+    data = json.loads((cns / "contracts" / "warden-stack.json").read_text())
+    data["repos"]["WARDEN"] = git(stack / "WARDEN", "rev-parse", "HEAD")
+    (cns / "contracts" / "warden-stack.json").write_text(json.dumps(data, indent=2) + "\n")
+    outcome = cr.run_case(_case(case), stack, cns)
+    assert not outcome.ok and outcome.decision == "ACCEPT" and outcome.exit_code == 0
+
+
+def test_the_claim_diff_path_hands_warden_a_diff_file_that_holds_the_claimed_change(tmp_path):
+    target = tmp_path / "target"
+    target.mkdir()
+    git(target, "init", "-q")
+    (target / "a.txt").write_text("one\n")
+    git(target, "add", "-A")
+    git(target, "commit", "-q", "-m", "base")
+    (target / "a.txt").write_text("two\n")
+    git(target, "commit", "-q", "-am", "claimed")
+    args = cr._supply_args("claim-diff", target, git(target, "rev-parse", "HEAD"), tmp_path)
+    assert args[0] == "--claim-diff" and "--claim-subject" in args and "--claim-author" in args
+    text = (tmp_path / "claimed.diff").read_text()
+    assert "-one" in text and "+two" in text
+    with pytest.raises(OSError):
+        cr._supply_args("nope", target, "x", tmp_path)

@@ -72,7 +72,7 @@ released-seats file as their `from_cns` proof, WATCHER_MCU keeps `cns_compositio
 `repin` workflows check them out at those commits into a folder of their own and pass it to `seat_pins` and
 `cns_versions` as `--consumers`, so their CNS pin and their Warden pin must still agree with the circuit's, and each must
 be read. They are never in Warden's stack folder: Warden refuses a stack folder that holds a seat the manifest omits, and
-the circuit checks that it does (`circuit_refusals`, cases `unnamed_burnish` and `unnamed_drafter`).
+the circuit checks that it does (`circuit_refusals`, cases `unnamed_burnish`, `unnamed_drafter` and the three that supply the seat another way: `unnamed_drafter_claim_diff`, `unnamed_drafter_explicit` and `unnamed_burnish_explicit`).
 
 The repin tooling cannot put them back. `repin` refuses a manifest that names a repository listed beside it in
 `released-seats.json`, and its workflow's canary and pins jobs check out only the five (and, for the pins check, the
@@ -82,8 +82,11 @@ until they agree again.
 
 The canary no longer ends ACCEPT with a Drafter fixer. It runs on Warden's claim seat: one ordinary, non-protected
 code change committed on a side branch of a throwaway repository, handed over with `--claim-commit`, in a stack that has
-no Drafter and no Burnish. `circuit_refusals` hands every case the same claim, adds `missing_seat`, `unnamed_burnish` and
-`unnamed_drafter` (Warden's roster rule, nothing else) and refuses thirteen of thirteen at Warden 0.16.2.
+no Drafter and no Burnish. `circuit_refusals` hands the thirteen original cases the same claim by `--claim-commit`; three of
+them are `missing_seat`, `unnamed_burnish` and `unnamed_drafter` (Warden's roster rule, nothing else). Three more cases (Stage 4)
+run the same rule through the other ways of supplying a seat (`--claim-diff`, `--drafter` and `--finisher`), and every roster
+case also requires that Warden's reason names the seat, because exit 2 and `USAGE_ERROR` alone could be a refusal for another
+reason. It refuses sixteen of sixteen at Warden 0.16.3.
 
 One gap in Warden's sentence was found by that work and has since been fixed: Warden's README and the docstring of
 `warden/cli.py` say a folder holding a releasable seat the manifest does not name is refused. For BURNISH that was true.
@@ -91,8 +94,10 @@ For DRAFTER with the claim seat proposing, Warden 0.16.1 ended ACCEPT: the claim
 would fill, so the folder was not used and was not refused. Nothing ran from it, so it was a gap in the sentence and not a
 way to run unpinned code; Stage 3 changed the code to match the sentence. Warden 0.16.2 compares the folder with the
 manifest before any option is substituted, so a Drafter or Burnish folder the manifest omits is refused whatever
-`--claim-commit`, `--claim-diff`, `--drafter` or `--finisher` say, and `circuit_refusals` has a case for each (see
-[STATUS.md](STATUS.md), "Stage 3").
+`--claim-commit`, `--claim-diff`, `--drafter` or `--finisher` say, and `circuit_refusals` has a case for each way a seat is supplied: the claimed commit and the claimed diff file and an explicit
+`--drafter` for the Drafter folder, the claimed commit and an explicit `--finisher` for the Burnish folder (see
+[STATUS.md](STATUS.md), "Stage 3"). Before Stage 4 only the claimed commit was driven, so the diff, `--drafter` and
+`--finisher` paths were tested by Warden's own suite and not by this check.
 
 ## ASSAY stays
 
