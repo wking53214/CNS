@@ -403,3 +403,103 @@ def test_the_same_shared_candidate_left_alone_is_still_allowed_and_names_its_sub
         {"Governance_Gateway:door": document, "DIT:judge": document})
     assert decision.allowed and decision.subject == Judged("doc-1", "abc")
     assert all(r.gate != "CNS:unchanged" for r in decision.run.results)
+
+
+# ------------------------------------------------------------ bound to this candidate, not just bound
+
+class Ignoring(FakeGate):
+    """Passes and records a binding, but for something unrelated to the candidate it was handed."""
+
+    def check(self, candidate):
+        self.seen.append(candidate)
+        return GateResult(gate=self.name, position=self.position, outcome=self._outcome, reason="fine",
+                          subject=self.name, subject_digest=subject_digest({"unrelated": True}))
+
+
+def binds_candidate(name):
+    return lambda candidate: (name, subject_digest({"candidate": candidate}))
+
+
+def binding_roster(judge, **kw):
+    door = FakeGate("door", A)
+    seats = [("Governance_Gateway", door), ("DIT", judge)]
+    readers = {"Governance_Gateway:door": binds_candidate("door"), "DIT:judge": binds_candidate("judge")}
+    return SuperGate(seats, required=("Governance_Gateway:door", "DIT:judge"), binding_of=kw.pop("binding_of", readers),
+                     **kw)
+
+
+def test_honest_gates_whose_verdicts_bind_their_candidates_are_allowed_under_strict_binding():
+    decision = binding_roster(FakeGate("judge", OM), strict_binding=True).decide(GOOD)
+    assert decision.allowed and decision.outcome is PASS
+
+
+def test_a_gate_that_ignores_its_input_and_passes_with_an_unrelated_fingerprint_is_a_breach():
+    decision = binding_roster(Ignoring("judge", OM)).decide(GOOD)
+    assert not decision.allowed and decision.outcome is BREACH
+    (blocking,) = decision.run.blocking()
+    assert blocking.gate == "judge" and "bound to something other than this candidate" in blocking.reason
+
+
+def test_without_a_binding_reader_that_same_gate_is_still_allowed_which_is_why_strict_binding_exists():
+    """A recorded gap, stated as an assertion: with no reader for the seat a bound-to-anything PASS counts."""
+    door = FakeGate("door", A)
+    gate = policy_gate([("Governance_Gateway", door), ("DIT", Ignoring("judge", OM))])
+    assert gate.decide(GOOD).allowed
+
+
+def test_a_reader_that_cannot_say_what_the_candidate_is_leaves_the_pass_unproven():
+    def broken(candidate):
+        raise RuntimeError("secret detail")
+
+    readers = {"Governance_Gateway:door": binds_candidate("door"), "DIT:judge": broken}
+    decision = binding_roster(FakeGate("judge", OM), binding_of=readers).decide(GOOD)
+    assert decision.outcome is BREACH
+    (blocking,) = decision.run.blocking()
+    assert "RuntimeError" in blocking.reason and "secret detail" not in blocking.reason
+
+
+def test_a_verdict_that_already_blocks_is_left_as_it_was():
+    decision = binding_roster(FakeGate("judge", OM, RETRY)).decide(GOOD)
+    assert decision.outcome is RETRY
+
+
+def test_the_reader_is_given_the_built_candidate_for_a_lazy_seat():
+    judge = FakeGate("judge", OM)
+    decision = binding_roster(judge).decide({**GOOD, "DIT:judge": Lazy(lambda: "text")})
+    assert decision.allowed and judge.seen == ["text"]
+
+
+def test_strict_binding_refuses_a_roster_with_a_seat_that_has_no_reader():
+    readers = {"Governance_Gateway:door": binds_candidate("door")}
+    with pytest.raises(ValueError, match="strict_binding.*DIT:judge"):
+        binding_roster(FakeGate("judge", OM), binding_of=readers, strict_binding=True)
+    with pytest.raises(ValueError, match="strict_binding"):
+        policy_gate([("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM))],
+                    strict_binding=True)
+
+
+def test_binding_readers_must_name_seats_on_the_roster_and_be_functions():
+    with pytest.raises(ValueError, match="not on the roster"):
+        binding_roster(FakeGate("judge", OM), binding_of={"DIT:other": binds_candidate("x")})
+    with pytest.raises(ValueError, match="function"):
+        binding_roster(FakeGate("judge", OM), binding_of={"DIT:judge": "not a function"})
+
+
+def test_the_agreement_seat_cannot_be_given_a_binding_reader_it_binds_itself():
+    door, judge = FakeGate("door", A), FakeGate("judge", OM)
+    with pytest.raises(ValueError, match="CNS:same_subject"):
+        SuperGate([("Governance_Gateway", door), ("DIT", judge)],
+                  required=("Governance_Gateway:door", "DIT:judge", SUBJECT),
+                  same_subject={"Governance_Gateway:door": reads, "DIT:judge": reads},
+                  binding_of={SUBJECT: binds_candidate("x")})
+
+
+def test_binding_readers_and_the_agreement_check_work_together_under_strict_binding():
+    door, judge = FakeGate("door", A), FakeGate("judge", OM)
+    gate = SuperGate([("Governance_Gateway", door), ("DIT", judge)],
+                     required=("Governance_Gateway:door", "DIT:judge", SUBJECT),
+                     same_subject={"Governance_Gateway:door": reads, "DIT:judge": reads},
+                     binding_of={"Governance_Gateway:door": binds_candidate("door"),
+                                 "DIT:judge": binds_candidate("judge")}, strict_binding=True)
+    decision = gate.decide({"Governance_Gateway:door": ("doc-1", "abc"), "DIT:judge": ("doc-1", "abc")})
+    assert decision.allowed and decision.subject == Judged("doc-1", "abc")

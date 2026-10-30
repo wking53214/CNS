@@ -48,7 +48,7 @@ from cns.gate import Gate, GateOutcome, GatePosition, GateResult, subject_digest
 from .gate_chain import ChainRun, Lazy
 from .repo_gates import ends_of, run_repo_chain
 
-__all__ = ["Decision", "Judged", "MissingCandidate", "SubjectAgreement", "SuperGate"]
+__all__ = ["BindingOf", "Decision", "Judged", "MissingCandidate", "SubjectAgreement", "SuperGate"]
 
 #: Process-local key. Only `SuperGate.decide` uses it, to prove it issued a Decision. It is never exported, written
 #: or logged. Like HERALD's issuer key it proves origin only inside this process: a proof means nothing to another
@@ -73,6 +73,9 @@ class Judged:
 
 #: How to read what a seat's candidate is about.
 SubjectOf = Callable[[object], Judged]
+
+#: How to read what a seat's verdict must be bound to for this candidate: the (subject, digest) a PASS must carry.
+BindingOf = Callable[[object], Tuple[str, str]]
 
 #: The seat the super gate adds when `same_subject` is given.
 SUBJECT_REPO, SUBJECT_GATE = "CNS", "same_subject"
@@ -133,6 +136,33 @@ class _Once:
         if self._error is not None:
             raise self._error
         return self._value
+
+
+class _Bound:
+    """A seated gate whose PASS must be bound to what its reader says this candidate is, not to anything at all."""
+
+    def __init__(self, gate: Gate, binding_of: BindingOf) -> None:
+        self.name = getattr(gate, "name", "") or type(gate).__name__
+        self.position = gate.position
+        self._gate, self._binding_of = gate, binding_of
+
+    def check(self, candidate: object) -> GateResult:
+        result = self._gate.check(candidate)
+        if not isinstance(result, GateResult) or result.outcome is not GateOutcome.PASS:
+            return result  # not a pass: nothing to lift, and the chain refuses a wrong answer type itself
+        try:
+            subject, digest = self._binding_of(candidate)
+            matches = result.binds(subject, digest)
+        except Exception as exc:  # a reader that cannot say what this is leaves the pass unproven
+            return self._breach(result, f"what this candidate is could not be read ({type(exc).__name__})")
+        if not matches:
+            return self._breach(result, "its verdict is bound to something other than this candidate")
+        return result
+
+    def _breach(self, result: GateResult, why: str) -> GateResult:
+        return GateResult(gate=result.gate, position=result.position, outcome=GateOutcome.TERMINAL_BREACH,
+                          reason=f"{self.name} passed but {why}; a pass for other content is never read as a pass "
+                                 "for this")
 
 
 def _key(repo: str, gate: Gate) -> str:
@@ -223,12 +253,17 @@ class SuperGate:
     is refused unless they all agree. Add `CNS:same_subject` to `required` so dropping `same_subject` is refused
     too. A candidate for a named seat that is `Lazy` is built when the comparison runs, once.
 
+    `binding_of` maps seats to a reader of what that seat's verdict must be bound to for the candidate it was given,
+    as (subject, digest). A PASS bound to anything else is a breach, so a gate that ignores its input cannot pass it
+    with an unrelated fingerprint. With `strict_binding=True` every seat must have a reader.
+
     Raises ValueError for invalid or incomplete rosters and KeyError for a
     repository with no row in repo_gates.
     """
 
     def __init__(self, seats: Iterable[Seat], *, required: Iterable[str],
-                 require_complete: bool = True, same_subject: Optional[Mapping[str, SubjectOf]] = None) -> None:
+                 require_complete: bool = True, same_subject: Optional[Mapping[str, SubjectOf]] = None,
+                 binding_of: Optional[Mapping[str, BindingOf]] = None, strict_binding: bool = False) -> None:
         self._seats: Tuple[Seat, ...] = tuple(seats)
         self._require_complete = require_complete
         if not self._seats:
@@ -269,6 +304,19 @@ class SuperGate:
             self._seats = ((SUBJECT_REPO, SubjectAgreement()),) + self._seats
             keys = [SUBJECT_SEAT] + keys
         self._keys = tuple(keys)
+        self._binding_of = dict(binding_of) if binding_of is not None else {}
+        if any(not callable(of) for of in self._binding_of.values()):
+            raise ValueError("binding_of must map each seat to a function that reads what its verdict must bind")
+        off = sorted(set(self._binding_of) - set(keys) - {SUBJECT_SEAT})
+        if off or SUBJECT_SEAT in self._binding_of:
+            raise ValueError("binding_of names seat(s) not on the roster or added by the super gate: "
+                             + ", ".join(off or [SUBJECT_SEAT]))
+        self._strict_binding = strict_binding
+        if strict_binding:
+            unread = sorted(set(keys) - {SUBJECT_SEAT} - set(self._binding_of))
+            if unread:
+                raise ValueError("strict_binding needs a binding reader for every seat; none for: "
+                                 + ", ".join(unread))
         missing = sorted(set(required_keys) - set(keys))
         if missing:
             raise ValueError("the roster lacks required seat(s), refusing to decide without them: "
@@ -317,7 +365,8 @@ class SuperGate:
                     given[key] = Lazy(_Once(seat.build))
             views = _Once(lambda: self._read_subjects(given))
             given[SUBJECT_SEAT] = Lazy(views)
-        steps = [(repo, gate, given[key] if key in given else _no_candidate(key))
+        steps = [(repo, _Bound(gate, self._binding_of[key]) if key in self._binding_of else gate,
+                  given[key] if key in given else _no_candidate(key))
                  for (repo, gate), key in zip(self._seats, self._keys)]
         run = run_repo_chain(steps, require_complete=self._require_complete)
         subject: Optional[Judged] = None
