@@ -26,6 +26,7 @@ has no separate counter, so it cannot run longer than the guard allows.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import Optional
 
 from cns.gate import GateOutcome
 
@@ -41,6 +42,8 @@ def admit_candidates(
     hand_off: Callable[[], None],
     lookup: RecordLookup,
     guard: ResubmissionGuard,
+    *,
+    attestation_key: Optional[bytes] = None,
 ) -> list[TriadOutput]:
     """Admit each candidate in order, handing off and retrying on RETRY.
 
@@ -56,7 +59,7 @@ def admit_candidates(
     for candidate in candidates:
         while True:
             try:
-                admitted.append(guarded_admit(candidate, lookup, guard))
+                admitted.append(guarded_admit(candidate, lookup, guard, attestation_key=attestation_key))
                 break
             except UnrecordedTriadOutput as refused:
                 if refused.result.outcome is not GateOutcome.RETRY:
