@@ -54,8 +54,9 @@ by hand, opens nothing.
 The script then breaks the run at each seam (a document relabelled, an inflated invoice, an export edited after it was
 signed, a decision copied by hand, a direct write after a "no") and states what must happen. A seam that holds is a
 scenario that must keep holding. A seam that nothing checks is stated as a GAP, an assertion and not a skip, so the day
-a repository starts checking it the script goes red and the fact is updated on purpose. One GAP is recorded: a kernel
-built without its guard and called directly. The `chains` workflow runs the spine every day and on pull requests that
+a repository starts checking it the script goes red and the fact is updated on purpose. Two GAPs are recorded: a
+kernel built without its root guard and called directly registers a root the roster refused, and a kernel built
+without its evidence guard takes evidence TIE never produced. The `chains` workflow runs the spine every day and on pull requests that
 touch the decision core; "Where the six spine repositories stand" below gives its latest result. The spine does not
 cover ZTS, sentinel_os or GSA-815, and it speaks for CCC only as far as CCC's gate and write permission go.
 
@@ -395,7 +396,9 @@ What this means, plainly:
 - Only this repository has tags and releases. The other five have a version in their package and nothing tagged.
 - The evidence spine (`chains/evidence_spine.py`) runs HERALD, TIE, Conservation_Kernel, Governance_Gateway and CCC
   end to end with every repository at `main`: 30 results, all ok, exactly one recorded GAP (a kernel built without
-  its guard and called directly), which is an assertion and not a skip.
+  its guard and called directly), which is an assertion and not a skip. That run was before #64, which added a second
+  recorded GAP (a kernel built without its evidence guard takes any evidence); the spine has not been re-run here
+  since.
 - Where a repository writes records, who may call each door is its own README's business. CCC gates nine
   record-creating doors with a caller's permission. Conservation_Kernel guards its roots and lists the doors that are
   not yet protected. HERALD, TIE and Governance_Gateway create no governed record.
