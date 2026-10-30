@@ -40,6 +40,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import time
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable, Mapping, Optional, Tuple, cast
 
@@ -190,6 +191,12 @@ class Decision:
     #: Proof that `SuperGate.decide` issued this decision, over everything `allowed` and the guard rely on. Empty
     #: for a decision built any other way. See `issued`.
     proof: str = ""
+    #: A random number `decide` draws for this decision alone. A guard spends it, so one decision opens one action.
+    nonce: str = ""
+    #: When `decide` issued it, and when it stops counting (None: it does not expire). Seconds, from the roster's
+    #: clock. The proof covers both, so neither can be edited after issue.
+    issued_at: float = 0.0
+    expires_at: Optional[float] = None
 
     @property
     def issued(self) -> bool:
@@ -197,7 +204,8 @@ class Decision:
         copied field by field, or edited after issue is not. `allowed` does not ask this; anything that acts on a
         decision (the `DecisionGuard`) should."""
         return (bool(self.proof) and self.binds(self.root)
-                and hmac.compare_digest(self.proof, _proof(self.run, self.root, self.subject)))
+                and hmac.compare_digest(self.proof, _proof(self.run, self.root, self.subject, self.nonce,
+                                                           self.issued_at, self.expires_at)))
 
     @property
     def outcome(self) -> GateOutcome:
@@ -222,12 +230,15 @@ class Decision:
         return root == self.root == _root(self.seats, self.run.results)
 
 
-def _proof(run: ChainRun, root: str, subject: Optional[Judged]) -> str:
+def _proof(run: ChainRun, root: str, subject: Optional[Judged], nonce: str = "", issued_at: float = 0.0,
+           expires_at: Optional[float] = None) -> str:
     """HMAC over what a decision's `allowed` turns on: the root (roster and every verdict), the run's own
-    outcome and flags, and the agreed subject."""
+    outcome and flags, the agreed subject, and the nonce and times that make it one decision for one moment."""
     body = subject_digest({"root": root, "outcome": run.outcome.value, "omega_ran": run.omega_ran,
                            "complete": run.complete,
-                           "subject": [subject.identity, subject.digest] if subject is not None else None})
+                           "subject": [subject.identity, subject.digest] if subject is not None else None,
+                           "nonce": nonce, "issued_at": repr(issued_at),
+                           "expires_at": repr(expires_at) if expires_at is not None else None})
     return hmac.new(_ISSUER_KEY, body.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
@@ -263,7 +274,11 @@ class SuperGate:
 
     def __init__(self, seats: Iterable[Seat], *, required: Iterable[str],
                  require_complete: bool = True, same_subject: Optional[Mapping[str, SubjectOf]] = None,
-                 binding_of: Optional[Mapping[str, BindingOf]] = None, strict_binding: bool = False) -> None:
+                 binding_of: Optional[Mapping[str, BindingOf]] = None, strict_binding: bool = False,
+                 clock: Callable[[], float] = time.time) -> None:
+        if not callable(clock):
+            raise ValueError("clock must be a function that returns the time in seconds")
+        self._clock = clock
         self._seats: Tuple[Seat, ...] = tuple(seats)
         self._require_complete = require_complete
         if not self._seats:
@@ -346,12 +361,18 @@ class SuperGate:
             views[key] = seen
         return views
 
-    def decide(self, candidates: Mapping[str, object]) -> Decision:
+    def decide(self, candidates: Mapping[str, object], *, ttl: Optional[float] = None) -> Decision:
         """Decide on the whole roster. `candidates` maps each seat (`repository:gate`) to what it judges.
+
+        The decision carries a fresh nonce and the time it was issued. `ttl`, in seconds, makes it stop counting
+        that long after issue (a guard refuses it); None means it does not expire. A ttl that is not a positive
+        number is a ValueError, before any gate runs.
 
         A candidate may be `Lazy`. A seat with no entry is a TERMINAL_BREACH. An entry for no seat is a
         ValueError, before any gate runs.
         """
+        if ttl is not None and not (isinstance(ttl, (int, float)) and not isinstance(ttl, bool) and ttl > 0):
+            raise ValueError("ttl must be a positive number of seconds, or None for no expiry")
         unknown = sorted(set(candidates) - set(self._keys))
         if unknown:
             raise ValueError("candidates for seats that are not on the roster: " + ", ".join(unknown))
@@ -387,4 +408,9 @@ class SuperGate:
                 run = replace(run, results=run.results + (changed,), outcome=GateOutcome.TERMINAL_BREACH)
                 subject = None
         root = _root(self._keys, run.results)
-        return Decision(run=run, seats=self._keys, root=root, subject=subject, proof=_proof(run, root, subject))
+        nonce = secrets.token_hex(16)
+        issued_at = float(self._clock())
+        expires_at = issued_at + ttl if ttl is not None else None
+        return Decision(run=run, seats=self._keys, root=root, subject=subject,
+                        proof=_proof(run, root, subject, nonce, issued_at, expires_at),
+                        nonce=nonce, issued_at=issued_at, expires_at=expires_at)
