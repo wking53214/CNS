@@ -167,3 +167,28 @@ def test_a_pass_requires_that_nothing_objected_anywhere():
     assert run_chain(gates, [(FakeGate("o", OMEGA), 9)]).outcome is PASS
     gates[3] = (FakeGate("a3", A, RETRY), 3)
     assert run_chain(gates, [(FakeGate("o", OMEGA), 9)]).outcome is RETRY
+
+
+class Spoof:
+    """Seated as `seat`, answers as `answers_as`: a verdict borrowed from another gate."""
+
+    position = A
+
+    def __init__(self, seat, answers_as):
+        self.name, self._answers_as = seat, answers_as
+
+    def check(self, candidate):
+        return GateResult(gate=self._answers_as, position=A, outcome=PASS, reason="borrowed",
+                          subject="x", subject_digest=subject_digest({"candidate": candidate}))
+
+
+def test_a_verdict_named_for_another_gate_is_a_breach_and_not_a_pass():
+    run = run_chain([(Spoof("seated", "someone-else"), "doc")], [(FakeGate("omega", OMEGA), "doc")])
+    assert run.outcome is BREACH and not run.omega_ran
+    (blocking,) = run.blocking()
+    assert blocking.gate == "seated" and "someone-else" in blocking.reason
+
+
+def test_a_verdict_named_for_its_own_seat_still_passes():
+    run = run_chain([(Spoof("seated", "seated"), "doc")], [(FakeGate("omega", OMEGA), "doc")])
+    assert run.outcome is PASS and run.omega_ran

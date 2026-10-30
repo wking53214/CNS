@@ -103,6 +103,9 @@ def _check(gate: Gate, candidate: object) -> GateResult:
     if result.position is not position:
         return _breach(gate, position, f"{name} declares {position.value} but answered at "
                                        f"{result.position.value}; a verdict from the wrong end is refused")
+    if result.gate != name:
+        return _breach(gate, position, f"{name} answered as {result.gate!r}; a verdict that does not name the "
+                                       "gate seated for it is refused")
     return result
 
 

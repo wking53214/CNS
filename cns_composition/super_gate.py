@@ -40,7 +40,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Iterable, Mapping, Optional, Tuple, cast
 
 from cns.gate import Gate, GateOutcome, GatePosition, GateResult, subject_digest
@@ -77,6 +77,7 @@ SubjectOf = Callable[[object], Judged]
 #: The seat the super gate adds when `same_subject` is given.
 SUBJECT_REPO, SUBJECT_GATE = "CNS", "same_subject"
 SUBJECT_SEAT = f"{SUBJECT_REPO}:{SUBJECT_GATE}"
+UNCHANGED_GATE = f"{SUBJECT_REPO}:unchanged"
 
 
 class SubjectAgreement:
@@ -319,7 +320,6 @@ class SuperGate:
         steps = [(repo, gate, given[key] if key in given else _no_candidate(key))
                  for (repo, gate), key in zip(self._seats, self._keys)]
         run = run_repo_chain(steps, require_complete=self._require_complete)
-        root = _root(self._keys, run.results)
         subject: Optional[Judged] = None
         if self._subject_of and run.outcome is GateOutcome.PASS:
             # Every gate ran, so the readings were taken; this is the agreement the gate passed, not a second reading.
@@ -327,4 +327,15 @@ class SuperGate:
             only = next(iter(read)) if len(read) == 1 else None
             if isinstance(only, Judged):
                 subject = only
+        if subject is not None:
+            # A gate may have edited a shared candidate after the comparison and before a later gate judged it. Read
+            # every seat again, now that all the gates have run, and refuse the decision unless nothing moved.
+            if set(cast(Mapping[str, object], self._read_subjects(given)).values()) != {subject}:
+                changed = GateResult(
+                    gate=UNCHANGED_GATE, position=GatePosition.OMEGA, outcome=GateOutcome.TERMINAL_BREACH,
+                    reason="a candidate changed while the gates were running, so the verdicts do not describe "
+                           "what it is now")
+                run = replace(run, results=run.results + (changed,), outcome=GateOutcome.TERMINAL_BREACH)
+                subject = None
+        root = _root(self._keys, run.results)
         return Decision(run=run, seats=self._keys, root=root, subject=subject, proof=_proof(run, root, subject))

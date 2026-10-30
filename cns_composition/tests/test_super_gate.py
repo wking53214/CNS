@@ -367,3 +367,39 @@ def test_the_recorded_subject_is_the_one_the_agreement_verdict_bound():
     assert agreement.binds("same_subject", subject_digest({"identity": decision.subject.identity,
                                                            "digest": decision.subject.digest,
                                                            "seats": ["DIT:judge", "Governance_Gateway:door"]}))
+
+
+# ------------------------------------------------------------ nothing moves while the gates run
+
+class Editor(FakeGate):
+    """Passes, and edits the candidate it was handed on the way: a gate with a side effect on shared input."""
+
+    def check(self, candidate):
+        candidate[1] = "edited"
+        return super().check(candidate)
+
+
+def shared_document_roster(judge):
+    door = FakeGate("door", A)
+    seats = [("Governance_Gateway", door), ("DIT", judge)]
+    return SuperGate(seats, required=("Governance_Gateway:door", "DIT:judge", SUBJECT),
+                     same_subject={"Governance_Gateway:door": reads, "DIT:judge": reads})
+
+
+def test_a_gate_that_edits_the_shared_candidate_after_the_comparison_makes_the_decision_a_breach():
+    document = ["doc-1", "abc"]
+    decision = shared_document_roster(Editor("judge", OM)).decide(
+        {"Governance_Gateway:door": document, "DIT:judge": document})
+    assert document[1] == "edited"
+    assert not decision.allowed and decision.outcome is BREACH
+    assert decision.subject is None
+    assert [r.gate for r in decision.run.blocking()] == ["CNS:unchanged"]
+    assert decision.binds(decision.root)
+
+
+def test_the_same_shared_candidate_left_alone_is_still_allowed_and_names_its_subject():
+    document = ["doc-1", "abc"]
+    decision = shared_document_roster(FakeGate("judge", OM)).decide(
+        {"Governance_Gateway:door": document, "DIT:judge": document})
+    assert decision.allowed and decision.subject == Judged("doc-1", "abc")
+    assert all(r.gate != "CNS:unchanged" for r in decision.run.results)
