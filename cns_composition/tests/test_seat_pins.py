@@ -200,10 +200,10 @@ def test_a_disagreement_is_still_reported_when_a_repository_is_also_unread(tmp_p
     assert "pinned differently" in err and "from: B" in err
 
 
-def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_seven(tmp_path, capsys):
+def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_five(tmp_path, capsys):
     put(tmp_path, "J", warden(A))
     assert sp.main(["--stack", str(tmp_path)]) != 0
-    assert "the manifest names 7" in capsys.readouterr().err
+    assert "the manifest names 5" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------- 2.0.0: the install file, spelling, uncovered folders

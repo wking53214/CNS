@@ -117,7 +117,7 @@ def test_the_extra_pins_are_the_ones_install_stack_gives_for_python_3_12():
 
 def test_the_workflow_names_no_repository_of_its_own():
     """It reads the manifest, so adding a repository there needs no edit here."""
-    checkout = step("Check out the seven repositories")
+    checkout = step("Check out the five repositories")
     assert 'warden-stack.json' in checkout
     for name in MANIFEST["repos"]:
         assert name not in checkout, name
@@ -136,8 +136,8 @@ def test_the_install_file_and_the_manifest_name_the_same_repositories():
 CHECKS = [
     "python -m pip check",
     "python -m cns_composition.install_stack --installed",
-    "python -m cns_composition.seat_pins --stack ../stack --install contracts/install-stack.txt",
-    "python -m cns_composition.cns_versions --stack ../stack --spelling tag",
+    "python -m cns_composition.seat_pins --stack ../stack --consumers ../released --install contracts/install-stack.txt",
+    "python -m cns_composition.cns_versions --stack ../stack --consumers ../released --spelling tag",
     "python -m cns_composition.install_stack --check",
     "python -m cns_composition.repin --stack ../stack --check",
     "python -m cns_composition.circuit_canary --stack ../stack --cns .",
@@ -146,7 +146,7 @@ CHECKS = [
 
 
 def test_the_steps_run_in_the_order_that_makes_each_one_meaningful():
-    order = ["Install the whole circuit", "pip is satisfied", "Exactly one cns", CHECKS[1], "Check out the seven",
+    order = ["Install the whole circuit", "pip is satisfied", "Exactly one cns", CHECKS[1], "Check out the five",
              *CHECKS[2:]]
     assert [position(f) for f in order] == sorted(position(f) for f in order)
     assert position("actions/checkout") < position("actions/setup-python") < position(order[0])
@@ -199,7 +199,7 @@ def run_checkout(tmp_path, repos, base):
         json.dumps({"schema": "warden-stack/1", "contract": "1", "repos": repos}), encoding="utf-8")
     env = {"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": str(tmp_path), "BASE_URL": str(base) + "/",
            "GIT_TERMINAL_PROMPT": "0"}
-    return subprocess.run([sys.executable, "-c", heredoc(step("Check out the seven"))], cwd=tmp_path, env=env,
+    return subprocess.run([sys.executable, "-c", heredoc(step("Check out the five"))], cwd=tmp_path, env=env,
                           capture_output=True, text=True)
 
 
@@ -314,3 +314,47 @@ def test_the_checkout_step_refuses_the_id_of_an_annotated_tag_which_is_not_the_c
     assert tag_object != first
     done = run_checkout(tmp_path, {"one": tag_object}, base)
     assert done.returncode != 0 and f"not {tag_object}" in done.stderr
+
+
+# ----------------------------------------------- released seats: their own folder, read for pins only, never in stack/
+
+RELEASED = json.loads((ROOT / "contracts" / "released-seats.json").read_text(encoding="utf-8"))["repos"]
+
+
+def test_the_released_repositories_are_checked_out_before_the_pins_checks_and_into_a_folder_of_their_own():
+    assert position("Check out the five") < position("Check out the released") < position(CHECKS[2])
+    block = step("Check out the released")
+    assert 'dest = f"released/{name}"' in block and "stack/" not in block
+    assert "contracts/released-seats.json" in block
+
+
+def run_released_checkout(tmp_path, repos, base):
+    (tmp_path / "hub" / "contracts").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "hub" / "contracts" / "released-seats.json").write_text(
+        json.dumps({"schema": "released-seats/1", "repos": repos}), encoding="utf-8")
+    env = {"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": str(tmp_path), "BASE_URL": str(base) + "/",
+           "GIT_TERMINAL_PROMPT": "0"}
+    return subprocess.run([sys.executable, "-c", heredoc(step("Check out the released"))], cwd=tmp_path, env=env,
+                          capture_output=True, text=True)
+
+
+def test_the_released_checkout_puts_each_repository_at_the_commit_the_file_names_and_not_in_stack(tmp_path):
+    base = tmp_path / "remote"
+    repos = {}
+    for name in RELEASED:
+        first, second = make_remote(base, name)
+        repos[name] = first
+    done = run_released_checkout(tmp_path, repos, base)
+    assert done.returncode == 0, done.stderr
+    assert sorted(p.name for p in (tmp_path / "released").iterdir()) == sorted(RELEASED)
+    assert not (tmp_path / "stack").exists()
+    for name, sha in repos.items():
+        assert git(tmp_path / "released" / name, "rev-parse", "HEAD") == sha
+
+
+def test_the_released_checkout_refuses_a_pin_that_is_not_a_full_commit_and_an_empty_file(tmp_path):
+    base = tmp_path / "remote"
+    first, _ = make_remote(base, "one")
+    assert run_released_checkout(tmp_path, {"one": "abc1234"}, base).returncode != 0
+    done = run_released_checkout(tmp_path, {}, base)
+    assert done.returncode != 0 and "names no repository" in done.stderr

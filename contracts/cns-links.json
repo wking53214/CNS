@@ -18,7 +18,7 @@
     },
     "DRAFTER": {
       "to_cns": "drafter/seat.py",
-      "from_cns": "contracts/warden-stack.json"
+      "from_cns": "contracts/released-seats.json"
     },
     "JUDGE": {
       "to_cns": "judge/cns_connector.py",
@@ -26,7 +26,7 @@
     },
     "BURNISH": {
       "to_cns": "burnish/cli.py",
-      "from_cns": "contracts/warden-stack.json"
+      "from_cns": "contracts/released-seats.json"
     },
     "WARDEN": {
       "to_cns": "warden/suite.py",

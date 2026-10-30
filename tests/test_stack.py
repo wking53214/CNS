@@ -70,7 +70,7 @@ def test_the_circuits_manifest_beside_the_package_satisfies_the_shape():
                       repos=tuple(StackPin(n, c) for n, c in data["repos"].items()))
     assert m.problems() == ()
     assert m.to_dict() == data
-    assert {p.name for p in m.repos} == {"ghost_tools", "SWIZZLE", "ASSAY", "DRAFTER", "JUDGE", "BURNISH", "WARDEN"}
+    assert {p.name for p in m.repos} == {"ghost_tools", "SWIZZLE", "ASSAY", "JUDGE", "WARDEN"}
     assert all(len(p.commit) == 40 for p in m.repos)
 
 

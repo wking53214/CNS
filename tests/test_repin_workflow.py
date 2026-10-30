@@ -202,3 +202,30 @@ def test_the_proposing_job_checks_the_install_file_is_the_rendering_and_commits_
     assert "tests/test_install_stack.py" in block and "cns_composition/tests/test_install_rendering.py" in block
     assert "git add contracts/warden-stack.json contracts/install-stack.txt" in block
     assert block.index("install_stack --check") < block.index("git add contracts/")
+
+
+# ---------------------------------------------------------------------------
+# Released seats: not checked out into the stack, read at their own commits for the pins check only.
+# ---------------------------------------------------------------------------
+
+RELEASED = json.loads((ROOT / "contracts" / "released-seats.json").read_text(encoding="utf-8"))["repos"]
+
+
+@pytest.mark.parametrize("name", sorted(RELEASED))
+def test_no_job_puts_a_released_seat_into_the_stack_folder(name):
+    assert f"path: stack/{name}\n" not in WORKFLOW
+    assert f"/{name}\n" not in job("canary")
+
+
+def test_the_pins_job_reads_the_released_seats_from_their_own_folder_at_the_commits_the_file_names():
+    block = job("pins")
+    assert 'json.load(open("hub/contracts/released-seats.json", encoding="utf-8"))["repos"]' in block
+    assert 'dest = f"consumers/{name}"' in block
+    assert "python -m cns_composition.seat_pins --stack ../stack --consumers ../consumers" in block
+    assert block.index("released-seats.json") < block.index("cns_composition.seat_pins")
+
+
+def test_the_manifest_the_workflow_can_propose_never_names_a_released_seat(tmp_path):
+    """The proposing job only moves commits (its re-check refuses a changed set), and repin refuses a manifest that
+    names a released seat, so the automation cannot put one back."""
+    assert not {n.casefold() for n in MANIFEST["repos"]} & {n.casefold() for n in RELEASED}

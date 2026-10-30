@@ -24,8 +24,8 @@ agreeing is what matters. A tag pin cannot be compared with a commit, so it is n
 HOW MANY IT READ
 
 A stack folder may be a symlink to a checkout, as `repin` already allows, and it is read like any other. The run says
-how many repositories it read, and fails (exit 2) when a repository the manifest names was not read: with one of the
-seven missing, "every pin agrees" would be a claim about six.
+how many repositories it read, and fails (exit 2) when a repository the manifest names was not read: with one of them
+missing, "every pin agrees" would be a claim about the rest.
 
 The files are read as text and never executed.
 """

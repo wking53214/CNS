@@ -1,23 +1,24 @@
 # Keeps contracts/warden-stack.json true without a person editing it.
 #
-# The manifest says which commits of the seven circuit repositories belong together, and Warden refuses a stack
-# that is at any other commit. So every merge to any of the seven made it wrong until somebody edited it by
+# The manifest says which commits of the five circuit repositories belong together, and Warden refuses a stack
+# that is at any other commit. So every merge to any of the five made it wrong until somebody edited it by
 # hand. This workflow does the editing, but only after proving the new combination works:
 #
-#   canary   checks out the main of all seven, moves the pins to their heads (cns_composition.repin, which also
+#   canary   checks out the main of all five, moves the pins to their heads (cns_composition.repin, which also
 #            renders contracts/install-stack.txt from the moved manifest), then runs the whole circuit
 #            (cns_composition.circuit_canary). It runs every time, so a red run also means "something merged to
-#            one of the seven broke the others".
-#   pins     separately, checks that the repositories pin each shared package identically (JUDGE, DRAFTER and
-#            BURNISH all pin Warden; pip refuses them together if one moves alone). Red on a disagreement,
-#            and independent of the other two jobs.
+#            one of the five broke the others".
+#   pins     separately, checks that the repositories pin each shared package identically (JUDGE and the
+#            repositories released from the circuit, DRAFTER and BURNISH, all pin Warden; pip refuses them together
+#            if one moves alone). The released ones are read at the commits contracts/released-seats.json names, in
+#            a folder of their own. Red on a disagreement, and independent of the other two jobs.
 #   propose  only when a pin moved AND the canary said ACCEPT: opens or updates one pull request,
 #            branch auto/repin, that changes nothing but the commits in the manifest and the install file
 #            rendered from it.
 #
 # A person merges that pull request. Nothing here pushes to main.
 #
-# TRUST. The canary job runs code from the other six repositories, so it gets a read-only token and nothing else.
+# TRUST. The canary job runs code from the other four repositories, so it gets a read-only token and nothing else.
 # The propose job can write, and runs no code from them: it takes the manifest the canary produced and
 # re-checks it (same schema, same contract, same repository names, every pin a full commit) before using it.
 # Worst case for a compromised repository is a wrong commit id in a pull request that a person has to merge.
@@ -30,7 +31,8 @@
 # does not run on it. The change is one JSON file and the canary has already run the circuit on it.
 #
 # ADDING A REPOSITORY. List it in the manifest and add a checkout step below. tests/test_repin_workflow.py fails
-# until both are done.
+# until both are done. A repository named in contracts/released-seats.json is not part of the circuit: the manifest
+# may not name it, and repin refuses a manifest that does.
 name: repin
 
 on:
@@ -74,18 +76,8 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          repository: ${{ github.repository_owner }}/DRAFTER
-          path: stack/DRAFTER
-          persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
           repository: ${{ github.repository_owner }}/JUDGE
           path: stack/JUDGE
-          persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ github.repository_owner }}/BURNISH
-          path: stack/BURNISH
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -101,7 +93,7 @@ jobs:
         # numpy and matplotlib: ASSAY treats a claim it cannot run as a failure, and one claim needs them. Without
         # them Warden ends INCONCLUSIVE ("ASSAY's answer key could not be used to grade Ghost").
         run: python -m pip install pytest numpy matplotlib ./hub
-      - name: Move the pins to the heads of the seven checkouts
+      - name: Move the pins to the heads of the five checkouts
         id: repin
         working-directory: hub
         env:
@@ -161,18 +153,8 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          repository: ${{ github.repository_owner }}/DRAFTER
-          path: stack/DRAFTER
-          persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
           repository: ${{ github.repository_owner }}/JUDGE
           path: stack/JUDGE
-          persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ github.repository_owner }}/BURNISH
-          path: stack/BURNISH
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -182,11 +164,36 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
+      - name: Check out the released repositories at the commits contracts/released-seats.json names
+        env:
+          BASE_URL: https://github.com/${{ github.repository_owner }}
+        run: |
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+          base = os.environ["BASE_URL"].rstrip("/")
+          seats = json.load(open("hub/contracts/released-seats.json", encoding="utf-8"))["repos"]
+          if not seats:
+              sys.exit("contracts/released-seats.json names no repository")
+          os.makedirs("consumers", exist_ok=True)
+          for name, sha in seats.items():
+              if not re.fullmatch(r"[0-9a-f]{40}", sha):
+                  sys.exit(f"{name}: {sha!r} is not a full commit")
+              if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name):
+                  sys.exit(f"{name!r} is not a repository name")
+              dest = f"consumers/{name}"
+              subprocess.run(["git", "clone", "--quiet", "--no-checkout", f"{base}/{name}.git", dest], check=True)
+              subprocess.run(["git", "-C", dest, "checkout", "--quiet", "--detach", sha], check=True)
+              head = subprocess.run(["git", "-C", dest, "rev-parse", "HEAD"], check=True,
+                                    capture_output=True, text=True).stdout.strip()
+              if head != sha:
+                  sys.exit(f"{name} is at {head}, not {sha}")
+              print(f"{name} {head}")
+          PY
       - name: Every repository pins a shared package the same way
         working-directory: hub
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
-        run: python -m cns_composition.seat_pins --stack ../stack
+        run: python -m cns_composition.seat_pins --stack ../stack --consumers ../consumers
 
   propose:
     name: propose
@@ -250,7 +257,7 @@ jobs:
             cat proposed/repin.txt
             echo '```'
             echo
-            echo "Changes nothing but the commits in contracts/warden-stack.json and the install file rendered from it. Merge it before the next merge to any of the seven repositories."
+            echo "Changes nothing but the commits in contracts/warden-stack.json and the install file rendered from it. Merge it before the next merge to any of the five repositories."
           } > body.md
           if gh pr list --head auto/repin --state open --json number --jq '.[0].number' | grep -q .; then
             gh pr edit auto/repin --body-file body.md

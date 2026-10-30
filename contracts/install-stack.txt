@@ -2,9 +2,8 @@
 #
 #   python3 -m venv .venv && .venv/bin/pip install -r contracts/install-stack.txt
 #
-# The seven pins below equal contracts/warden-stack.json (tests/test_install_stack.py holds them to it).
-# watcher-mcu is not in the manifest: Warden does not verify it, it reads Warden's run record afterwards.
-# Its pin here is the commit that was tested with these seven.
+# The five pins below equal contracts/warden-stack.json (tests/test_install_stack.py holds them to it). DRAFTER, BURNISH
+# and WATCHER_MCU are released from the circuit (contracts/released-seats.json): they are not installed here.
 #
 # Running Warden on a target also needs pytest in the same environment (it runs the target's own suite):
 #     .venv/bin/pip install 'pytest>=8' "numpy==2.4.6; python_version < '3.12'" "numpy==2.5.4; python_version >= '3.12'" matplotlib==3.11.2
@@ -12,11 +11,8 @@
 # Every entry that needs CNS pins it the same way, the tag v2.2.0 (the commit ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f),
 # because pip treats a tag URL and a commit URL as two different sources and refuses to resolve them together.
 cns @ git+https://github.com/wking53214/CNS.git@v2.2.0
-ghost-tools @ git+https://github.com/wking53214/ghost_tools@99f3d5209bc98657db91eea1c25e833136ea61ab  # 1.10.10
-swizzle @ git+https://github.com/wking53214/SWIZZLE.git@b7451ad417cd166d10d4897a6b7dbe076ec02029  # 0.8.10
-assay @ git+https://github.com/wking53214/ASSAY.git@8f6ef8599d9acb2a2672a5a78c36ec0e276fa78c  # 0.11.7
-warden @ git+https://github.com/wking53214/Warden.git@fe9c8b35778de680d04b2a57775ac6a6831f4799  # 0.15.1
-judge @ git+https://github.com/wking53214/JUDGE.git@ad3d66f84a15ad7c320285e4d9ab006de90bdfdd  # 0.5.1
-drafter @ git+https://github.com/wking53214/DRAFTER.git@9da8da2cfc0250be3cd189e04abfa539a46a1d2d  # 0.2.14
-burnish @ git+https://github.com/wking53214/BURNISH.git@14c61d08efedb66ce9db4fdf58fba733c43e8748  # 0.3.15
-watcher-mcu @ git+https://github.com/wking53214/WATCHER_MCU.git@9012651f005f4dd56810b1d37d25b1cc053460c7  # 0.3.11
+ghost-tools @ git+https://github.com/wking53214/ghost_tools@e77f1bc65c91c48703bf767985cbb211df9c6d0e  # 1.10.12
+swizzle @ git+https://github.com/wking53214/SWIZZLE.git@dfef358d542da3488a27b85a703f7e4eb33312f6  # 0.8.11
+assay @ git+https://github.com/wking53214/ASSAY.git@fe0179d752835f89e620f871719cfd25ed7cb9a9  # 0.11.8
+warden @ git+https://github.com/wking53214/Warden.git@fade3ca5ee6435393d0588782929ff8de72f988f  # 0.16.1
+judge @ git+https://github.com/wking53214/JUDGE.git@646827e6ec90e70967ef84a7dded6ee2c7b4f055  # 0.5.2

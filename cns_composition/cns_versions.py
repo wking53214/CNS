@@ -31,7 +31,7 @@ HOW MANY IT READ
 
 A stack folder may be a symlink to a checkout, as `repin` already allows, and it is read like any other. The run says
 how many repositories it read, and fails (exit 2) when a repository named by `contracts/warden-stack.json` was not
-read: with one of the seven missing, "all at or above the floor" would be a claim about six.
+read: with one of them missing, "all at or above the floor" would be a claim about the rest.
 
 The files are read as text and never executed.
 """

@@ -272,13 +272,13 @@ def test_a_pin_problem_is_still_reported_when_a_repository_is_also_unread(tmp_pa
     assert "not a release" in err and "from: B" in err
 
 
-def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_seven(tmp_path, capsys):
+def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_five(tmp_path, capsys):
     stack = tmp_path / "stack"
     put(stack, "A", "pyproject.toml", f"[project]\ndependencies = [{pin('v1.9.0')}]\n")
     table = tmp_path / "t.json"
     table.write_text(json.dumps(table_dict()), encoding="utf-8")
     assert cv.main(["--stack", str(stack), "--table", str(table)]) != 0
-    assert "the manifest names 7" in capsys.readouterr().err
+    assert "the manifest names 5" in capsys.readouterr().err
 
 
 # -------------------------------------------------------------------------------------- 2.0.0: the tag spelling

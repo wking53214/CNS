@@ -2,9 +2,9 @@
 
 WHY THIS EXISTS
 
-`contracts/warden-stack.json` says which commits of the seven circuit repositories belong together, and
+`contracts/warden-stack.json` says which commits of the circuit repositories belong together, and
 Warden refuses a stack whose checkout is at any other commit. That is the point of it, and it is also the
-chore: every merge to any of the seven makes the manifest wrong, and until somebody edits it by hand the
+chore: every merge to any of them makes the manifest wrong, and until somebody edits it by hand the
 whole circuit refuses to run. It went stale twice on the day the manifest was first merged.
 
 This module is the editing, done by a program, from facts. It reads each pinned repository's HEAD in a
@@ -151,10 +151,10 @@ def load_released(path: Optional[Path] = None) -> Dict[str, str]:
         raise RepinError(str(err)) from err
     except (OSError, ValueError) as err:
         raise RepinError(f"{str(path)!r} cannot be read as JSON: {type(err).__name__}") from err
-    if not isinstance(data, dict) or data.get("schema") != RELEASED_SCHEMA or not isinstance(data.get("seats"), dict):
-        raise RepinError(f"{str(path)!r} is not a {RELEASED_SCHEMA} file with a \"seats\" object")
+    if not isinstance(data, dict) or data.get("schema") != RELEASED_SCHEMA or not isinstance(data.get("repos"), dict):
+        raise RepinError(f"{str(path)!r} is not a {RELEASED_SCHEMA} file with a \"repos\" object")
     seats: Dict[str, str] = {}
-    for name, commit in data["seats"].items():
+    for name, commit in data["repos"].items():
         if not isinstance(commit, str) or len(commit) != 40 or commit.strip("0123456789abcdef"):
             raise RepinError(f"{str(path)!r}: {name!r} is not pinned to a full lowercase 40-character commit")
         if name.casefold() in {n.casefold() for n in seats}:

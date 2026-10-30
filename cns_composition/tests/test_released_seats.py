@@ -29,7 +29,7 @@ def contracts(tmp_path, circuit=("JUDGE", "WARDEN"), released=("DRAFTER", "BURNI
     manifest = write_json(folder / "warden-stack.json",
                           {"schema": "warden-stack/1", "contract": "1", "repos": {n: "f" * 40 for n in names}})
     write_json(folder / "released-seats.json",
-               {"schema": "released-seats/1", "seats": {n: "c" * 40 for n in released}})
+               {"schema": "released-seats/1", "repos": {n: "c" * 40 for n in released}})
     return manifest
 
 
@@ -43,16 +43,16 @@ def put(stack, repo, *deps):
 # ------------------------------------------------------------------ the file
 
 def test_the_released_file_is_read_in_order_with_full_commits(tmp_path):
-    path = write_json(tmp_path / "r.json", {"schema": "released-seats/1", "seats": {"DRAFTER": A, "BURNISH": B}})
+    path = write_json(tmp_path / "r.json", {"schema": "released-seats/1", "repos": {"DRAFTER": A, "BURNISH": B}})
     assert repin.load_released(path) == {"DRAFTER": A, "BURNISH": B}
 
 
 @pytest.mark.parametrize("data, why", [
-    ({"schema": "released-seats/2", "seats": {"DRAFTER": A}}, "released-seats/1 file"),
-    ({"schema": "released-seats/1"}, "seats"),
-    ({"schema": "released-seats/1", "seats": {"DRAFTER": A[:7]}}, "full lowercase"),
-    ({"schema": "released-seats/1", "seats": {"DRAFTER": A.upper()}}, "full lowercase"),
-    ({"schema": "released-seats/1", "seats": {"DRAFTER": A, "drafter": B}}, "twice"),
+    ({"schema": "released-seats/2", "repos": {"DRAFTER": A}}, "released-seats/1 file"),
+    ({"schema": "released-seats/1"}, "repos"),
+    ({"schema": "released-seats/1", "repos": {"DRAFTER": A[:7]}}, "full lowercase"),
+    ({"schema": "released-seats/1", "repos": {"DRAFTER": A.upper()}}, "full lowercase"),
+    ({"schema": "released-seats/1", "repos": {"DRAFTER": A, "drafter": B}}, "twice"),
 ])
 def test_a_released_file_that_cannot_be_trusted_is_refused(tmp_path, data, why):
     with pytest.raises(repin.RepinError, match=why):
