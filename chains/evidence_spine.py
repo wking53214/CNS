@@ -55,7 +55,9 @@ TIE produced its id from the verified export of this document, it is a source ob
 and this text's SHA-256. A record TIE never produced, one carrying another document's text or source, or one of
 another kind is refused, and a FACT root citing the forged id is then not admissible. This guard is not spent by a yes,
 because one document gives TIE many records. It checks provenance, not a person's approval. A kernel built without an
-evidence guard takes any evidence, and a scenario records that as the second GAP.
+evidence guard takes any evidence, and a scenario records that as the second GAP. As with the root guard, the roster
+refuses to approve such a kernel (the kernel's seat is built with `require_evidence_guard=True`), so no approval is
+issued for it; calling it directly is still not stopped.
 
 Two other seams are closed in the repositories themselves, and the scenarios check them from here. The kernel refuses a
 root stated as FACT that cites no evidence. A person's sign-off at HERALD reaches TIE on its own path

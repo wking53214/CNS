@@ -172,7 +172,8 @@ and `record_road_sign`) stay refused after any decision, because no seat judges 
 doors off CCC and goes red if CCC gates one its reader does not name.
 The spine also builds the kernel with an evidence guard, which takes a record only if TIE produced it from the verified
 export of the document: a forged record, one with another document's text or source, or one of another kind is refused.
-A kernel built without that guard takes any evidence, and the spine records that as its second GAP.
+A kernel built without that guard takes any evidence, and the spine records that as its second GAP. The roster's kernel
+seat is built with `require_evidence_guard=True` as well, so a kernel like that gets no approval.
 
 A passing decision records the one document its seats agreed on (`Decision.subject`).
 `cns_composition.decision_guard.DecisionGuard` turns that into a permission for
@@ -185,7 +186,8 @@ process-local proof that `SuperGate.decide` made it, so a decision written or
 copied by hand cannot open a guard. The proof means nothing to another process. It protects
 the kernels built with it. A roster can insist on that: seat the kernel's root
 gate with `require_guard=True` and a kernel built without a guard gets no
-approval. A caller who builds an unguarded kernel and calls it directly is
+approval. Add `require_evidence_guard=True` and a kernel whose registry takes evidence
+from any caller gets none either. A caller who builds an unguarded kernel and calls it directly is
 still not stopped.
 
 ## The stack manifest

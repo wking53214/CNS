@@ -51,6 +51,10 @@ tagged: `contracts/cns-releases.json` keeps `current` at `v2.2.0` and the floor 
   other-kind records refused; a second recorded GAP states that a kernel built without the guard takes any evidence
   (#64: `210af87` to `955191c`; the SEAM HOLDS count in `tests/test_chains.py` went from 24 to 25 and the GAP count
   from 1 to 2 under rule 5).
+- The roster's kernel seat is built with `require_evidence_guard=True` beside `require_guard=True` (Conservation_Kernel
+  #26), so a kernel whose registry takes evidence from any caller gets no approval, even when every other gate
+  passes. One new scenario holds it (`76beb50`, `7a3083f`; the SEAM HOLDS count in `tests/test_chains.py` went from 25 to
+  26 under rule 5). Calling such a kernel directly is still not stopped, which the second GAP keeps stating.
 
 ### Changed
 
