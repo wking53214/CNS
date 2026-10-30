@@ -1,17 +1,17 @@
 # Status of the eight-repository circuit
 
-Written 2026-10-23, corrected 2026-10-24 after the round-6 audit, heads and summary refreshed 2026-10-30. Every number here comes from a named run, test or CI
+Written 2026-10-23, corrected 2026-10-24 after the round-6 audit, heads and summary refreshed 2026-10-30 (twice: the pin move to `v2.2.0`, then the Warden 0.16.2 fix). Every number here comes from a named run, test or CI
 job. Where something was not measured, it says so. The audit's scores are not recorded here; what it reproduced is
 under "Known open defects".
 
 ## In one paragraph
 
 At the heads in the table below the circuit installs together, runs end to end on a throwaway repository and ends
-ACCEPT, and refuses every bad setup it was tested against: CNS `stack` job, run 41012489794, at CNS commit
-28f6835aa11b5538f1b3b72e1034e586d326fd7b (canary ACCEPT on Warden's claim seat, in a stack with no Drafter and no
-Burnish; `circuit_refusals` 12 of 12 refused). CNS 2.2.0 is tagged `v2.2.0` (the owner's tag; the `cns` package is the
+ACCEPT, and refuses every bad setup it was tested against: CNS `stack` job, run 41018093667, at CNS commit
+5c0dbc9ef27c0409b302694411d4dd727b008319 (canary ACCEPT on Warden's claim seat, in a stack with no Drafter and no
+Burnish; `circuit_refusals` 13 of 13 refused, run with Warden 0.16.2). CNS 2.2.0 is tagged `v2.2.0` (the owner's tag; the `cns` package is the
 same as 2.1.0 apart from its version string, the release adds the decision guard in `cns_composition`) and every
-repository pins that tag, the circuit's five and the three released ones; Warden is at 0.16.1 (0.16.0 added the removal
+repository pins that tag, the circuit's five and the three released ones; Warden is at 0.16.2 (0.16.2 fixed its roster rule, below; 0.16.0 added the removal
 gate for claimed commits, moved the Judge tested set to JUDGE 0.5.1 and added opt-in suite reuse across runs). The owner
 released DRAFTER, BURNISH and WATCHER_MCU from the circuit on 2026-10-29 ([RELEASED_SEATS.md](RELEASED_SEATS.md)); since
 2026-10-30 the manifest names five repositories (ghost_tools, SWIZZLE, ASSAY, JUDGE and WARDEN) and the install file
@@ -20,7 +20,7 @@ installs those five, while the three released ones are still read for their CNS 
 way, and both reds were real: run 40943138464, at CNS 41018e6, failed at the install step because the install file asked
 for `v2.2.0` while the eight repositories still pinned `v2.1.0`; run 41011486672, at the intermediate commit 4dbf88c (the
 manifest and install file already moved), failed at the canary step because the canary still asked for a Drafter and a
-Burnish checkout. Pin22 step 4c fixed the second; the pin move to `v2.2.0` in every repository fixed the first. Two bodies of evidence newer than the self-hosting
+Burnish checkout. Pin22 step 4c fixed the second; the pin move to `v2.2.0` in every repository fixed the first. A third finding, not a red run: Warden 0.16.1 accepted a stack folder that held a DRAFTER (or BURNISH) checkout the manifest omits whenever an option supplied the seat, such as the claim seat; Warden 0.16.2 refuses it, and `circuit_refusals` has the case ("Stage 3", below). Two bodies of evidence newer than the self-hosting
 runs are copied unaltered into this repository. The falsifier run of 2026-10-28
 ([evidence/falsifier-2026-10-28/](evidence/falsifier-2026-10-28/)) put 20 real AI co-authored commits of ghost_tools
 through the circuit as built: all 20 ended REJECT at the guard, and with throwaway rule changes 3 ran to completion
@@ -49,36 +49,36 @@ in the pinned commit; the `.git/info/exclude` case is a known open defect with n
 
 | Claim | Evidence |
 |---|---|
-| The five circuit repositories install together, pip is satisfied, exactly one `cns` is installed, every shared pin agrees (the three released repositories' pins too) | CNS `stack` job (run 41012489794) at CNS commit 28f6835, plus `seat_pins --consumers`, `cns_versions --consumers --spelling tag`, `install_stack --check`, `repin --check`, same job |
+| The five circuit repositories install together, pip is satisfied, exactly one `cns` is installed, every shared pin agrees (the three released repositories' pins too) | CNS `stack` job (run 41018093667) at CNS commit 5c0dbc9, plus `seat_pins --consumers`, `cns_versions --consumers --spelling tag`, `install_stack --check`, `repin --check`, same job |
 | The whole circuit ends ACCEPT on a throwaway target, through the claim seat, with no Drafter and no Burnish | `circuit_canary`, same `stack` job |
-| The circuit refuses a dirty member, an omitted seat, a short, uppercase or wrong pin, hidden git changes, a red suite, a seat the manifest names that the folder lacks, and a Burnish checkout the manifest does not name | `circuit_refusals`, 12 of 12 refused, same `stack` job |
-| CNS's own suite | 1093 passed, 0 skipped at 28f6835, a local run on Python 3.12; CNS `ci` run 41012489801 (Python 3.10 to 3.13, packaging) |
+| The circuit refuses a dirty member, an omitted seat, a short, uppercase or wrong pin, hidden git changes, a red suite, a seat the manifest names that the folder lacks, and a Burnish or a Drafter checkout the manifest does not name | `circuit_refusals`, 13 of 13 refused, same `stack` job |
+| CNS's own suite | 1096 passed, 0 skipped at 5c0dbc9, a local run on Python 3.12; CNS `ci` run 41018093622 (Python 3.10 to 3.13, packaging) |
 | Each repository's own suite and lint | the CI runs in the table below, all jobs green |
 
 ## Heads and their CI (all on branch `claude/horsemen-production-status-5wsndb`)
 
-The CNS row names the commit its two runs read, 28f6835 (Pin22 step 4c), which is the commit before this refresh. This
+The CNS row names the commit its two runs read, 5c0dbc9 (Stage 3 step 2), which is the commit before this refresh. This
 page changes with every later commit, so the CI runs of a later head are on the Actions page and are not copied here.
-Each other row is the final head of that repository after the 2026-10-30 pin move to `v2.2.0`, and the run is the CI run
+Each other row is the final head of that repository after the 2026-10-30 pin moves (to `v2.2.0`, then to Warden 0.16.2; ghost_tools, SWIZZLE and ASSAY did not move in the second), and the run is the CI run
 on that head. The WARDEN, JUDGE, ghost_tools, SWIZZLE and ASSAY rows are the circuit (the manifest); DRAFTER, BURNISH and
 WATCHER_MCU are released from it and are listed in `contracts/released-seats.json` at the commits shown.
 
 | Repository | Version | Commit | CI run, all jobs green |
 |---|---|---|---|
-| CNS | 2.2.0 | 28f6835aa11b5538f1b3b72e1034e586d326fd7b (the `v2.2.0` tag is a lightweight tag at ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f) | 41012489801 (`ci`) and 41012489794 (`stack`) |
+| CNS | 2.2.0 | 5c0dbc9ef27c0409b302694411d4dd727b008319 (the `v2.2.0` tag is a lightweight tag at ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f) | 41018093622 (`ci`) and 41018093667 (`stack`) |
 | ghost_tools | 1.10.12 | e77f1bc65c91c48703bf767985cbb211df9c6d0e | 40999352268 |
 | SWIZZLE | 0.8.11 | dfef358d542da3488a27b85a703f7e4eb33312f6 | 40999959672 |
 | ASSAY | 0.11.8 | fe0179d752835f89e620f871719cfd25ed7cb9a9 | 41002319913 |
-| WARDEN | 0.16.1 | fade3ca5ee6435393d0588782929ff8de72f988f | 41008270323 |
-| JUDGE | 0.5.2 | 646827e6ec90e70967ef84a7dded6ee2c7b4f055 | 41009526841 |
-| DRAFTER (released) | 0.2.15 | f850b76fcd51e680d51a9dfd6a8dc235590a11fd | 41009652383 |
-| BURNISH (released) | 0.3.16 | ab43a94b2269e261c940c37d943f88d2e228d3b0 | 41009901813 |
-| WATCHER_MCU (released) | 0.3.12 | 76b72a19c23f4a915fb635d05994a069f3372c7f | 41010161952 |
+| WARDEN | 0.16.2 | df212db32c230a00cf4100038637be873262a816 | 41015065566 |
+| JUDGE | 0.5.3 | 62843b8b807072db4c8b7a95569772b2a3f34cd0 | 41016472228 |
+| DRAFTER (released) | 0.2.16 | 53c74547c893edb711359b89a8d0c89860db2c90 | 41016629542 |
+| BURNISH (released) | 0.3.17 | bca442d5d2ea2dfd69ebd7bb11672e4405521222 | 41016809257 |
+| WATCHER_MCU (released) | 0.3.13 | 0503727ac98618ff48080ba53e258081f466f2f1 | 41016953951 |
 
 CNS is pinned by its tag in every repository; every other cross-repository pin is a full commit. ghost_tools 1.10.11 is the
 reconcile of that repository's branch with its newer `main` (the owner's PR #112, which lists a ledger that did not run as
 unmeasured); 1.10.12 is the pin move. Warden's own tested set for the Judge stays at JUDGE `ad3d66f` (0.5.1); the manifest
-pins JUDGE 0.5.2 (`646827e`), which differs from it only in pin text.
+pins JUDGE 0.5.3 (`62843b8`), which differs from it in pin text, the README and CHANGELOG, the version, and the pin assertion in one test (`git diff --stat ad3d66f 62843b8` in JUDGE: five files, no source file of the `judge` package).
 
 ## Self-hosting: the circuit governing its own repositories
 
@@ -194,9 +194,45 @@ named step changed, and nothing else about it changed:
   `cns_composition/tests/test_circuit_refusals.py` (the fixture has no DRAFTER or BURNISH and has SWIZZLE; the stand-in
   Warden asks for a proposer; the list of cases names twelve).
 
-Found on the way and not fixed here: Warden 0.16.1 accepts a stack folder that holds a DRAFTER checkout the manifest does
-not name, when the claim seat proposes (its README says such a folder is refused); see
+Found on the way in step 4c and fixed in Stage 3 (next section): Warden 0.16.1 accepted a stack folder that holds a DRAFTER
+checkout the manifest does not name, when the claim seat proposes (its README says such a folder is refused); see
 [RELEASED_SEATS.md](RELEASED_SEATS.md).
+
+## Stage 3 (2026-10-30): a roster defect in Warden, its fix, and the new heads
+
+The defect. Warden's README says a `--stack` folder that holds a seat the pinned manifest omits is refused. Warden 0.16.1
+refused a BURNISH folder but accepted a DRAFTER folder, and would have accepted either whenever an option had already
+supplied the seat: `_resolve_stack` compared a folder with the manifest only for a seat whose option was still unset, and
+`--claim-commit`, `--claim-diff`, `--drafter` and `--finisher` set that option first. Nothing ran from the folder, so this
+was a gap in a stated rule and not a way to run unpinned code, but the rule is the point of the manifest. It was found
+in Pin22 step 4c, when `circuit_refusals` could only use BURNISH for its "unnamed seat" case.
+
+The fix. Warden 0.16.2 (`df212db32c230a00cf4100038637be873262a816`, CI run 41015065566, every job green: extras, lint,
+pytest on 3.11, 3.12 and 3.13, circuit, assay-latest) compares the folder with the manifest before any option is
+substituted: a releasable seat is used only if the manifest names it and the folder holds it, and is absent only if the
+manifest omits it and the folder lacks it; any other combination is exit 2 naming the seat. Warden's suite was 1146 passed,
+0 skipped locally at that commit (a local run of 0.16.1 gave 1137). A manifest that Warden does
+not accept (wrong schema or contract, no repositories) now counts as no manifest for that comparison, so the manifest's own
+problem is the one reported; a pre-existing test showed that the first version of the fix hid it.
+
+The move. JUDGE 0.5.3, DRAFTER 0.2.16, BURNISH 0.3.17 and WATCHER_MCU 0.3.13 pin that Warden (table above); this repository
+moved `contracts/warden-stack.json` (WARDEN and JUDGE), `contracts/install-stack.txt` (the same two lines, by `repin`) and
+`contracts/released-seats.json` (by hand, no tool writes it) in step 1 (commit 46bcce6, `ci` 41017661853 and `stack`
+41017661736 green), and `circuit_refusals` gained the case `unnamed_drafter` in step 2 (commit 5c0dbc9, `ci` 41018093622 and
+`stack` 41018093667 green): 13 of 13 refused at Warden 0.16.2, canary ACCEPT. The count is stated in
+`.github/workflows/stack.yml` (comment), this page (the opening paragraph and the table of claims) and
+[RELEASED_SEATS.md](RELEASED_SEATS.md), and all three say thirteen now.
+
+Existing tests edited under rule 5 of `CLAUDE.md`, each only because it asserted the exact text or case list the named step
+changed:
+- WARDEN, wave 1: `tests/test_docs.py::test_the_tags_are_described_without_claiming_a_release_that_is_not_tagged` (the tag
+  sentence and the version prefix list gain 0.16.2). No test asserted the old acceptance.
+- WATCHER_MCU, wave 2: `tests/test_pins.py` (the tested Warden's commit and version) and `tests/test_warden_e2e.py` (the
+  installed Warden's version).
+- CNS, step 2: `cns_composition/tests/test_circuit_refusals.py` (the list of case names gains `unnamed_drafter`, the test's name
+  says three roster cases, and the stand-in Warden also refuses a DRAFTER folder the manifest does not name).
+
+JUDGE, DRAFTER and BURNISH needed no test edit.
 
 ## What code cannot fix
 
