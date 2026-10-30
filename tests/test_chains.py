@@ -151,7 +151,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
-    assert sum(name.startswith("GAP: ") for name in names) == 1
+    assert sum(name.startswith("GAP: ") for name in names) == 2
     assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 25
 
 

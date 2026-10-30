@@ -542,13 +542,28 @@ def evidence_not_from_tie() -> Dict[str, object]:
     refusals = [refused_by_evidence_guard(call) for call in (forged, other_text, other_source, other_kind)]
     held_before = len(kernel.registry.snapshot()["evidence"])
     kernel.registry.add_evidence(evidence_record(honest, "doc-1", INVOICE))
-    proposition = Proposition(proposition_id="p0", text="The invoice came to $412.00.", epistemic_status=RootStatus.FACT,
-                              origin=OriginStatus.MACHINE_ORIGINATED, evidence_refs=("forged-1",), source_refs=("doc-1",))
-    claim = RootArtifact(artifact_id="root:doc-1", content=INVOICE, propositions=(proposition,),
-                         producer=Actor.system("tie"))
     return {"evidence_refused": refusals, "evidence_held_after_refusals": held_before,
             "honest_record_accepted": kernel.registry.evidence(honest) is not None,
-            "fact_root_citing_forged_admissible": not kernel.admit_root(claim)}
+            "fact_root_citing_forged_admissible": not kernel.admit_root(fact_root_citing("forged-1"))}
+
+
+def fact_root_citing(evidence_id: str) -> RootArtifact:
+    """A root stated as FACT about the true invoice that cites one piece of evidence by id."""
+    proposition = Proposition(proposition_id="p0", text="The invoice came to $412.00.", epistemic_status=RootStatus.FACT,
+                              origin=OriginStatus.MACHINE_ORIGINATED, evidence_refs=(evidence_id,), source_refs=("doc-1",))
+    return RootArtifact(artifact_id="root:doc-1", content=INVOICE, propositions=(proposition,),
+                        producer=Actor.system("tie"))
+
+
+def evidence_unguarded_accepts_anything() -> Dict[str, object]:
+    """The same forged record, added directly to a kernel built without the evidence guard."""
+    read = herald(INVOICE, "doc-1")
+    evidence, _ = tie(read.export, "doc-1", INVOICE)
+    kernel, _ = kernel_root(evidence, "doc-1", INVOICE, evidence_guarded=False)
+    refused = refused_by_evidence_guard(lambda: kernel.registry.add_evidence(evidence_record("forged-1", "doc-1", INVOICE)))
+    return {"has_evidence_guard": kernel.has_evidence_guard, "forged_evidence_refused": refused,
+            "forged_evidence_held": kernel.registry.evidence("forged-1") is not None,
+            "fact_root_citing_forged_admissible": not kernel.admit_root(fact_root_citing("forged-1"))}
 
 
 def fact_without_evidence() -> Dict[str, object]:
@@ -934,6 +949,10 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
       "kernel_registered_after_refusal": True, "refused_by_guard": False}),
+    ("GAP: a kernel built without the evidence guard and called directly takes evidence TIE never produced, and a FACT root citing it is admissible",
+     evidence_unguarded_accepts_anything,
+     {"has_evidence_guard": False, "forged_evidence_refused": False, "forged_evidence_held": True,
+      "fact_root_citing_forged_admissible": True}),
 ]
 
 
