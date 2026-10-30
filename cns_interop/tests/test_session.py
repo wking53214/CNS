@@ -301,3 +301,17 @@ def test_issue_refuses_a_pass_without_its_evidence_and_a_signer_who_is_not_the_d
         issue(DEC, accept, offer.body["terms"], "pass", evidence={}, now=T0)
     with pytest.raises(ValueError):
         issue(EVE, accept, offer.body["terms"], "retry", now=T0)
+
+
+def test_an_accept_that_arrives_after_its_offer_lapsed_is_refused():
+    dec, _, clock = pair()
+    req = Requester(REQ, trust=TrustPolicy(pinned=frozenset({DEC.agent})), clock=clock, message_ttl_ms=600_000)
+    req.discover(dec.manifest().to_wire())
+    request = req.request(DEC.agent, doc(), "income-screen", 1, offer_fields=["monthly_income_cents", "doc_type"],
+                          require_evidence=["threshold-check"], max_ttl_ms=600_000)
+    offer = dec.handle(request.to_wire())
+    accept = req.on_offer(offer.to_wire())
+    clock.t = offer.expires_at
+    with pytest.raises(Refused) as caught:
+        dec.handle(accept.to_wire())
+    assert caught.value.code == "expired" and "offer" in caught.value.reason  # the offer lapsed, not the accept

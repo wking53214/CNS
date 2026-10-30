@@ -67,7 +67,7 @@ class Decider:
         self._trust, self._ledger, self._clock, self._ttl = trust, ledger or MemoryLedger(), clock, message_ttl_ms
         self._endorsements = list(endorsements)
         self._presented: Dict[str, Tuple[Mapping[str, Any], ...]] = {}
-        self._offers: Dict[str, Tuple[Mapping[str, Any], Capability, Judge]] = {}
+        self._offers: Dict[str, Tuple[Mapping[str, Any], Capability, Judge, Optional[int]]] = {}
 
     @property
     def agent(self) -> str:
@@ -112,14 +112,19 @@ class Decider:
         except Refused as exc:
             return self._refuse(env, exc.code, exc.reason)
         offer = seal(self.signer, "offer", {"terms": terms}, to=env.sender, reply_to=env, ttl_ms=self._ttl, now=self._clock())
-        self._offers[offer.digest] = (terms, cap, judge)
+        now = self._clock()
+        self._offers = {k: v for k, v in self._offers.items() if v[3] is None or v[3] > now}  # forget lapsed offers
+        self._offers[offer.digest] = (terms, cap, judge, offer.expires_at)
         return offer
 
     def _on_accept(self, env: Envelope) -> Envelope:
         pending = self._offers.get(env.in_reply_to)
         if pending is None:
             raise Refused("terms", "the accept answers no offer this decider has open")
-        terms, cap, judge = pending
+        terms, cap, judge, offer_expires = pending
+        if offer_expires is not None and self._clock() >= offer_expires:
+            del self._offers[env.in_reply_to]
+            raise Refused("expired", "the offer this accept answers has lapsed")
         if env.sender != terms["requester"]:
             raise Refused("terms", "the accept comes from someone the offer was not made to")
         self._ledger.spend(env.sender, env.id, env.expires_at)
