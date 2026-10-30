@@ -60,9 +60,14 @@ run). Their seams are not exercised here and nothing below speaks for them.
 
 CCC is covered as far as its gate goes and as far as its write permission goes. The gate judges an attempted `ingest`.
 CCC built with the roster's guard as its `write_permission` asks that guard before `ingest`, `record`, `derive`,
-`infer` and `interpret`, so a direct call after a "no" is refused and an approved decision opens it once, for the one
-document it judged. A CCC built without a permission is not stopped, and nothing here can see that. `decide` and the
-versioning methods are not gated, by CCC's design: a human's action is never held up by a machine's roster.
+`infer`, `interpret`, `record_external_finding`, `discover`, `detect_road_sign` and `record_road_sign`, so a direct call
+after a "no" is refused. An approved decision opens `ingest` and `record` once, for the one document it judged. The
+other seven carry a conclusion, a finding or an observation, which no seat judges, so they stay refused after any
+decision. The doors CCC gates are read off CCC itself and compared with the reader's two lists, so a door CCC starts
+gating later turns this script red until the reader names it. A CCC built without a permission is not stopped, and
+nothing here can see that. `decide` and the versioning methods are not gated, by CCC's design: a human's action is
+never held up by a machine's roster. CCC also leaves open, on purpose, the methods that change a record that already
+exists and `detect_conflict`, `ask`, `attach_evidence` and `relate`; nothing here speaks for them.
 
 This is a check, not a demonstration: every scenario states the facts it must produce, and the script exits 1 if any
 differs, naming the scenario and the fact. Run with HERALD (at its root), TIE, Conservation_Kernel and
