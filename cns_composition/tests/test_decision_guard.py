@@ -366,3 +366,39 @@ def test_a_seat_and_its_binding_reader_go_together(kwargs):
 def test_a_seat_must_be_named_as_repository_and_gate(seat):
     with pytest.raises(ValueError, match="repository:gate"):
         DecisionGuard(lambda artifact: Judged(*artifact), seat=seat, binding_of=door_binding)
+
+
+# -- bound to a roster: a short roster of gates that pass anything cannot open the guard -------------------------------
+
+def guard_requiring(*seats):
+    return DecisionGuard(lambda artifact: Judged(*artifact), required_seats=seats)
+
+
+def test_a_decision_whose_roster_seats_every_required_seat_authorizes():
+    g = guard_requiring(DOOR, JUDGE, "CNS:same_subject")
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True
+
+
+def test_a_decision_from_a_roster_missing_a_required_seat_cannot_authorize_and_spends_nothing():
+    decided = decision()
+    g = guard_requiring(DOOR, JUDGE, "Conservation_Kernel:root_admission")
+    with pytest.raises(ValueError, match="lacks required seat.*Conservation_Kernel:root_admission"):
+        g.authorize(decided)
+    assert not g.authorized and g(("doc-1", "abc")) is False
+    guard_requiring(DOOR).authorize(decided)  # the refusal did not spend the decision's nonce
+
+
+def test_a_short_roster_that_passes_anything_cannot_open_a_guard_that_requires_the_real_roster():
+    weak = SuperGate([("Governance_Gateway", FakeGate("a", A)), ("DIT", FakeGate("o", OM))],
+                     required=("Governance_Gateway:a",), same_subject={"Governance_Gateway:a": reads, "DIT:o": reads})
+    decided = weak.decide({"Governance_Gateway:a": ("doc-1", "abc"), "DIT:o": ("doc-1", "abc")})
+    assert decided.allowed and decided.issued
+    with pytest.raises(ValueError, match="lacks required seat"):
+        guard_requiring(DOOR, JUDGE, "CNS:same_subject").authorize(decided)
+
+
+@pytest.mark.parametrize("seats", [("a", "a"), ("",), (7,)])
+def test_required_seats_must_be_distinct_non_empty_names(seats):
+    with pytest.raises(ValueError, match="required_seats"):
+        guard_requiring(*seats)

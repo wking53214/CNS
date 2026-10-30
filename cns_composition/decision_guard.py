@@ -34,6 +34,15 @@ the decision and keeps what it is bound to, `(subject, subject_digest)`; the gua
 (the one that repository's gate binds its verdict with), so the permission is for the same object the gate judged,
 every field of it. Without `seat`, the guard checks the document only, as before.
 
+BOUND TO A ROSTER
+
+`Decision.issued` proves that some SuperGate in this process issued the decision, not that the roster the caller
+meant to consult did. A guard built with `required_seats` refuses a decision whose roster does not seat every one of
+them, so a short roster of gates that pass anything cannot open it. This checks seat names, which the decision's root
+covers, not what stands behind a name: a roster that reuses the names with other gates is not caught here, because
+nothing in a decision says which gate objects ran. Treat it as closing the careless and the lazy substitution, and
+keep the guard and the roster's construction in the same reviewed file.
+
 WHAT IT DOES NOT DO
 
 It protects a kernel that was built with it. A caller who builds a kernel without a guard, or who writes to a ledger
@@ -46,7 +55,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Callable, Optional, Set, Tuple
+from typing import Callable, Iterable, Optional, Set, Tuple
 
 from cns.gate import GateOutcome
 
@@ -65,7 +74,8 @@ class DecisionGuard:
 
     def __init__(self, subject_of: Callable[[object], Judged], *, clock: Callable[[], float] = time.time,
                  seat: Optional[str] = None,
-                 binding_of: Optional[Callable[[object], Tuple[str, str]]] = None) -> None:
+                 binding_of: Optional[Callable[[object], Tuple[str, str]]] = None,
+                 required_seats: Iterable[str] = ()) -> None:
         if not callable(subject_of):
             raise ValueError("subject_of must be a function that reads which document an artifact is")
         if not callable(clock):
@@ -76,8 +86,12 @@ class DecisionGuard:
             raise ValueError("seat must name a seat of the roster as 'repository:gate'")
         if binding_of is not None and not callable(binding_of):
             raise ValueError("binding_of must be a function that reads what an artifact's verdict is bound to")
+        required = tuple(required_seats)
+        if any(not isinstance(name, str) or not name for name in required) or len(set(required)) != len(required):
+            raise ValueError("required_seats must be distinct, non-empty seat names")
         self._subject_of = subject_of
         self._clock = clock
+        self._required_seats = required
         self._seat = seat
         self._binding_of = binding_of
         self._bound_to: Optional[Tuple[str, str]] = None
@@ -110,6 +124,10 @@ class DecisionGuard:
                              "anything")
         if decision.expires_at is not None and self._clock() >= decision.expires_at:
             raise ValueError("the decision has expired, so it cannot authorize anything")
+        absent = [name for name in self._required_seats if name not in decision.seats]
+        if absent:
+            raise ValueError("the decision's roster lacks required seat(s), so it cannot authorize this guard: "
+                             + ", ".join(absent))
         bound_to = self._seat_binding(decision)
         with _SPENT_LOCK:
             if decision.nonce in _SPENT:
