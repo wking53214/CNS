@@ -97,6 +97,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ccc.cns_connector import Attempt, CccGate
 from ccc.cns_connector import attempt as ccc_attempt
+from ccc.cns_connector import attempt_digest
 from ccc.errors import WritePermissionRefused
 from ccc.models import Actor as CccActor
 from ccc.models import EpistemicStatus as CccStatus
@@ -107,15 +108,18 @@ from cns.gate import GateOutcome
 from cns_composition.decision_guard import DecisionGuard
 from cns_composition.super_gate import Decision, Judged, SuperGate
 from conservation_kernel import Actor, Artifact as RootArtifact, ConservationKernel, EvidenceRecord, Proposition
-from conservation_kernel.cns_connector import CnsRootAdmissionGate
+from conservation_kernel.cns_connector import DEFAULT_ROOT_SUBJECT, CnsRootAdmissionGate, root_digest
 from conservation_kernel.enums import EpistemicStatus as RootStatus
 from conservation_kernel.enums import EvidenceKind, OriginStatus
 from conservation_kernel.errors import InvalidEvent
 from governance_gateway.cns_connector import CnsGate as GatewayGate
+from governance_gateway.cns_connector import artifact_digest as door_digest
+from governance_gateway.cns_connector import artifact_subject as door_subject
 from governance_gateway.models import Artifact as DoorArtifact
 from governance_gateway.models import Authority, EpistemicStatus, Scope
 from herald import ConfidenceGate, HumanConfirmation, build_handoff
-from herald.cns_connector import HeraldConfidenceGate, HeraldSourceGate, run_governed
+from herald.cns_connector import (DEFAULT_SOURCE_SUBJECT, DEFAULT_SUBJECT, HeraldConfidenceGate, HeraldSourceGate,
+                                  claim_digest, run_governed, source_digest)
 from herald.handoff import verify_export
 from herald.source import STANDING_ATTESTATION, STANDING_RECORD, SourceDocument
 from tie.evidence.herald_intake import HeraldIntakeRefused, evidence_from_herald_export, signoffs_from_herald_export
@@ -329,6 +333,35 @@ READERS = {"HERALD:herald_source": reads_document, "Conservation_Kernel:root_adm
            "CCC:ccc.transition": reads_attempt}
 
 
+def binds_document(document: SourceDocument) -> Tuple[str, str]:
+    return DEFAULT_SOURCE_SUBJECT, source_digest(document)
+
+
+def binds_root(root: RootArtifact) -> Tuple[str, str]:
+    """What the kernel's verdict on a root is bound to: the root's id and its whole artifact digest, every proposition."""
+    return DEFAULT_ROOT_SUBJECT, root_digest(root)
+
+
+def binds_door(entry: DoorArtifact) -> Tuple[str, str]:
+    return door_subject(entry), door_digest(entry)
+
+
+def binds_attempt(att: Attempt) -> Tuple[str, str]:
+    """What CCC's verdict on an attempt is bound to: the operation and every argument, defaults applied."""
+    return att.subject, attempt_digest(att)
+
+
+def binds_claim(claim) -> Tuple[str, str]:
+    return DEFAULT_SUBJECT, claim_digest(claim)
+
+
+#: What each seat's verdict must be bound to, read with the digest function that seat's own repository exports. With
+#: `strict_binding` a verdict bound to anything else is a breach. Policy, like READERS: reviewed with it.
+BINDINGS = {"HERALD:herald_source": binds_document, "Conservation_Kernel:root_admission": binds_root,
+            "Governance_Gateway:governance_gateway": binds_door, "HERALD:herald_confidence": binds_claim,
+            "CCC:ccc.transition": binds_attempt}
+
+
 def fresh_guard() -> DecisionGuard:
     """A closed guard that will open, once, for the root the roster's decision judged. Policy, like READERS."""
     return DecisionGuard(reads_root)
@@ -440,7 +473,9 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
     log.addHandler(unchecked)
     try:
         readers = {seat: reads for seat, reads in READERS.items() if seat != drop}
-        decision = SuperGate(seats, required=REQUIRED_SEATS, same_subject=readers).decide(
+        bindings = {seat: binds for seat, binds in BINDINGS.items() if seat != drop}
+        decision = SuperGate(seats, required=REQUIRED_SEATS, same_subject=readers, binding_of=bindings,
+                             strict_binding=True).decide(
             {f"{repo}:{gate.name}": c for repo, gate, c in steps})
     finally:
         log.removeHandler(unchecked)
