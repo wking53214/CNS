@@ -1,8 +1,8 @@
 # Status of the five-repository circuit, and the three repositories released from it
 
-Written 2026-10-23 (when the circuit was eight repositories), corrected 2026-10-24 after the round-6 audit, heads and summary refreshed 2026-10-30 (three times: the pin move to `v2.2.0`, the Warden 0.16.2 fix, then the Stage 4 fix wave after the round-7 audit). Every number here comes from a named run, test or CI
-job. Where something was not measured, it says so. The audit's scores are not recorded here; what it reproduced is
-under "Known open defects".
+Written 2026-10-23 (when the circuit was eight repositories), corrected 2026-10-24 after the round-6 audit, heads and summary refreshed 2026-10-30 (four times: the pin move to `v2.2.0`, the Warden 0.16.2 fix, the Stage 4 fix wave after the round-7 audit, then the Stage 5 fix wave after the round-8 audit). Every number here comes from a named run, test or CI
+job. Where something was not measured, it says so. The round-6 audit's scores are not recorded here; what it reproduced is
+under "Known open defects". The round-8 scores are in the "Round 8" section.
 
 ## In one paragraph
 
@@ -12,11 +12,11 @@ puts the tree back). Any actor's real change enters through Warden's claim seat.
 the circuit by owner ruling (2026-10-29): not seats, nothing deleted, each still works on its own.
 
 At the heads in the table below the circuit installs together, runs end to end on a throwaway repository and ends
-ACCEPT, and refuses every bad setup it was tested against: CNS `stack` job, run 41029576144, at CNS commit
-22d6ad74cfd76aa726290c71b9414589728a6c43 (canary ACCEPT on Warden's claim seat, in a stack with no Drafter and no
-Burnish; `circuit_refusals` 16 of 16 refused, run with Warden 0.16.3; the earlier 13 of 13 at Warden 0.16.2 is in the Stage 3 section). CNS 2.2.0 is tagged `v2.2.0` (the owner's tag; the `cns` package is the
+ACCEPT, and refuses every bad setup it was tested against: CNS `stack` job, run 41052312277, at CNS commit
+c7159ef1e97c37605cd78d0ad95c10446b91a7de (canary ACCEPT on Warden's claim seat, in a stack with no Drafter and no
+Burnish; `circuit_refusals` 16 of 16 refused, run with Warden 0.16.4; the earlier 13 of 13 at Warden 0.16.2 is in the Stage 3 section). CNS 2.2.0 is tagged `v2.2.0` (the owner's tag; the `cns` package is the
 same as 2.1.0 apart from its version string, the release adds the decision guard in `cns_composition`) and every
-repository pins that tag, the circuit's five and the three released ones; Warden is at 0.16.3 (0.16.3 refuses a claimed mode change, hashes the tree fingerprint with delimiters and refuses a damaged chronicle, and moved its Judge tested set to JUDGE 0.5.3; 0.16.2 fixed its roster rule, below; 0.16.0 added the removal
+repository pins that tag, the circuit's five and the three released ones; Warden is at 0.16.4 (0.16.4 writes a claimed change's bytes exactly and records the bytes that landed, strips credentials from the recorded origin and says in the claim row whether the whole target stood at the parent; 0.16.3 refuses a claimed mode change, hashes the tree fingerprint with delimiters and refuses a damaged chronicle, and moved its Judge tested set to JUDGE 0.5.3; 0.16.2 fixed its roster rule, below; 0.16.0 added the removal
 gate for claimed commits and opt-in suite reuse across runs). The owner
 released DRAFTER, BURNISH and WATCHER_MCU from the circuit on 2026-10-29 ([RELEASED_SEATS.md](RELEASED_SEATS.md)); since
 2026-10-30 the manifest names five repositories (ghost_tools, SWIZZLE, ASSAY, JUDGE and WARDEN) and the install file
@@ -47,45 +47,45 @@ It is a young system with one maintainer and no outside users. Treat it as beta 
 What "every seat is clean and at its pinned commit" covers, exactly: only what git reports for tracked files and for
 files git does not ignore. Two things git does not report still run, and both were reproduced by the audit against the
 pinned Warden (b57b81e): an unchecked-hash `.pyc` file in an ignored `__pycache__` of a seat checkout is loaded instead
-of the source, and a file listed in `.git/info/exclude` is imported. The `.pyc` case is being fixed in Warden and is not
-in the pinned commit; the `.git/info/exclude` case is a known open defect with no fix yet.
+of the source, and a file listed in `.git/info/exclude` is imported. The `.pyc` case was fixed in Warden 0.13.10 (Warden's README, WHAT BROKE) and is
+not in the audited commit b57b81e; the `.git/info/exclude` case is a known open defect with no fix yet.
 
 ## What was checked, and by what
 
 | Claim | Evidence |
 |---|---|
-| The five circuit repositories install together, pip is satisfied, exactly one `cns` is installed, every shared pin agrees (the three released repositories' pins too) | CNS `stack` job (run 41029576144) at CNS commit 22d6ad7, plus `seat_pins --consumers`, `cns_versions --consumers --spelling tag`, `install_stack --check`, `repin --check`, same job |
+| The five circuit repositories install together, pip is satisfied, exactly one `cns` is installed, every shared pin agrees (the three released repositories' pins too) | CNS `stack` job (run 41052312277) at CNS commit c7159ef, plus `seat_pins --consumers`, `cns_versions --consumers --spelling tag`, `install_stack --check`, `repin --check`, same job |
 | The whole circuit ends ACCEPT on a throwaway target, through the claim seat, with no Drafter and no Burnish | `circuit_canary`, same `stack` job |
-| The circuit refuses a dirty member, an omitted seat, a short, uppercase or wrong pin, hidden git changes, a red suite, a seat the manifest names that the folder lacks, and a Burnish or a Drafter checkout the manifest does not name | `circuit_refusals`, 16 of 16 refused, same `stack` job (Stage 4 added three cases that supply the seat through `--claim-diff`, `--drafter` and `--finisher`, and every roster case requires the reason to name the seat) |
-| CNS's own suite | 1119 passed, 0 skipped at 22d6ad7's tree, a local run on Python 3.12; CNS `ci` run 41029576277 (Python 3.10 to 3.13, packaging) |
+| The circuit refuses a dirty member, an omitted seat, a short, uppercase or wrong pin, hidden git changes, a red suite, a seat the manifest names that the folder lacks, and a Burnish or a Drafter checkout the manifest does not name | `circuit_refusals`, 16 of 16 refused, same `stack` job (Stage 4 added three cases that supply the seat through `--claim-diff`, `--drafter` and `--finisher`, and every roster case requires the reason to name the seat; Stage 5 numbers the throwaway folders so a case name cannot reach a reason, and a seat counts as named only outside a path) |
+| CNS's own suite | 1176 passed, 0 skipped at c7159ef's tree, a local run on Python 3.12; CNS `ci` run 41052312299 (Python 3.10 to 3.13, packaging) |
 | Each repository's own suite and lint | the CI runs in the table below, all jobs green |
 
 ## Heads and their CI (all on branch `claude/horsemen-production-status-5wsndb`)
 
-These are the final heads of the Stage 4 fix wave (2026-10-30) and the CI run on each. The CNS row names the commit its two
-runs read, 22d6ad7 (Stage 4 wave 4 step b), which is the commit before this page's refresh; the CI runs of later CNS commits
+These are the final heads of the Stage 5 fix wave (2026-10-30) and the CI run on each. The CNS row names the commit its two
+runs read, c7159ef (Stage 5 wave 4 step f, the commit that moved the manifest), which is the commit before this page's refresh; the CI runs of later CNS commits
 are on the Actions page and are not copied here. The WARDEN, JUDGE, ghost_tools, SWIZZLE and ASSAY rows are the circuit (the
 manifest); DRAFTER, BURNISH and WATCHER_MCU are released from it and are listed in `contracts/released-seats.json` at the commits
 shown. Every run listed concluded `success` on every job.
 
 | Repository | Version | Commit | CI run, all jobs green |
 |---|---|---|---|
-| CNS | 2.2.0 | 22d6ad74cfd76aa726290c71b9414589728a6c43 (the `v2.2.0` tag is a lightweight tag at ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f) | 41029576277 (`ci`) and 41029576144 (`stack`) |
-| ghost_tools | 1.10.13 | eaf2ae8845f9b4e39d79f50bbfaf70acde9a11a3 | 41022000016 |
-| SWIZZLE | 0.8.12 | 60ba9fc5bf383c0c4297bf94b8313b33e0ab039c | 41022003356 |
-| ASSAY | 0.11.9 | 3faba860a7cfcce6547e5ddcf8d1b0d773a27001 | 41022007534 |
-| WARDEN | 0.16.3 | cb45681ea80f845fb8f23bb091bda7f587c6a547 | 41026004402 |
-| JUDGE | 0.5.4 | d239f40bbc7c579ee40de34cafde813f3b35f239 | 41028162614 |
-| DRAFTER (released) | 0.2.17 | 1ebb5fb5155aea95bebfad1b73cebb896afb35c9 | 41028203434 |
-| BURNISH (released) | 0.3.18 | e0070738dd918d7ddc0427ace385a81c3e7ee57e | 41028356411 |
-| WATCHER_MCU (released) | 0.3.14 | e76d74a7218d5f1b822ab234703c24974ebf0aa6 | 41028370809 |
+| CNS | 2.2.0 | c7159ef1e97c37605cd78d0ad95c10446b91a7de (the `v2.2.0` tag is a lightweight tag at ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f) | 41052312299 (`ci`) and 41052312277 (`stack`) |
+| ghost_tools | 1.10.14 | a9115b5ed02e923238b96ce0fc627992509371fa | 41045484740 |
+| SWIZZLE | 0.8.13 | 87cddb4b66f248987e135f08e174fc8cc219f582 | 41043664917 |
+| ASSAY | 0.11.10 | f7ea4a4200374ad246d17958f591307369d5e744 | 41044769515 |
+| WARDEN | 0.16.4 | 57f7bb7b12314f0ba30697cff9a846c749e3d606 | 41048270903 |
+| JUDGE | 0.5.5 | 836a748113ce252775fb6bba0588ffe0336d1bd2 | 41050177604 |
+| DRAFTER (released) | 0.2.18 | 9d221bc2d475a44e94e45ded33ef41f7c518b52e | 41050304881 |
+| BURNISH (released) | 0.3.19 | 182b42df5e709f5de9521ce1aa907aaf35a71b44 | 41050683235 |
+| WATCHER_MCU (released) | 0.3.15 | 76ed941bb0a87c673a58b3b94c546cc07a2353e2 | 41050796838 |
 
-CNS is pinned by its tag in every repository; every other cross-repository pin is a full commit. ghost_tools 1.10.13, SWIZZLE
-0.8.12 and ASSAY 0.11.9 are documentation-only releases (the roster text and a test that STACK.md does not say seven; no code
-changed). Warden's own tested set for the Judge is JUDGE `62843b8` (0.5.3), moved there from `ad3d66f` (0.5.1) by the owner's
-decision so that Warden's `circuit` job exercises the Judge that ships; the manifest pins JUDGE 0.5.4 (`d239f40`), which differs
-from `62843b8` in documentation, a docstring in `judge/cns_connector.py`, a test docstring and the version, and in no Judge rule
-(`git diff --stat 62843b8 d239f40` in JUDGE: seven files, no rule).
+CNS is pinned by its tag in every repository; every other cross-repository pin is a full commit. ghost_tools 1.10.14 changes `--join`
+(an absent path or a plain file is exit 2); SWIZZLE 0.8.13 changes the corpus and knowledge readers (an unreadable file is named, exit 2); ASSAY 0.11.10 is
+documentation and two docstrings. Warden's own tested set for the Judge is JUDGE `62843b8` (0.5.3), moved there from `ad3d66f` (0.5.1) by the owner's
+decision so that Warden's `circuit` job exercises the Judge that ships; the manifest pins JUDGE 0.5.5 (`836a748`), which differs
+from `62843b8` in documentation, a docstring in `judge/cns_connector.py`, one ACCEPT message string (the words "no edit left the project" now
+say the edits Warden applied), tests and the version, and in no Judge rule (`git diff --stat 62843b8 836a748` in JUDGE: nine files, no rule).
 
 ## Self-hosting: the circuit governing its own repositories
 
@@ -119,7 +119,7 @@ Limits of this record:
 
 ## Known open defects (each is also in the owning repository's README)
 
-Open at the commits of the 2026-10-24 correction; some have been fixed since in the repositories' own branches (their CHANGELOGs say which), and this list was not re-audited at the new heads. Several were reproduced by the round-6 audit on 2026-10-23 and 2026-10-24 and are
+Open at the commits of the 2026-10-24 correction; some have been fixed since in the repositories' own branches (their CHANGELOGs say which). The round-8 audit checked this list against the 2026-10-30 heads and found two entries that are not real any more; they are removed: an ACCEPT record's empty `reason` was fixed in Warden 0.14.0 (2026-10-28; `tests/test_honest_exit_codes.py::test_0_is_accept_and_only_accept`), and a nonexistent `--baseline FILE` read as an empty baseline was fixed in ghost_tools 1.10.9 (2026-10-24; exit 2). The rest of the list was not re-audited line by line. Several were reproduced by the round-6 audit on 2026-10-23 and 2026-10-24 and are
 being fixed on the repositories' branches; a fix counts only when the manifest is re-pinned to it.
 
 - JUDGE: a `replace` edit on a `.py` file slips its "tests did not run" rule (reproduced; no test yet). Its skip rule
@@ -128,7 +128,7 @@ being fixed on the repositories' branches; a fix counts only when the manifest i
   accepted.
 - WARDEN: `.git/info/exclude` can hide an untracked file from the dirty check; a folder owned by another user is
   refused as unreadable; the seat version in the run record comes from pip's install record, not from the module that
-  was loaded (found by self-hosting, reproduced); an ACCEPT record's `reason` field is empty; a FINISH_REJECTED record
+  was loaded (found by self-hosting, reproduced); a FINISH_REJECTED record
   gives counts but not the failing test's name; the seat version in the run record comes from pip's install record
   even when the code that ran is a stack checkout; `warden tagteam ... | head -c0` prints a traceback and exits 1
   instead of the earned code; an ignored `.pyc` in a seat checkout is loaded and the dirty check does not see it.
@@ -140,15 +140,15 @@ being fixed on the repositories' branches; a fix counts only when the manifest i
   a pin that lives in an extra (SWIZZLE's `cns`, ghost_tools' `anthropic`) as missing and writes a false line into the
   README; "1.374 tests pass" is read as 374.
 - ghost_tools: the `--version` banner contains profanity (the owner's naming decision); its committed baseline hides
-  one finding; a nonexistent `--baseline FILE` is treated as an empty baseline and exits 0 (the README says exit 2).
+  one finding.
 - ASSAY: its committed baseline is stale (34 of 104 entries match nothing), and nothing in CI would
   have caught it; a stray `specimens/__pycache__` directory makes its verifier fail.
 - SWIZZLE: the test that forbids `shell=True` is a substring check, and `kw = {"shell": True}; subprocess.run(c, **kw)`
   passes it.
 - DRAFTER: `setup.py` is not in the list of files it never edits; a missing `dynamic_lookup_possible` key counts as
   "no"; the README's "never opens a file for writing" is false in the letter (one error path opens the null device).
-- Install recipe: DRAFTER's own suite needs the ghost_tools checkout on `PYTHONPATH`; the stack install alone leaves
-  10 of its tests red.
+- Install recipe: DRAFTER's own suite needs the ghost_tools checkout on `PYTHONPATH`; a pip-installed ghost-tools alone leaves
+  10 of its tests red. (The install file no longer installs DRAFTER, so this concerns running its suite in that environment.)
 - Speed: Warden re-runs the target's whole suite four times, which is about 96 percent of a ghost_tools run.
 - A SWIZZLE governor attack was twice reported "not run" under heavy load in an earlier audit; the cause was never
   found, and no run in the self-hosting record showed it.
@@ -282,6 +282,63 @@ DRAFTER and BURNISH needed no test edit. Not moved in Stage 4: the CI "tested se
 Judge line (the owner's decision), the `cns` package (untouched), and any Judge rule. Not verified in Stage 4: a Judge ruling on a
 claimed removal, the `.git/info/exclude` case, and a recorded self-hosting run at these heads.
 
+## Stage 5 (2026-10-30): the round-8 fix wave
+
+The round-8 audit (nine repository auditors and a red team on the circuit, all on the final heads of Stage 4) found real defects and stale
+text. What changed, by wave:
+
+- Wave 1 (ghost_tools 1.10.14, SWIZZLE 0.8.13, ASSAY 0.11.10): `--join` with an absent path or a plain file is exit 2 naming the path (it
+  printed "boundary scan joined 2 repositories" and exited 0); an unreadable or non-object corpus case file or knowledge file is named and
+  the lab commands exit 2 (they said "the corpus is empty"); README and docstrings stopped calling a fixed ghost_tools problem open,
+  stated the abandoned-folder sweep age (15 minutes) and what `swizzle -v` logs.
+- Wave 2 (Warden 0.16.4): the claim seat writes the claimed bytes exactly and the row's `after_sha256` is the digest of the bytes that
+  landed (a CRLF to LF commit left the file CRLF while the row said LF); a landed digest that differs refuses the run before it
+  measures; a held deletion of an executable gives it back executable; the recorded origin carries no credential; `warden chronicle DIR`
+  refuses an unreadable file or line with exit 2; a claimed path through a symbolic link and a `--claim-diff` that is a pipe are refused; a
+  tree with a non-UTF-8 file name fingerprints; the claim row gains `target_tree_digest` and `base_matches_parent` (record only). The
+  README now says plainly what is not governed (see "Round 8").
+- Wave 3 (JUDGE 0.5.5, DRAFTER 0.2.18, BURNISH 0.3.19, WATCHER_MCU 0.3.15): JUDGE has tests that each of nine harm classes stays a
+  REJECT beside a changed test file and a minor finding (each fails under a local mutation that turns that harm into a hold), a false README
+  sentence about the CNS pin is replaced, and its ACCEPT sentence names the edits Warden applied; BURNISH's `check` reports a `.py` file
+  that is not valid UTF-8 as a finding instead of "0 finding(s)"; DRAFTER's and WATCHER_MCU's install and roster wording are corrected and
+  five more oath bypasses are documented (the oath was not changed).
+- Wave 4 (this repository): README, `cns_versions` and `repin` say five repositories; `circuit_refusals` numbers its throwaway folders, so
+  a case name cannot reach a reason, and a roster case now needs the seat named as a seat outside any path (it could pass on exit 2 alone
+  and on a folder name); `release --check` and `circuit_canary` exit 2 with one line when they cannot be set up; `repin --released`
+  writes `contracts/released-seats.json` from the released repositories' heads and `seat_pins --consumers` compares it with their
+  checkouts (nothing wrote or compared it before); this page's two stale defects are removed.
+
+Existing tests edited under rule 5 of `CLAUDE.md`, each only because it asserted the exact behaviour the named step changed:
+- SWIZZLE, wave 1: `Tests/test_lab_knowledge.py::test_an_unreadable_file_does_not_take_the_run_down` (a garbage knowledge file now raises `KnowledgeError`).
+- ASSAY, wave 1: the docstring of `tests/test_ghost_baseline.py` (text only, same line count).
+- WARDEN, wave 2: `tests/test_claimed_removal.py` (one assertion: the key list now ends with two keys after `removals`); `tests/test_docs.py`
+  (the versions next to the pins and the tag sentence).
+- BURNISH, wave 3: `tests/test_readme_ledger.py` (the ledger heading pattern accepts the ", not tagged" suffix the CHANGELOG headings of 0.3.14 to 0.3.19 carry).
+- WATCHER_MCU, wave 3: `tests/test_pins.py` and `tests/test_warden_e2e.py` (the tested Warden's commit and version).
+- CNS, wave 4: `tests/test_checkout_boundary.py` (the canaries must exit 2, not just non-zero), `tests/test_repin_workflow.py` (the re-check helper also
+  writes the released-seats files).
+
+Not moved in Stage 5: the CI "tested set" lines in every repository other than Warden's pins on ghost_tools, SWIZZLE and ASSAY and the other
+repositories' pins on Warden, the `cns` package (untouched), and any Judge rule, detector, gate rule, protected-path or test-recognition list.
+
+## Round 8 (2026-10-30): the audit's scores and what is open
+
+Scores out of 50 for the nine repositories: WATCHER_MCU 38, JUDGE 37, ghost_tools 37, ASSAY 37, DRAFTER 37, BURNISH 36, SWIZZLE 36, WARDEN 35,
+CNS 35. The red team on the circuit scored it 6 out of 10. Its reasons: an ACCEPT still rests on trusting whoever supplies the manifest, on
+the string-valued human grant, on an unsandboxed suite, and a change that passes weak tests can still be accepted.
+
+Fixed in Stage 5: the defects listed above. Open, and now said plainly in the repositories' READMEs:
+- `--authorize` is an unauthenticated string; the human boundary rests on who can run the command.
+- `--cns` and the manifest are the trust root; a self-consistent forged hub is accepted, and nothing ties `--cns` to the published manifest.
+- A manifest that omits WARDEN itself is not refused, although omitting any other required member is. This is a roster change and the owner has not ruled on it (decision pending); it was not implemented.
+- The target's suite runs unsandboxed; it can write outside the project or plant a git hook.
+- A change that passes every test can still be wrong; the `mutate` check is declined by design.
+- The held result stores the target's `.git/config` base64 encoded, so a credential in the remote URL is recoverable from it.
+- The CNS connector maps INSUFFICIENT, a hold for a named human included, to RETRY, which cannot clear a hold.
+Parked by the owner's research guardrail and not touched: Judge's `_is_baseline` and `.ghost*` folders; Warden's protected-path list; a
+same-length rewrite of a claimed code file; a claimed change that breaks code but passes weak tests; `--authorize` names such as
+claude, ci or bot; the Watcher oath denylist; other-language test recognition in the Judge.
+
 ## What code cannot fix
 
 One human maintainer. Repositories under three months old. No outside users. Release tags are the owner's to create,
@@ -291,5 +348,5 @@ evidence.
 
 ## Independent audit
 
-Round 6, nine independent auditors, on the commits of 2026-10-24 (not the heads in the table above). No scores are recorded on this page; the defects the audit
+Round 6, nine independent auditors, on the commits of 2026-10-24 (not the heads in the table above). No round-6 scores are recorded on this page (round 8's are, above); the defects the audit
 reproduced are listed above, and the corrections to this page and to the README were made from them.

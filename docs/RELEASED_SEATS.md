@@ -42,8 +42,9 @@ what it is and is not:
 
 ## The Warden rule that lets a manifest leave them out (Warden 0.15.0)
 
-Warden 0.15.0 is the target version of the WARDEN repository for this wave and is not tagged. Its rule for
-`--stack DIR`:
+Warden 0.15.0 was the version of the WARDEN repository for this wave. It was never tagged (Warden's tags stop at
+`v0.12.0`), and the repository has moved on: the manifest now pins Warden 0.16.4. The rule it introduced, for `--stack DIR`,
+still holds:
 
 - Without `--stack-manifest`: unchanged. All six checkouts (ghost_tools, swizzle, assay, drafter, judge, burnish) are
   required, and a missing one is a usage error.
