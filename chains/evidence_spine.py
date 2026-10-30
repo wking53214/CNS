@@ -227,15 +227,55 @@ def reads_attempt(att: Attempt) -> Judged:
     return Judged(att.kwargs["metadata"]["source_id"], sha256(att.args[0]))
 
 
+#: The direct writes to CCC that carry a document the roster judged. Policy, like READERS.
+WRITES_A_DOCUMENT = ("ingest", "record")
+
+#: The direct writes to CCC that carry something no seat of the roster judges: a conclusion (`derive`, `infer`,
+#: `interpret`), a finding (`record_external_finding`, `discover`) or an observation (`detect_road_sign`,
+#: `record_road_sign`). None carries the text the roster compared, only a claim about it, so no decision opens them.
+#: Policy, like READERS: reviewed with it, and held by `ccc_doors_all_named` against the doors CCC really gates.
+WRITES_NO_DOCUMENT = ("derive", "infer", "interpret", "record_external_finding", "discover", "detect_road_sign",
+                      "record_road_sign")
+
+
 def reads_write(request: WriteRequest) -> Judged:
     """The document a direct write to CCC is about, for a CCC built with the roster's permission.
 
     `ingest` and `record` carry one: the source CCC is asked to record the text under, and the digest of that text,
-    read as `reads_attempt` reads it. `derive`, `infer` and `interpret` carry a conclusion, and no seat of the roster
-    judges a conclusion, so they name no document and stay refused after any decision. Policy, like READERS."""
-    if request.operation not in ("ingest", "record"):
-        raise ValueError(f"{request.operation} names no document the roster judged")
-    return Judged(request.kwargs["metadata"]["source_id"], sha256(request.args[0]))
+    read as `reads_attempt` reads it. The doors in `WRITES_NO_DOCUMENT` carry a conclusion, a finding or an
+    observation, which no seat of the roster judges, so they name no document and stay refused after any decision. A
+    door that is in neither list is refused too: an unknown door stays shut."""
+    if request.operation in WRITES_A_DOCUMENT:
+        return Judged(request.kwargs["metadata"]["source_id"], sha256(request.args[0]))
+    if request.operation in WRITES_NO_DOCUMENT:
+        raise ValueError(f"{request.operation} names no document the roster judged: it carries a conclusion, a "
+                         "finding or an observation, and no seat judges those")
+    raise ValueError(f"{request.operation} is a door the roster has no reading for, so it stays shut")
+
+
+def ccc_gated_doors() -> Tuple[str, ...]:
+    """Every public method of CCC that asks its write permission, found on CCC itself, sorted.
+
+    CCC wraps each of them so that it asks first, and the wrapper keeps the method's own name and a pointer to the
+    method it wraps. That is how they are found here, so the list is CCC's own and is not copied into this script."""
+    return tuple(sorted(name for name in dir(CCCSystem)
+                        if callable(getattr(CCCSystem, name))
+                        and hasattr(getattr(CCCSystem, name), "__wrapped__")
+                        and getattr(CCCSystem, name).__qualname__ == f"CCCSystem.{name}"))
+
+
+def ccc_doors_all_named() -> str:
+    """Empty if `reads_write` has a reading for exactly the doors CCC gates, else what differs.
+
+    A door CCC starts gating that the reader does not name goes red here, instead of staying shut unnoticed; a door
+    named that CCC no longer gates goes red too, so the policy cannot drift away from the repository it describes."""
+    named, gated = set(WRITES_A_DOCUMENT) | set(WRITES_NO_DOCUMENT), set(ccc_gated_doors())
+    parts = []
+    if gated - named:
+        parts.append("CCC gates doors the reader does not name: " + ", ".join(sorted(gated - named)))
+    if named - gated:
+        parts.append("the reader names doors CCC does not gate: " + ", ".join(sorted(named - gated)))
+    return "; ".join(parts)
 
 
 def reads_claim(claim) -> Judged:
@@ -747,6 +787,10 @@ def main() -> int:
         print(f"{'ok  ' if not refused else 'FAIL'} {what}: refused at construction")
         if refused:
             wrong.append(f"{what}: {refused}")
+    unnamed = ccc_doors_all_named()
+    print(f"{'ok  ' if not unnamed else 'FAIL'} every door CCC gates is named by the roster's write reader, and none named is gone")
+    if unnamed:
+        wrong.append(f"CCC's doors: {unnamed}")
     for line in wrong:
         print(f"chain: {line}", file=sys.stderr)
     return 1 if wrong else 0
