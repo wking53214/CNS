@@ -204,6 +204,13 @@ def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[E
     return permits
 
 
+def kernel_evidence(record, pid: str, source_id: str, text: str) -> EvidenceRecord:
+    """The kernel's evidence record for one TIE record: the one translation, used to add the record and, in
+    `tie_evidence_guard`, to say exactly what may be added under that id. The proposition `pid` it supports is part of it."""
+    return EvidenceRecord(evidence_id=record.evidence_id, subject_id=pid, kind=EvidenceKind.SOURCE_OBSERVATION,
+                          provided_by=Actor.model("herald"), detail={"source_id": source_id, "source_sha256": sha256(text)})
+
+
 def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = RootStatus.INFERENCE,
                 cite_evidence: bool = True, guard: Optional[DecisionGuard] = None,
                 unguarded: bool = False, evidence_guarded: bool = True) -> Tuple[ConservationKernel, RootArtifact]:
@@ -218,9 +225,7 @@ def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = 
     propositions = []
     for n, record in enumerate(evidence):
         pid = f"p{n}"
-        kernel.registry.add_evidence(EvidenceRecord(evidence_id=record.evidence_id, subject_id=pid,
-                                                    kind=EvidenceKind.SOURCE_OBSERVATION, provided_by=Actor.model("herald"),
-                                                    detail={"source_id": source_id, "source_sha256": sha256(text)}))
+        kernel.registry.add_evidence(kernel_evidence(record, pid, source_id, text))
         propositions.append(Proposition(proposition_id=pid, text=record.statement, epistemic_status=status,
                                         origin=OriginStatus.MACHINE_ORIGINATED,
                                         evidence_refs=(record.evidence_id,) if cite_evidence else (),
