@@ -39,6 +39,14 @@ not a release.
   single use holds per shared ledger. `Requester.request_judgment` asks for a judgment of a document the decider
   already holds, disclosing nothing.
 
+### Changed
+
+- Contract change in `cns_interop`: `RemoteDecisionGuard` takes a required keyword `capability=(name, version)` and
+  `authorize` raises `Refused("terms")` when the terms name a different capability or version. Before, a decision
+  negotiated for one capability (`ingest`, say) opened a guard protecting any other action on the same document. A
+  caller that built a guard without the keyword now gets a `TypeError`. `interop/act.py` takes `--capability` and
+  `--capability-version`, and `chains/evidence_spine.py` and `interop/demo.py` pass them. UAI-1 section 7.
+
 ### Fixed
 
 - `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)

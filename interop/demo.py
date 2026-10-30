@@ -91,12 +91,13 @@ class NodeAgent:
 
 
 def act(decision: Dict[str, Any], terms: Dict[str, Any], accept_digest: str, artifact: List[str], *,
-        acting_for: str, trust: str, ledger: str) -> Dict[str, Any]:
-    """Run interop/act.py as its own process. Its configuration (who it acts for, which deciders it trusts, its
-    ledger) is its command line; the job carries only the decision and what it is about."""
+        acting_for: str, capability: str, version: int, trust: str, ledger: str) -> Dict[str, Any]:
+    """Run interop/act.py as its own process. Its configuration (who it acts for, which capability it acts on, which
+    deciders it trusts, its ledger) is its command line; the job carries only the decision and what it is about."""
     job = {"decision": decision, "terms": terms, "accept_digest": accept_digest, "artifact": artifact}
     env = dict(os.environ, PYTHONPATH=str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    done = subprocess.run([sys.executable, str(ACT_PY), "--acting-for", acting_for, "--trust", trust,
+    done = subprocess.run([sys.executable, str(ACT_PY), "--acting-for", acting_for,
+                           "--capability", capability, "--capability-version", str(version), "--trust", trust,
                            "--ledger", ledger], input=json.dumps(job), capture_output=True, text=True,
                           env=env, timeout=60, check=True)
     result: Dict[str, Any] = json.loads(done.stdout)
@@ -134,7 +135,8 @@ def round_node_decides(log: List[str]) -> Dict[str, Any]:
 
         # Round 2: a separate process, sharing only a ledger file, acts once.
         with tempfile.TemporaryDirectory() as tmp:
-            cfg = {"acting_for": py.agent, "trust": node_id, "ledger": str(Path(tmp) / "spent.jsonl")}
+            cfg = {"acting_for": py.agent, "capability": "income-screen", "version": 1, "trust": node_id,
+                   "ledger": str(Path(tmp) / "spent.jsonl")}
             artifact = [doc.identity, doc.digest]
             first = act(decision_wire, terms, accept.digest, artifact, **cfg)
             second = act(decision_wire, terms, accept.digest, artifact, **cfg)

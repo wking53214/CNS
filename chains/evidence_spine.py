@@ -974,9 +974,11 @@ def as_pair(judged: Judged) -> Tuple[str, str]:
 
 
 def portable_guard(reads: Callable[[object], Judged], ledger: str) -> RemoteDecisionGuard:
-    """A guard that trusts only the roster's public identity, acts only for the operator, and remembers spent
-    approvals in `ledger`, a file every process acting for the operator shares. Policy, like READERS."""
+    """A guard that trusts only the roster's public identity, acts only for the operator, accepts only decisions
+    negotiated for the spine capability, and remembers spent approvals in `ledger`, a file every process acting for
+    the operator shares. Policy, like READERS."""
     return RemoteDecisionGuard(lambda artifact: as_pair(reads(artifact)), acting_for=OPERATOR.agent,
+                               capability=(SPINE_CAPABILITY.name, SPINE_CAPABILITY.version),
                                trust=TrustPolicy(pinned=frozenset({ROSTER.agent})), ledger=FileLedger(ledger))
 
 
@@ -995,7 +997,8 @@ def act_elsewhere(signed: Signed, artifact: Judged, ledger: str) -> dict:
     job = {"decision": loads(signed.wire), "terms": signed.terms, "accept_digest": signed.accept_digest,
            "artifact": list(as_pair(artifact))}
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [HUB, os.environ.get("PYTHONPATH", "")])))
-    done = subprocess.run([sys.executable, ACT_PY, "--acting-for", OPERATOR.agent, "--trust", ROSTER.agent,
+    done = subprocess.run([sys.executable, ACT_PY, "--acting-for", OPERATOR.agent, "--capability", SPINE_CAPABILITY.name,
+                           "--capability-version", str(SPINE_CAPABILITY.version), "--trust", ROSTER.agent,
                            "--ledger", ledger], input=json.dumps(job), capture_output=True, text=True, env=env,
                           timeout=120, check=True)
     return json.loads(done.stdout)

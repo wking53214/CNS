@@ -31,6 +31,7 @@ from cns.gate import GateOutcome, subject_digest
 from .envelope import Envelope, Refused, now_ms, open_envelope, seal
 from .identity import Signer, is_agent_id
 from .ledger import Ledger
+from .manifest import NAME
 from .negotiate import TERMS_KEYS, terms_digest
 from .trust import TrustPolicy
 
@@ -146,23 +147,31 @@ class RemoteDecisionGuard:
     """Closed until a verified, allowed remote decision opens it; then permits one action on that one document.
 
     The guard's own configuration, never the caller's, says who it acts for (`acting_for`: decisions addressed to
-    anyone else are refused), which deciders it accepts (`trust`: the terms' decider must be admitted), and where it
-    remembers spent decisions (`ledger`). Terms handed to `authorize` can only narrow what is accepted, never widen it.
+    anyone else are refused), which capability it protects (`capability`, a (name, version) pair: a decision negotiated
+    for any other capability or version is refused as `terms`), which deciders it accepts (`trust`: the terms' decider
+    must be admitted), and where it remembers spent decisions (`ledger`). Terms handed to `authorize` can only narrow
+    what is accepted, never widen it.
 
     `subject_of(artifact)` reads (identity, digest) from whatever the action is about to touch. Like `DecisionGuard`
     it answers True at most once, also under concurrent calls, never raises, and a refusal does not spend the
     permission."""
 
-    def __init__(self, subject_of: Callable[[object], Tuple[str, str]], *, acting_for: str, trust: TrustPolicy,
-                 ledger: Ledger, clock: Callable[[], int] = now_ms) -> None:
+    def __init__(self, subject_of: Callable[[object], Tuple[str, str]], *, acting_for: str,
+                 capability: Tuple[str, int], trust: TrustPolicy, ledger: Ledger,
+                 clock: Callable[[], int] = now_ms) -> None:
         if not callable(subject_of):
             raise ValueError("subject_of must read (identity, digest) from an artifact")
         if not is_agent_id(acting_for):
             raise ValueError("acting_for is the identity this guard acts for")
+        if (not isinstance(capability, (tuple, list)) or len(capability) != 2
+                or not isinstance(capability[0], str) or not NAME.match(capability[0])
+                or type(capability[1]) is not int or capability[1] < 1):
+            raise ValueError("capability is the (name, version) this guard protects")
         if not isinstance(trust, TrustPolicy):
             raise ValueError("a guard needs its own trust policy for deciders")
         self._subject_of, self._ledger, self._clock = subject_of, ledger, clock
         self._acting_for, self._trust = acting_for, trust
+        self._capability = (capability[0], capability[1])
         self._lock = threading.Lock()
         self._approved: Optional[Tuple[str, str]] = None
         self._expires_at: Optional[int] = None
@@ -174,6 +183,10 @@ class RemoteDecisionGuard:
                 raise ValueError("this guard was already authorized; one guard serves one decision")
             if not isinstance(terms, Mapping) or terms.get("requester") != self._acting_for:
                 raise Refused("audience", "the terms are for a requester this guard does not act for")
+            if (terms.get("capability"), terms.get("version")) != self._capability or type(
+                    terms.get("version")) is not int:
+                raise Refused("terms", "the decision was negotiated for a different capability or version than "
+                              "this guard protects")
             now = self._clock()
             self._trust.admit(terms.get("decider", ""), now=now)
             got = verify_decision(wire, terms=terms, accept_digest=accept_digest, ledger=self._ledger, now=now)

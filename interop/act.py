@@ -2,7 +2,8 @@
 
 It is deliberately a separate program. Its own configuration comes from its command line, set by whoever deploys it:
 
-    python interop/act.py --acting-for <identity> --trust <decider identity>[,...] --ledger <shared ledger file>
+    python interop/act.py --acting-for <identity> --capability <name> --capability-version <n>
+                          --trust <decider identity>[,...] --ledger <shared ledger file>
 
 The job comes on stdin, one JSON object, and can only narrow what is accepted, never widen it:
 
@@ -37,12 +38,15 @@ def _identity_and_digest(artifact: object) -> Tuple[str, str]:
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description="act once on a remote UAI-1 decision")
     p.add_argument("--acting-for", required=True)
+    p.add_argument("--capability", required=True, help="the capability this process acts on; others are refused")
+    p.add_argument("--capability-version", required=True, type=int)
     p.add_argument("--trust", required=True, help="comma-separated decider identities this process accepts")
     p.add_argument("--ledger", required=True)
     cfg = p.parse_args(argv)
     job = json.loads(sys.stdin.read())
     try:
         guard = RemoteDecisionGuard(_identity_and_digest, acting_for=cfg.acting_for,
+                                    capability=(cfg.capability, cfg.capability_version),
                                     trust=TrustPolicy(pinned=frozenset(filter(None, cfg.trust.split(",")))),
                                     ledger=FileLedger(cfg.ledger))
     except ValueError as exc:
