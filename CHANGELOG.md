@@ -15,13 +15,13 @@ different code. This file on `main` says what is true now, and so does the GitHu
 one; the text for every tag is kept in `docs/releases/`. A heading's date is the day the tag was made; where the tagged commit is older, the
 entry says so.
 
-## [Unreleased]
+## [2.3.0] - 2026-10-30 (not yet tagged)
 
-Merged to `main` after the `v2.2.0` tag (`ce6bd05`) and in no tag yet. The package still says 2.2.0, so `release
---check` reads this tree as 2.2.0. Proposed as 2.3.0: every addition below is an optional argument or a new file, the
-`cns` package's shapes are unchanged (`tests/public_shape.json` did not move), and the changed behaviours refuse what
-was wrongly allowed. Not tagged; the version and the tag are the owner's decision. Each line names the commit that
-holds it.
+The work merged to `main` after the `v2.2.0` tag (`ce6bd05`). A minor version, by the owner's decision of 2026-10-30:
+every addition below is an optional argument, a new function or a new file, the `cns` package's shapes are unchanged
+(`tests/public_shape.json` moves only its version), and the changed behaviours refuse what was wrongly allowed. Not
+tagged: `contracts/cns-releases.json` keeps `current` at `v2.2.0` and the floor at 1.9.0 until the owner tags, and
+`release --check` calls this tree unreleased. Each line names the commit that holds it.
 
 ### Added
 
@@ -39,6 +39,12 @@ holds it.
   door the reader does not name; two scenarios hold them refused after a roster no and after a roster yes (#61:
   `2d7abe7`, `9f091fc`, `5e57eb8`, docs in `ec99502`; the SEAM HOLDS count in `tests/test_chains.py` went from 22
   to 24 under rule 5).
+- `cns_composition.triad_admission.admit_with_receipts` returns an `AdmissionReceipt` per admitted item; `use(receipt,
+  lookup)` asks CCC again at the moment of use and returns the item only if it still passes, and `recheck` asks the
+  same question without raising. `admit_candidates` behaves as before (CNS-012, `446051d`).
+- `CccRecordGate(..., attestation_key=...)`: with a key, the admission door does not take "held" on the store's word;
+  it checks a stamp the handoff wrote (`StampLookup.stamps`, `handoff_stamp`), pinned by
+  `contracts/handoff-stamp-vectors.json`. Without a key nothing changes (CNS-013, `b5a3608`).
 
 ### Changed
 
@@ -56,6 +62,9 @@ holds it.
 - The manifest names five repositories (seven at `v2.2.0`); DRAFTER, BURNISH and WATCHER_MCU are released from the
   circuit and not installed (Pin22, Stages 3 to 5).
 - `release --check` and `circuit_canary` exit 2 with one line when they cannot be set up (`2960409`).
+- `release --check` on the tag's own tree treats the missing row for that tag as a note naming the `--record` step,
+  because a tree cannot record its own commit; any later commit with the tag unrecorded is still a problem (CNS-010,
+  `55248af`; one test updated under rule 5).
 - CI: the chains run when the decision core changes, and the repin proposal runs the whole suite before it opens a
   pull request (CNS-003 `6a8865c`, CNS-002 `7b0226e`).
 
