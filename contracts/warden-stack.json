@@ -2,10 +2,10 @@
   "schema": "warden-stack/1",
   "contract": "1",
   "repos": {
-    "ghost_tools": "eaf2ae8845f9b4e39d79f50bbfaf70acde9a11a3",
-    "SWIZZLE": "60ba9fc5bf383c0c4297bf94b8313b33e0ab039c",
-    "ASSAY": "3faba860a7cfcce6547e5ddcf8d1b0d773a27001",
-    "JUDGE": "d239f40bbc7c579ee40de34cafde813f3b35f239",
-    "WARDEN": "cb45681ea80f845fb8f23bb091bda7f587c6a547"
+    "ghost_tools": "a9115b5ed02e923238b96ce0fc627992509371fa",
+    "SWIZZLE": "87cddb4b66f248987e135f08e174fc8cc219f582",
+    "ASSAY": "f7ea4a4200374ad246d17958f591307369d5e744",
+    "JUDGE": "836a748113ce252775fb6bba0588ffe0336d1bd2",
+    "WARDEN": "57f7bb7b12314f0ba30697cff9a846c749e3d606"
   }
 }
