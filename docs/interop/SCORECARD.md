@@ -43,7 +43,12 @@ node --test interop/node/test.mjs interop/node/agent.test.mjs   # the Node imple
 python interop/demo.py                       # the two-language exchange, both directions, with the attacks
 ```
 
-## What this does not touch
+## The STACK spine
 
-The STACK spine score (6/10) and its Track A list are unchanged. In particular `DecisionGuard` on the kernel seat is
-still process-local; `RemoteDecisionGuard` is the distributed counterpart, but no spine repository uses it yet.
+The evidence spine now carries the roster's approval across the process boundary (`chains/evidence_spine.py`, the
+PORTABLE scenarios): the roster signs its SuperGate decision, and the kernel and CCC act on it through
+`RemoteDecisionGuard`, verified by a separate program that shares only the ledger file. This addresses the first
+item the assessment held against the spine score, "authorization is still process-local". What it does not change:
+the in-process `DecisionGuard` scenarios stay as they were, single use holds only per shared ledger (recorded as a
+GAP), and a kernel built with no guard at all can still be called directly (the existing GAP). The spine's other
+open items (lifecycle, caller-built seams, coverage of ZTS, Sentinel OS and GSA-815) are untouched.
