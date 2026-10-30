@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Optional, Protocol, Tuple
+from typing import Any, BinaryIO, Dict, Iterator, List, Optional, Protocol, Tuple
 
 from .envelope import Refused, now_ms
 
@@ -58,22 +60,84 @@ class FileLedger:
         self._path.touch(exist_ok=True)
 
     def spend(self, sender: str, message_id: str, expires_at: Optional[int]) -> None:
+        with self._locked() as fh:
+            fd = fh.fileno()
+            lines = [ln for ln in fh.read().decode("utf-8").splitlines() if ln.strip()]
+            entries = [json.loads(ln) for ln in lines]
+            if any(e["sender"] == sender and e["id"] == message_id for e in entries):
+                raise Refused("replayed", "this message was already accepted once")
+            cutoff = now_ms() - self._keep_ms
+            live = [e for e in entries if e["expires_at"] is None or e["expires_at"] > cutoff]
+            new = {"sender": sender, "id": message_id, "expires_at": expires_at}
+            if len(live) == len(entries):
+                self._append(fd, _line(new))
+            else:
+                self._compact([*live, new])
+
+    @contextmanager
+    def _locked(self) -> Iterator[BinaryIO]:
+        """The ledger file, open and exclusively locked. Compaction replaces the file, so a lock taken on a file that
+        was replaced while this process waited is on the wrong file: it is dropped and the current file locked."""
         import fcntl
 
-        with open(self._path, "r+", encoding="utf-8") as fh:
-            fcntl.flock(fh, fcntl.LOCK_EX)
+        while True:
+            fh = open(self._path, "r+b", buffering=0)
             try:
-                lines = [ln for ln in fh.read().splitlines() if ln.strip()]
-                entries = [json.loads(ln) for ln in lines]
-                if any(e["sender"] == sender and e["id"] == message_id for e in entries):
-                    raise Refused("replayed", "this message was already accepted once")
-                cutoff = now_ms() - self._keep_ms
-                live = [e for e in entries if e["expires_at"] is None or e["expires_at"] > cutoff]
-                live.append({"sender": sender, "id": message_id, "expires_at": expires_at})
-                fh.seek(0)
-                fh.truncate()
-                fh.write("".join(json.dumps(e, sort_keys=True) + "\n" for e in live))
-                fh.flush()
-                os.fsync(fh.fileno())
+                fcntl.flock(fh, fcntl.LOCK_EX)
+                try:
+                    current = os.stat(self._path).st_ino == os.fstat(fh.fileno()).st_ino
+                except FileNotFoundError:  # pragma: no cover - replaced between the open and the stat
+                    current = False
+                if current:
+                    yield fh
+                    return
             finally:
-                fcntl.flock(fh, fcntl.LOCK_UN)
+                fh.close()
+
+    @staticmethod
+    def _append(fd: int, data: bytes) -> None:
+        """Add one line at the end and make it durable. The earlier entries are never rewritten, so a failure cannot
+        lose them; a failure partway through is undone so no torn line is left for the next reader."""
+        end = os.lseek(fd, 0, os.SEEK_END)
+        try:
+            _write_all(fd, data)
+            os.fsync(fd)
+        except BaseException:
+            try:
+                os.ftruncate(fd, end)
+            except OSError:  # pragma: no cover - best effort; the original failure is the one that matters
+                pass
+            raise
+
+    def _compact(self, entries: List[Dict[str, Any]]) -> None:
+        """Replace the file with `entries`, all or nothing: write a temp file beside it, flush it to disk, rename it
+        over the ledger, then flush the directory so the rename itself survives a crash."""
+        fd, tmp = tempfile.mkstemp(dir=self._path.parent, prefix=self._path.name + ".", suffix=".tmp")
+        try:
+            try:
+                _write_all(fd, b"".join(_line(e) for e in entries))
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.replace(tmp, self._path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+        dir_fd = os.open(self._path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+
+
+def _line(entry: Dict[str, Any]) -> bytes:
+    return (json.dumps(entry, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]

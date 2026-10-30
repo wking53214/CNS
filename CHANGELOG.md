@@ -39,6 +39,12 @@ not a release.
   single use holds per shared ledger. `Requester.request_judgment` asks for a judgment of a document the decider
   already holds, disclosing nothing.
 
+### Fixed
+
+- `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)
+  lost earlier entries and a spent decision was accepted again. It now appends one line and fsyncs, and when it drops
+  expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.
+
 ## [2.3.0] - 2026-10-30 (not yet tagged)
 
 The work merged to `main` after the `v2.2.0` tag (`ce6bd05`). A minor version, by the owner's decision of 2026-10-30:
