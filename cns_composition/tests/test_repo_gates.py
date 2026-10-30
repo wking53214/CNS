@@ -6,7 +6,7 @@ from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
 from cns_composition import repo_gates
 from cns_composition.repo_gates import ENDS, Lazy, ends_of, run_repo_chain
 
-A, O = GatePosition.ALPHA, GatePosition.OMEGA
+A, OMEGA = GatePosition.ALPHA, GatePosition.OMEGA
 PASS, RETRY, BREACH = GateOutcome.PASS, GateOutcome.RETRY, GateOutcome.TERMINAL_BREACH
 
 
@@ -26,15 +26,15 @@ class FakeGate:
 
 
 def test_every_row_names_a_nonempty_set_of_real_ends():
-    assert ENDS and all(ends and ends <= {A, O} for ends in ENDS.values())
+    assert ENDS and all(ends and ends <= {A, OMEGA} for ends in ENDS.values())
 
 
 def test_the_doors_stand_at_alpha_the_judges_at_omega_and_two_repos_have_both():
     assert ends_of("Governance_Gateway") == {A}
-    assert ends_of("DIT") == {O} and ends_of("GEMS") == {O}
-    assert ends_of("Conservation_Kernel") == {A, O} and ends_of("fortress-kernel") == {A, O}
-    assert ends_of("PERCEIVE") == {A, O} and ends_of("HERALD") == {A, O}
-    assert ends_of("URE") == {A, O}
+    assert ends_of("DIT") == {OMEGA} and ends_of("GEMS") == {OMEGA}
+    assert ends_of("Conservation_Kernel") == {A, OMEGA} and ends_of("fortress-kernel") == {A, OMEGA}
+    assert ends_of("PERCEIVE") == {A, OMEGA} and ends_of("HERALD") == {A, OMEGA}
+    assert ends_of("URE") == {A, OMEGA}
     assert ends_of("DGK") == {A}
 
 
@@ -49,7 +49,7 @@ def test_an_unknown_repository_has_no_ends():
 
 
 def test_a_door_and_a_judge_from_two_repositories_make_a_complete_chain():
-    door, judge = FakeGate("gateway", A), FakeGate("dit", O)
+    door, judge = FakeGate("gateway", A), FakeGate("dit", OMEGA)
     run = run_repo_chain([("Governance_Gateway", door, {"id": 1}), ("DIT", judge, "text")])
     assert run.outcome is PASS and run.complete and run.omega_ran
     assert [r.gate for r in run.results] == ["gateway", "dit"]
@@ -57,7 +57,7 @@ def test_a_door_and_a_judge_from_two_repositories_make_a_complete_chain():
 
 
 def test_steps_given_out_of_order_still_run_alpha_first():
-    door, judge = FakeGate("gateway", A), FakeGate("dit", O)
+    door, judge = FakeGate("gateway", A), FakeGate("dit", OMEGA)
     run = run_repo_chain([("DIT", judge, "t"), ("Governance_Gateway", door, "c")])
     assert [r.gate for r in run.results] == ["gateway", "dit"]
 
@@ -70,7 +70,7 @@ def test_a_gate_that_moved_to_an_end_its_repository_does_not_declare_is_refused_
 
 
 def test_a_door_filed_as_a_judge_is_refused_and_every_wrong_gate_is_named_at_once():
-    bad_door, bad_judge = FakeGate("gateway", O), FakeGate("gems", A)
+    bad_door, bad_judge = FakeGate("gateway", OMEGA), FakeGate("gems", A)
     with pytest.raises(ValueError) as caught:
         run_repo_chain([("Governance_Gateway", bad_door, 1), ("GEMS", bad_judge, 2)])
     text = str(caught.value)
@@ -80,20 +80,20 @@ def test_a_door_filed_as_a_judge_is_refused_and_every_wrong_gate_is_named_at_onc
 
 @pytest.mark.parametrize("repo", ["Conservation_Kernel", "fortress-kernel", "PERCEIVE", "HERALD", "URE"])
 def test_a_repository_with_both_ends_may_seat_a_gate_at_each(repo):
-    low, high = FakeGate("low", A), FakeGate("high", O)
+    low, high = FakeGate("low", A), FakeGate("high", OMEGA)
     run = run_repo_chain([(repo, low, 1), (repo, high, 2)])
     assert run.complete and run.outcome is PASS
 
 
 def test_an_unknown_repository_is_refused_before_anything_runs():
-    known = FakeGate("dit", O)
+    known = FakeGate("dit", OMEGA)
     with pytest.raises(KeyError):
         run_repo_chain([("DIT", known, "t"), ("Nowhere", FakeGate("x", A), "c")])
     assert known.seen == []
 
 
 def test_a_refusing_alpha_gate_stops_the_omega_gate_from_running():
-    door, judge = FakeGate("gateway", A, BREACH), FakeGate("dit", O)
+    door, judge = FakeGate("gateway", A, BREACH), FakeGate("dit", OMEGA)
     run = run_repo_chain([("Governance_Gateway", door, "c"), ("DIT", judge, "t")])
     assert run.outcome is BREACH and not run.omega_ran and judge.seen == []
 
@@ -102,19 +102,19 @@ def test_a_lazy_candidate_is_not_built_when_alpha_already_refused():
     built = []
     door = FakeGate("gateway", A, RETRY)
     run = run_repo_chain([("Governance_Gateway", door, "c"),
-                          ("DIT", FakeGate("dit", O), Lazy(lambda: built.append(1) or "t"))])
+                          ("DIT", FakeGate("dit", OMEGA), Lazy(lambda: built.append(1) or "t"))])
     assert run.outcome is RETRY and built == []
 
 
 def test_a_chain_with_one_end_is_refused_unless_the_caller_says_so():
     with pytest.raises(ValueError, match="stratum"):
-        run_repo_chain([("DIT", FakeGate("dit", O), "t")])
-    assert run_repo_chain([("DIT", FakeGate("dit", O), "t")], require_complete=False).outcome is PASS
+        run_repo_chain([("DIT", FakeGate("dit", OMEGA), "t")])
+    assert run_repo_chain([("DIT", FakeGate("dit", OMEGA), "t")], require_complete=False).outcome is PASS
 
 
 def test_a_gate_that_answers_at_the_wrong_end_is_still_a_breach():
-    liar = FakeGate("gateway", A, answer_position=O)
-    run = run_repo_chain([("Governance_Gateway", liar, "c"), ("DIT", FakeGate("dit", O), "t")])
+    liar = FakeGate("gateway", A, answer_position=OMEGA)
+    run = run_repo_chain([("Governance_Gateway", liar, "c"), ("DIT", FakeGate("dit", OMEGA), "t")])
     assert run.outcome is BREACH and "wrong end" in run.results[0].reason
 
 

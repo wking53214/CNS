@@ -3,7 +3,8 @@
 import pytest
 from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
 
-from cns_composition.super_gate import Decision, MissingCandidate, SuperGate
+from cns_composition.gate_chain import Lazy
+from cns_composition.super_gate import Decision, Judged, MissingCandidate, SubjectAgreement, SuperGate
 
 A, OM = GatePosition.ALPHA, GatePosition.OMEGA
 PASS, RETRY, BREACH = GateOutcome.PASS, GateOutcome.RETRY, GateOutcome.TERMINAL_BREACH
@@ -206,9 +207,6 @@ def test_a_missing_candidate_error_names_the_seat():
 
 
 # ------------------------------------------------------------ the same subject
-
-from cns_composition.gate_chain import Lazy
-from cns_composition.super_gate import Judged, SubjectAgreement
 
 SUBJECT = "CNS:same_subject"
 

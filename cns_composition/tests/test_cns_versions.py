@@ -181,9 +181,17 @@ def test_a_duplicate_ref_or_commit_a_short_commit_and_a_release_above_current_ar
 
 
 def test_the_committed_table_is_held_to_the_cns_package_itself():
+    """2.0.0: `current` is the newest tagged release and moves only when a tag exists, so between a version bump
+    and its tag the package is ahead of it; it is never behind it, and a package version that is current must be
+    the one the table's current row declares. The rest of the checklist is `cns_composition.release --check`."""
     table = cv.load_table()
     declared = re.search(r'^version\s*=\s*"([^"]+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"), re.M)
-    assert declared and table.current.version == declared.group(1)
+    assert declared
+    package = tuple(int(p) for p in declared.group(1).split("."))
+    current = tuple(int(p) for p in table.current.version.split("."))
+    assert current <= package, "the table's current release is newer than the package"
+    if current != package:
+        assert cv.resolve(f"v{declared.group(1)}", table) is None, "the package version is tagged but not current"
 
 
 # ------------------------------------------------------------ the command
@@ -264,10 +272,35 @@ def test_a_pin_problem_is_still_reported_when_a_repository_is_also_unread(tmp_pa
     assert "not a release" in err and "from: B" in err
 
 
-def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_seven(tmp_path, capsys):
+def test_the_committed_manifest_is_the_default_so_the_real_stack_needs_all_five(tmp_path, capsys):
     stack = tmp_path / "stack"
     put(stack, "A", "pyproject.toml", f"[project]\ndependencies = [{pin('v1.9.0')}]\n")
     table = tmp_path / "t.json"
     table.write_text(json.dumps(table_dict()), encoding="utf-8")
     assert cv.main(["--stack", str(stack), "--table", str(table)]) != 0
-    assert "the manifest names 7" in capsys.readouterr().err
+    assert "the manifest names 5" in capsys.readouterr().err
+
+
+# -------------------------------------------------------------------------------------- 2.0.0: the tag spelling
+
+def test_spelling_tag_fails_a_pin_that_names_its_release_by_commit(tmp_path):
+    table = make_table(tmp_path, releases=table_dict()["releases"] + [{"ref": "e" * 40, "commit": "e" * 40,
+                                                                        "version": "1.8.0", "note": "no tag"}])
+    pins = [cv.Pin("A", "pyproject.toml", "v1.9.0"), cv.Pin("B", "pyproject.toml", "9" * 40),
+            cv.Pin("C", "pyproject.toml", "9" * 12), cv.Pin("D", "pyproject.toml", "e" * 40)]
+    assert cv.assess(pins, table)[0] == []
+    problems, _ = cv.assess(pins, table, spelling="tag")
+    assert [p.split(" (")[0] for p in problems] == ["B", "C", "D"]
+    assert "spelled as a commit; the circuit spells the pin as its tag v1.9.0" in problems[0]
+    assert "the circuit spells the pin as the tag v1.9.0" in problems[2]
+
+
+def test_the_command_takes_spelling_tag(tmp_path, capsys):
+    table = tmp_path / "t.json"
+    table.write_text(json.dumps(table_dict()), encoding="utf-8")
+    stack = tmp_path / "stack"
+    put(stack, "A", "pyproject.toml", pin("9" * 40))
+    manifest = manifest_for(tmp_path, "A")
+    assert cv.main(["--stack", str(stack), "--table", str(table), "--manifest", manifest]) == 0
+    assert cv.main(["--stack", str(stack), "--table", str(table), "--manifest", manifest, "--spelling", "tag"]) == 1
+    assert "spelled as a commit" in capsys.readouterr().err

@@ -1,21 +1,24 @@
 # Keeps contracts/warden-stack.json true without a person editing it.
 #
-# The manifest says which commits of the seven circuit repositories belong together, and Warden refuses a stack
-# that is at any other commit. So every merge to any of the seven made it wrong until somebody edited it by
+# The manifest says which commits of the five circuit repositories belong together, and Warden refuses a stack
+# that is at any other commit. So every merge to any of the five made it wrong until somebody edited it by
 # hand. This workflow does the editing, but only after proving the new combination works:
 #
-#   canary   checks out the main of all seven, moves the pins to their heads (cns_composition.repin), then
-#            runs the whole circuit (cns_composition.circuit_canary). It runs every time, so a red run also
-#            means "something merged to one of the seven broke the others".
-#   pins     separately, checks that the repositories pin each shared package identically (JUDGE, DRAFTER and
-#            BURNISH all pin Warden; pip refuses them together if one moves alone). Red on a disagreement,
-#            and independent of the other two jobs.
+#   canary   checks out the main of all five, moves the pins to their heads (cns_composition.repin, which also
+#            renders contracts/install-stack.txt from the moved manifest), then runs the whole circuit
+#            (cns_composition.circuit_canary). It runs every time, so a red run also means "something merged to
+#            one of the five broke the others".
+#   pins     separately, checks that the repositories pin each shared package identically (JUDGE and the
+#            repositories released from the circuit, DRAFTER and BURNISH, all pin Warden; pip refuses them together
+#            if one moves alone). The released ones are read at the commits contracts/released-seats.json names, in
+#            a folder of their own. Red on a disagreement, and independent of the other two jobs.
 #   propose  only when a pin moved AND the canary said ACCEPT: opens or updates one pull request,
-#            branch auto/repin, that changes nothing but the commits in the manifest.
+#            branch auto/repin, that changes nothing but the commits in the manifest and the install file
+#            rendered from it.
 #
 # A person merges that pull request. Nothing here pushes to main.
 #
-# TRUST. The canary job runs code from the other six repositories, so it gets a read-only token and nothing else.
+# TRUST. The canary job runs code from the other four repositories, so it gets a read-only token and nothing else.
 # The propose job can write, and runs no code from them: it takes the manifest the canary produced and
 # re-checks it (same schema, same contract, same repository names, every pin a full commit) before using it.
 # Worst case for a compromised repository is a wrong commit id in a pull request that a person has to merge.
@@ -25,10 +28,12 @@
 # the pull request by hand.
 #
 # KNOWN LIMIT. A pull request opened with the workflow's own token does not start other workflows, so ci.yml
-# does not run on it. The change is one JSON file and the canary has already run the circuit on it.
+# does not run on it. The canary has already run the circuit on it, and the propose job runs the whole suite on the
+# proposed pins before it opens the pull request.
 #
 # ADDING A REPOSITORY. List it in the manifest and add a checkout step below. tests/test_repin_workflow.py fails
-# until both are done.
+# until both are done. A repository named in contracts/released-seats.json is not part of the circuit: the manifest
+# may not name it, and repin refuses a manifest that does.
 name: repin
 
 on:
@@ -51,46 +56,36 @@ jobs:
     outputs:
       changed: ${{ steps.repin.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: hub
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/ghost_tools
           path: stack/ghost_tools
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/SWIZZLE
           path: stack/SWIZZLE
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/ASSAY
           path: stack/ASSAY
           persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/DRAFTER
-          path: stack/DRAFTER
-          persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/JUDGE
           path: stack/JUDGE
           persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/BURNISH
-          path: stack/BURNISH
-          persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/WARDEN
           path: stack/WARDEN
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Install what the circuit needs on this interpreter
@@ -99,14 +94,32 @@ jobs:
         # numpy and matplotlib: ASSAY treats a claim it cannot run as a failure, and one claim needs them. Without
         # them Warden ends INCONCLUSIVE ("ASSAY's answer key could not be used to grade Ghost").
         run: python -m pip install pytest numpy matplotlib ./hub
-      - name: Move the pins to the heads of the seven checkouts
+      - name: Check out the released repositories at their current default-branch heads
+        # They are consumers of CNS, not part of the circuit: their own folder, never the stack's. Only their HEADs are
+        # read, to record them in contracts/released-seats.json; none of their code runs in this job.
+        env:
+          BASE_URL: https://github.com/${{ github.repository_owner }}
+        run: |
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+          base = os.environ["BASE_URL"].rstrip("/")
+          seats = json.load(open("hub/contracts/released-seats.json", encoding="utf-8"))["repos"]
+          if not seats:
+              sys.exit("contracts/released-seats.json names no repository")
+          os.makedirs("released", exist_ok=True)
+          for name in seats:
+              if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name):
+                  sys.exit(f"{name!r} is not a repository name")
+              subprocess.run(["git", "clone", "--quiet", "--depth", "1", f"{base}/{name}.git", f"released/{name}"], check=True)
+          PY
+      - name: Move the pins to the heads of the five checkouts, and the released commits to their repositories' heads
         id: repin
         working-directory: hub
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: |
-          python -m cns_composition.repin --stack ../stack --manifest contracts/warden-stack.json | tee ../repin.txt
-          if git diff --quiet -- contracts/warden-stack.json; then
+          python -m cns_composition.repin --stack ../stack --released ../released --manifest contracts/warden-stack.json | tee ../repin.txt
+          if git diff --quiet -- contracts/warden-stack.json contracts/install-stack.txt contracts/released-seats.json; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -121,8 +134,10 @@ jobs:
         run: |
           mkdir proposed
           cp hub/contracts/warden-stack.json proposed/warden-stack.json
+          cp hub/contracts/install-stack.txt proposed/install-stack.txt
+          cp hub/contracts/released-seats.json proposed/released-seats.json
           cp repin.txt proposed/repin.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: steps.repin.outputs.changed == 'true'
         with:
           name: proposed
@@ -137,57 +152,77 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: hub
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/ghost_tools
           path: stack/ghost_tools
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/SWIZZLE
           path: stack/SWIZZLE
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/ASSAY
           path: stack/ASSAY
           persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/DRAFTER
-          path: stack/DRAFTER
-          persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/JUDGE
           path: stack/JUDGE
           persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/BURNISH
-          path: stack/BURNISH
-          persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/WARDEN
           path: stack/WARDEN
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
+      - name: Check out the released repositories at the commits contracts/released-seats.json names
+        env:
+          BASE_URL: https://github.com/${{ github.repository_owner }}
+        run: |
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+          base = os.environ["BASE_URL"].rstrip("/")
+          seats = json.load(open("hub/contracts/released-seats.json", encoding="utf-8"))["repos"]
+          if not seats:
+              sys.exit("contracts/released-seats.json names no repository")
+          os.makedirs("consumers", exist_ok=True)
+          for name, sha in seats.items():
+              if not re.fullmatch(r"[0-9a-f]{40}", sha):
+                  sys.exit(f"{name}: {sha!r} is not a full commit")
+              if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name):
+                  sys.exit(f"{name!r} is not a repository name")
+              dest = f"consumers/{name}"
+              subprocess.run(["git", "clone", "--quiet", "--no-checkout", f"{base}/{name}.git", dest], check=True)
+              subprocess.run(["git", "-C", dest, "checkout", "--quiet", "--detach", sha], check=True)
+              head = subprocess.run(["git", "-C", dest, "rev-parse", "HEAD"], check=True,
+                                    capture_output=True, text=True).stdout.strip()
+              if head != sha:
+                  sys.exit(f"{name} is at {head}, not {sha}")
+              print(f"{name} {head}")
+          PY
       - name: Every repository pins a shared package the same way
         working-directory: hub
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
-        run: python -m cns_composition.seat_pins --stack ../stack
+        run: python -m cns_composition.seat_pins --stack ../stack --consumers ../consumers
 
   propose:
     name: propose
     needs: canary
+    # This is the one job with a write token, and it stays that way on purpose: it pushes the branch auto/repin
+    # (contents: write) and opens or edits the pull request (pull-requests: write), which nothing else can do. It runs
+    # no code from the other repositories: it takes the files the canary produced, re-checks them (schema, contract,
+    # names, full commits) in the first step, and a person merges the result. Every action it uses is pinned to a
+    # full commit, because a moved tag here would run with the write token.
     # Only from the default branch: a manual run from any other branch still runs the canary, but proposes nothing.
     if: needs.canary.outputs.changed == 'true' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
@@ -195,12 +230,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: proposed
           path: proposed
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Re-check what the canary produced
@@ -214,12 +249,25 @@ jobs:
           assert list(new["repos"]) == list(old["repos"]), "the set of repositories changed"
           assert all(re.fullmatch(r"[0-9a-f]{40}", v) for v in new["repos"].values()), "a pin is not a full commit"
           assert set(new) == set(old), "a top-level field was added or removed"
+          released_old = json.load(open("contracts/released-seats.json"))
+          released_new = json.load(open("proposed/released-seats.json"))
+          assert released_new["schema"] == released_old["schema"], "the released-seats schema changed"
+          assert list(released_new["repos"]) == list(released_old["repos"]), "the set of released repositories changed"
+          assert all(re.fullmatch(r"[0-9a-f]{40}", v) for v in released_new["repos"].values()), "a released commit is not a full commit"
+          assert set(released_new) == set(released_old), "a top-level field of the released-seats file was added or removed"
           PY
           cp proposed/warden-stack.json contracts/warden-stack.json
-      - name: The manifest still passes the tests that read it
+          cp proposed/install-stack.txt contracts/install-stack.txt
+          cp proposed/released-seats.json contracts/released-seats.json
+      - name: The install file is the rendering of that manifest, and both pass the tests that read them
         run: |
           pip install -e ".[dev]"
-          python -m pytest tests/test_stack.py -q
+          python -m cns_composition.install_stack --check
+          python -m pytest tests/test_stack.py tests/test_install_stack.py cns_composition/tests/test_install_rendering.py -q
+      - name: The whole suite passes on the proposed pins
+        # The pull request below is opened with the workflow's own token, so ci.yml never runs on it. Without this step
+        # the first full run of the suite on a re-pin was on main after the merge (PR #35 turned main red that way).
+        run: python -m pytest -q
       - name: Open or update the pull request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -230,7 +278,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B auto/repin
-          git add contracts/warden-stack.json
+          git add contracts/warden-stack.json contracts/install-stack.txt contracts/released-seats.json
           git commit -m "Re-pin the circuit manifest to the current main heads"
           git push --force origin auto/repin
           {
@@ -240,7 +288,7 @@ jobs:
             cat proposed/repin.txt
             echo '```'
             echo
-            echo "Changes nothing but the commits in contracts/warden-stack.json. Merge it before the next merge to any of the seven repositories."
+            echo "Changes nothing but the commits in contracts/warden-stack.json, the install file rendered from it and contracts/released-seats.json (the released repositories at their current heads). Merge it before the next merge to any of the five repositories."
           } > body.md
           if gh pr list --head auto/repin --state open --json number --jq '.[0].number' | grep -q .; then
             gh pr edit auto/repin --body-file body.md

@@ -89,3 +89,20 @@ def test_the_command_passes_on_the_committed_file_and_fails_on_a_stale_one(tmp_p
     assert V.main([]) == 1
     assert "run with --write" in capsys.readouterr().err
     assert V.main(["--write"]) == 0 and stale.read_text(encoding="utf-8") == V._render(V.build())
+
+
+def test_a_symlinked_stack_folder_is_compared_like_any_other(tmp_path):
+    """2.0.0: a vendored copy reached through a symlinked stack folder is compared, not reported as missing."""
+    real = tmp_path / "elsewhere"
+    for repo, rel in V.VENDORED.items():
+        path = real / repo / rel
+        path.parent.mkdir(parents=True)
+        path.write_text(COMMITTED.read_text(encoding="utf-8"), encoding="utf-8")
+    stack = tmp_path / "stack"
+    stack.mkdir()
+    for repo in V.VENDORED:
+        (stack / repo).symlink_to(real / repo, target_is_directory=True)
+    assert V.drift(stack) == []
+    for repo, rel in V.VENDORED.items():
+        (real / repo / rel).write_text("{}")
+    assert all("differ from CNS" in line for line in V.drift(stack)) and V.drift(stack)

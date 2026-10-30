@@ -1,0 +1,43 @@
+diff --git a/warden/tagteam.py b/warden/tagteam.py
+index ee53505..0eee938 100644
+--- a/warden/tagteam.py
++++ b/warden/tagteam.py
+@@ -453,8 +453,11 @@ class TagTeam:
+             cycles=tuple((c.number, c.outcome) for c in cycles), changed=tuple(edits),
+             judging_files_touched=tuple(sorted({p for p, _ in edits if is_protected(p)})),
+             suite_before=first_suite if first_suite is not None else suite_after, suite_after=suite_after,
+-            ghost_before=tuple(sorted(d.identity for d in first)) if ghost else None,
+-            ghost_after=tuple(sorted(d.identity for d in current)) if ghost else None,
++            # FALSIFIER (throwaway, rule 2): each id carries its severity as "<id>|<severity>" (Warden's four-level
++            # scale: Ghost major is high, minor is medium, informational is low), so the Judge can route a new minor
++            # finding to HELD. The cns.seat.Evidence shape is unchanged; in a real build this is a CNS shape addition.
++            ghost_before=tuple(sorted(f"{d.identity}|{d.severity.value}" for d in first)) if ghost else None,
++            ghost_after=tuple(sorted(f"{d.identity}|{d.severity.value}" for d in current)) if ghost else None,
+             declined=tuple(sorted(declined)), swizzle_proofs=sound, attacks=attacks,
+             unmeasured=self._unmeasured(sound), notes=tuple(notes),
+             assay=({**self._assay, "floor": self.assay_floor} if self._assay_state else None),
+diff --git a/judge/seat.py b/judge/seat.py
+index c862b89..b832cf9 100644
+--- a/judge/seat.py
++++ b/judge/seat.py
+@@ -477,8 +477,18 @@ def _decide(e: Evidence) -> Verdict:
+     if g_before is not None and g_after is not None:
+         ghost_start, ghost_end = len(g_before), len(g_after)
+         new = sorted((Counter(g_after) - Counter(g_before)).elements())
+-        if new:
+-            harm.append(f"Ghost reports {len(new)} finding(s) it did not report at the start ({', '.join(new[:3])})")
++        # FALSIFIER (throwaway, rule 2): an id reads "<id>|<severity>" (Warden's scale). A new finding of severity
++        # medium or low (Ghost minor or informational) is unknown, held for a named human; high or critical (Ghost
++        # major or critical) is harm; an id with no readable severity is harm (unknown is not approved).
++        _minor = {"medium", "low"}
++        new_minor = [x for x in new if x.rpartition("|")[2] in _minor and x.rpartition("|")[0]]
++        new_major = [x for x in new if x not in new_minor]
++        if new_major:
++            harm.append(f"Ghost reports {len(new_major)} finding(s) it did not report at the start ({', '.join(new_major[:3])})")
++        if new_minor:
++            unknown.append(f"Ghost reports {len(new_minor)} new finding(s) of minor or informational severity "
++                           f"({', '.join(new_minor[:3])}); the machine does not approve that, a named human keeps or drops "
++                           "the held result")
+ 
+     # Ghost's baseline: findings it was told to ignore. Growth hides new findings.
+     baseline_unknown = None

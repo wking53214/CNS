@@ -1,0 +1,30 @@
+diff --git a/README.md b/README.md
+index afb8d50..cfee4d3 100644
+--- a/README.md
++++ b/README.md
+@@ -257,3 +257,25 @@ Welcome, narrowly. A new rule must come with a test that shows it firing and a t
+ ## License
+ 
+ Apache-2.0. See `LICENSE`.
++
++<!-- burnish:begin claims-vs-reality -->
++## Measured facts (generated)
++
++- Warden ran the target's suite at the end of the loop: green; nothing failed or errored.
++- `CNS is referenced`: A CNS mention is not proof of a correct seam. Subject binding is UNKNOWN until inspected. [implemented]
++- No test-count claims found in the README.
++
++Critic: **No contradiction with the measurements was found. That is not a proof of the whole design.**
++
++- Ghost Tools still reports findings of these kinds: assertless_test, boundary, dead_code, intra_function_duplicate_block, long_function, name_disagreement, near_duplicate_function, swallowed_exception, unmerged_branch. Converged means no fixes were left to propose, not that Ghost is silent.
++- Unknown: Finished means the loop had no proposals left, not that Ghost is silent.
++- Unknown: Whether any CNS digest here is the CNS canonical digest.
++
++README critic, on the README as it stood going into the finish:
++
++- \[RM-ONELINER\] It never says what the project is in one plain sentence.
++- \[RM-USAGE\] A reader cannot tell how to use it. (no section matching /usage\|quick ?start\|example\|getting started/)
++- \[RM-CONTRIB\] Nobody can tell if help is wanted. (it does not say whether pull requests are accepted or where to ask questions)
++- \[RM-TOC\] It is long and offers no way through.
++- \[RM-EXAMPLES\] No example a reader can run. (no runnable examples are linked)
++<!-- burnish:end -->

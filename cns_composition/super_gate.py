@@ -41,7 +41,7 @@ import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
-from typing import Callable, Iterable, Mapping, Optional, Tuple
+from typing import Callable, Iterable, Mapping, Optional, Tuple, cast
 
 from cns.gate import Gate, GateOutcome, GatePosition, GateResult, subject_digest
 
@@ -90,7 +90,7 @@ class SubjectAgreement:
     position = GatePosition.ALPHA
 
     def check(self, candidate: object) -> GateResult:
-        def verdict(outcome: GateOutcome, reason: str, bound: object = None) -> GateResult:
+        def verdict(outcome: GateOutcome, reason: str, bound: Optional[Mapping[str, object]] = None) -> GateResult:
             return GateResult(gate=self.name, position=self.position, outcome=outcome, reason=reason,
                               subject=self.name if bound is not None else "",
                               subject_digest=subject_digest(bound) if bound is not None else "")
@@ -117,7 +117,10 @@ class _Once:
     """A Lazy candidate's build, run once: the comparison and the gate see the same object."""
 
     def __init__(self, build: Callable[[], object]) -> None:
-        self._build, self._done, self._value, self._error = build, False, None, None
+        self._build = build
+        self._done = False
+        self._value: object = None
+        self._error: Optional[Exception] = None
 
     def __call__(self) -> object:
         if not self._done:
@@ -247,8 +250,8 @@ class SuperGate:
                                  f"{'/'.join(sorted(p.value for p in allowed))}, not {gate.position.value}")
         ends = {gate.position for _, gate in self._seats}
         if require_complete and ends != {GatePosition.ALPHA, GatePosition.OMEGA}:
-            missing = "alpha" if GatePosition.ALPHA not in ends else "omega"
-            raise ValueError(f"the roster has no {missing} gate, so it is a stratum and not a complete gate; "
+            absent = "alpha" if GatePosition.ALPHA not in ends else "omega"
+            raise ValueError(f"the roster has no {absent} gate, so it is a stratum and not a complete gate; "
                              "pass require_complete=False if that is intended")
         self._subject_of = dict(same_subject) if same_subject is not None else {}
         if same_subject is not None:
@@ -308,18 +311,20 @@ class SuperGate:
         given = dict(candidates)
         if self._subject_of:
             for key in self._subject_of:
-                if isinstance(given.get(key), Lazy):
-                    given[key] = Lazy(_Once(given[key].build))
+                seat = given.get(key)
+                if isinstance(seat, Lazy):
+                    given[key] = Lazy(_Once(seat.build))
             views = _Once(lambda: self._read_subjects(given))
             given[SUBJECT_SEAT] = Lazy(views)
         steps = [(repo, gate, given[key] if key in given else _no_candidate(key))
                  for (repo, gate), key in zip(self._seats, self._keys)]
         run = run_repo_chain(steps, require_complete=self._require_complete)
         root = _root(self._keys, run.results)
-        subject = None
+        subject: Optional[Judged] = None
         if self._subject_of and run.outcome is GateOutcome.PASS:
             # Every gate ran, so the readings were taken; this is the agreement the gate passed, not a second reading.
-            read = set(views().values())
-            if len(read) == 1 and all(isinstance(j, Judged) for j in read):
-                subject = next(iter(read))
+            read = set(cast(Mapping[str, object], views()).values())
+            only = next(iter(read)) if len(read) == 1 else None
+            if isinstance(only, Judged):
+                subject = only
         return Decision(run=run, seats=self._keys, root=root, subject=subject, proof=_proof(run, root, subject))

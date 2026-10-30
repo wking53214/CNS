@@ -13,6 +13,8 @@ independently written repos and is absent from ordinary software.
 | `RESULTS.md` | Its output on 2026-09-11 (second run, see below): Table 1 and the words that carry the signal. |
 | `COLLISIONS.md` | The collision inventory: every definition behind a name that binds twice inside one repo, with its path, shape, whether other repos carry it, and a disposition. |
 | `collision_inventory.py` | Generates `COLLISIONS.md`. Imports its parsing and classification from `cns_map.py` so the two documents cannot disagree about what a class is. |
+| `falsifier-2026-10-28/` | The falsifier run: 20 real AI co-authored commits of ghost_tools replayed through the circuit as built and with throwaway rule changes, records copied unaltered. Its README says what it is not. |
+| `proof-2026-10-29/` | The proof run: three of those commits through the branch code, each ending HELD with a claim row that names the change, records copied unaltered. Its README lists the eight checks and the limits. |
 
 ## Why the collision inventory exists
 

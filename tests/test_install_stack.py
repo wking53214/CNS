@@ -31,3 +31,13 @@ def test_every_manifest_repository_is_installed_at_the_commit_the_manifest_names
 def test_cns_is_installed_once_by_the_release_tag_the_circuit_repositories_spell():
     cns = [(repo, sha) for repo, sha in _entries().values() if repo.casefold() == "cns"]
     assert len(cns) == 1 and re.fullmatch(r"v\d+\.\d+\.\d+", cns[0][1])
+
+
+def test_no_released_seat_is_installed_or_in_the_manifest():
+    """DRAFTER, BURNISH and WATCHER_MCU are released from the circuit: the install file does not install them and the
+    manifest does not name them (contracts/released-seats.json is the list)."""
+    released = {n.casefold() for n in json.loads((CONTRACTS / "released-seats.json").read_text(encoding="utf-8"))["repos"]}
+    assert released == {"drafter", "burnish", "watcher_mcu"}
+    manifest = json.loads((CONTRACTS / "warden-stack.json").read_text(encoding="utf-8"))["repos"]
+    assert not released & {n.casefold() for n in manifest}
+    assert not released & {repo.casefold() for repo, _ in _entries().values()}

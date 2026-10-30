@@ -128,7 +128,6 @@ class TestCompositionExecution:
     def test_subject_binding_across_cycle(self, composer):
         """Subject hash remains consistent across composition steps."""
         subject1 = {"repo": "repo_a", "commit": "aaa"}
-        subject2 = {"repo": "repo_b", "commit": "bbb"}
 
         composition = ["swizzle", "ghost_tools"]
         with pytest.raises(NotImplementedError):
