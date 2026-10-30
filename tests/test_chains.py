@@ -170,6 +170,18 @@ def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_aga
     assert "ccc_doors_all_named()" in text and "def ccc_gated_doors" in text and "__wrapped__" in text
 
 
+def test_the_evidence_script_builds_its_kernel_with_an_evidence_guard_that_checks_where_a_record_came_from():
+    """The evidence guard is policy, pinned here so changing what it checks is a change made in review. A decision
+    guard cannot do this job (the evidence must exist before any decision does), so the guard checks provenance."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    guard = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "tie_evidence_guard")
+    body = ast.get_source_segment(text, guard)
+    for required in ("evidence_id in produced", "EvidenceKind.SOURCE_OBSERVATION", '"source_id"', '"source_sha256"'):
+        assert required in body, required
+    assert "evidence_guard=tie_evidence_guard(" in text
+
+
 def _chain_imports():
     """Every cns and cns_composition module the chain scripts import, followed through their own imports."""
     def names(path):

@@ -164,19 +164,41 @@ def tie(export: dict, source_id: str, text: str) -> Tuple[list, str]:
         return [], str(exc)
 
 
+def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[EvidenceRecord], bool]:
+    """The kernel's `evidence_guard`: it permits an evidence record only if TIE produced it from this document.
+
+    The evidence has to be in the kernel's registry before the roster can decide (the root seat checks that a root's
+    citations exist), so no decision exists yet and a decision guard cannot be the permission here. What the caller
+    can show instead is where the record came from: its id is one TIE produced from the verified export of `text`
+    (`evidence`), and it says it is a source observation of that source id and of the SHA-256 of that text. A record
+    TIE never produced, one about another document, or one that claims another kind, is refused. Unlike the root
+    guard it is not spent by a yes, because one document gives TIE many records. Policy, like READERS."""
+    produced, digest = {record.evidence_id for record in evidence}, sha256(text)
+
+    def permits(record: EvidenceRecord) -> bool:
+        return (record.evidence_id in produced and record.kind is EvidenceKind.SOURCE_OBSERVATION
+                and record.detail.get("source_id") == source_id and record.detail.get("source_sha256") == digest)
+
+    return permits
+
+
 def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = RootStatus.INFERENCE,
                 cite_evidence: bool = True, guard: Optional[DecisionGuard] = None,
-                unguarded: bool = False) -> Tuple[ConservationKernel, RootArtifact]:
+                unguarded: bool = False, evidence_guarded: bool = True) -> Tuple[ConservationKernel, RootArtifact]:
     """The caller's step from TIE evidence to a kernel root. No repository ships this; it is written here.
 
     The kernel is built with a guard (the one given, else a fresh one that nothing opens): it registers a root only
-    when the guard says so. `unguarded=True` builds the kernel without one, which registers any root it admits."""
-    kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded)
+    when the guard says so. `unguarded=True` builds the kernel without one, which registers any root it admits. It is
+    also built with an evidence guard (`tie_evidence_guard`), so its registry takes only the evidence TIE produced
+    from this document; `evidence_guarded=False` builds it without one, which takes any evidence at all."""
+    kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded,
+                                evidence_guard=tie_evidence_guard(evidence, source_id, text) if evidence_guarded else None)
     propositions = []
     for n, record in enumerate(evidence):
         pid = f"p{n}"
         kernel.registry.add_evidence(EvidenceRecord(evidence_id=record.evidence_id, subject_id=pid,
-                                                    kind=EvidenceKind.SOURCE_OBSERVATION, provided_by=Actor.model("herald")))
+                                                    kind=EvidenceKind.SOURCE_OBSERVATION, provided_by=Actor.model("herald"),
+                                                    detail={"source_id": source_id, "source_sha256": sha256(text)}))
         propositions.append(Proposition(proposition_id=pid, text=record.statement, epistemic_status=status,
                                         origin=OriginStatus.MACHINE_ORIGINATED,
                                         evidence_refs=(record.evidence_id,) if cite_evidence else (),
