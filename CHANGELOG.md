@@ -32,7 +32,11 @@ tagged: `contracts/cns-releases.json` keeps `current` at `v2.2.0` and the floor 
   permissions this way and checks every seat's verdict against what it was given (`strict_binding`), with four new
   scenarios, each shown failing against the unbound guards first. Pre-existing test edited, by this step:
   `tests/test_chains.py::test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact`, the count of
-  SEAM HOLDS scenarios, 26 to 30, and nothing else about it.
+  SEAM HOLDS scenarios, 26 to 31 (30 for the permissions step, 31 for the evidence step), and nothing else about it.
+- The spine's evidence guard compares the whole record with what TIE's translation gives for that id (`kernel_evidence`),
+  not only its id, kind, source and text hash. Before, a record under a real TIE id with a human provider claiming
+  independence, an inactive flag or an extra note was accepted, and the honest record was then refused as a duplicate.
+  Only `created_at` is left out. One scenario, shown failing against the old guard first; a structural test pins it.
 - CCC joins the evidence spine as the fifth hop: `CCC:ccc.transition` is a required seat in
   `chains/evidence_spine.py`, and `cns_composition.repo_gates` declares CCC's gate end (`902638f`, `b4c56a2`).
 - CCC's write permission is the roster's `DecisionGuard`: after a roster no, a direct ingest is refused and CCC's

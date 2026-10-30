@@ -152,7 +152,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 2
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 30
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 31
 
 
 def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
@@ -230,3 +230,14 @@ def test_the_evidence_script_binds_each_permission_to_its_seat_and_to_the_requir
     given = {k.arg: k.value for k in gates[0].keywords}
     assert isinstance(given.get("strict_binding"), ast.Constant) and given["strict_binding"].value is True
     assert "binding_of" in given
+
+
+def test_the_evidence_guard_compares_the_whole_record_with_what_tie_s_translation_gives_for_that_id():
+    """Policy, pinned so loosening it is a change made in review: a record under a real TIE id must equal the one
+    `kernel_evidence` builds, apart from when it was added. Checking some fields lets an id be taken first with false
+    metadata, because the registry keeps the first record under an id and refuses the honest one as a duplicate."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    guard = next(n for n in ast.parse(text).body if isinstance(n, ast.FunctionDef) and n.name == "tie_evidence_guard")
+    body = ast.get_source_segment(text, guard)
+    for required in ("kernel_evidence(", "whole(record) == whole(expected[record.evidence_id])", '!= "created_at"'):
+        assert required in body, required

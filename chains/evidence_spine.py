@@ -193,13 +193,22 @@ def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[E
     citations exist), so no decision exists yet and a decision guard cannot be the permission here. What the caller
     can show instead is where the record came from: its id is one TIE produced from the verified export of `text`
     (`evidence`), and it says it is a source observation of that source id and of the SHA-256 of that text. A record
-    TIE never produced, one about another document, or one that claims another kind, is refused. Unlike the root
+    TIE never produced, one about another document, or one that claims another kind, is refused. So is one that
+    carries a real id with anything else altered (its provider, its independence, whether it is active, its detail,
+    the proposition it supports): the record must be exactly what `kernel_evidence` gives for that id, so an id cannot
+    be taken first with false metadata. Only `created_at` is left out, because it is when the record was added. Unlike the root
     guard it is not spent by a yes, because one document gives TIE many records. Policy, like READERS."""
     produced, digest = {record.evidence_id for record in evidence}, sha256(text)
+    expected = {record.evidence_id: kernel_evidence(record, f"p{n}", source_id, text) for n, record in enumerate(evidence)}
+
+    def whole(record: EvidenceRecord) -> Dict[str, object]:
+        # created_at is when the record was added, not part of what it says, so it is the one part left out.
+        return {name: part for name, part in record.to_dict().items() if name != "created_at"}
 
     def permits(record: EvidenceRecord) -> bool:
         return (record.evidence_id in produced and record.kind is EvidenceKind.SOURCE_OBSERVATION
-                and record.detail.get("source_id") == source_id and record.detail.get("source_sha256") == digest)
+                and record.detail.get("source_id") == source_id and record.detail.get("source_sha256") == digest
+                and whole(record) == whole(expected[record.evidence_id]))
 
     return permits
 
@@ -617,6 +626,37 @@ def evidence_not_from_tie() -> Dict[str, object]:
             "honest_record_accepted": kernel.registry.evidence(honest) is not None,
             "kernel_the_chain_builds_refuses_forged": chain_refused,
             "fact_root_citing_forged_admissible": not kernel.admit_root(fact_root_citing("forged-1"))}
+
+
+def evidence_with_altered_metadata() -> Dict[str, object]:
+    """Evidence added to a kernel that carries the evidence guard, under an id TIE really produced, with the kind,
+    source and text hash right and one other part altered: a human provider who claims independence, an inactive
+    record, an extra note in the detail, a model that is not HERALD, a different proposition supported.
+
+    Each is refused, and the refusals leave the id free: the record TIE's translation gives goes in afterwards, as a
+    machine reading, not independent, active. Before the guard compared the whole record the first writer won."""
+    read = herald(INVOICE, "doc-1")
+    evidence, _ = tie(read.export, "doc-1", INVOICE)
+    honest = kernel_evidence(evidence[0], "p0", "doc-1", INVOICE)
+    kernel = ConservationKernel(root_guard=fresh_guard(), evidence_guard=tie_evidence_guard(evidence, "doc-1", INVOICE))
+    detail = dict(honest.detail)
+    altered = [dataclasses.replace(honest, provided_by=Actor.human("independent-auditor"), independent=True),
+               dataclasses.replace(honest, active=False),
+               dataclasses.replace(honest, detail={**detail, "note": "verified by an independent auditor"}),
+               dataclasses.replace(honest, provided_by=Actor.model("mallory")),
+               dataclasses.replace(honest, subject_id="p7")]
+    refusals = [refused_by_evidence_guard(lambda record=record: kernel.registry.add_evidence(record)) for record in altered]
+    held_before = len(kernel.registry.snapshot()["evidence"])
+    try:
+        kernel.registry.add_evidence(honest)
+        honest_accepted = True
+    except InvalidEvent:  # the id is taken: what a guard that lets an altered record in first leaves behind
+        honest_accepted = False
+    held = kernel.registry.evidence(honest.evidence_id)
+    return {"evidence_refused": refusals, "evidence_held_after_refusals": held_before,
+            "honest_record_accepted": honest_accepted,
+            "held_provider": held.provided_by.actor_id if held else "",
+            "held_independent": held.independent if held else None, "held_active": held.active if held else None}
 
 
 def fact_root_citing(evidence_id: str) -> RootArtifact:
@@ -1118,6 +1158,10 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      ccc_altered_arguments,
      {**HELD, "guard_opened": True, "ccc_substitute_refused": True, "ccc_artifacts_after_substitute": 0,
       "ccc_true_ingest_refused": False, "ccc_artifacts_after_true": 1}),
+    ("SEAM HOLDS: evidence under a real TIE id with the kind, source and text hash right but its provider, independence, active flag, detail or proposition altered is refused, and the id stays free for the record TIE's translation gives",
+     evidence_with_altered_metadata,
+     {"evidence_refused": [True, True, True, True, True], "evidence_held_after_refusals": 0,
+      "honest_record_accepted": True, "held_provider": "herald", "held_independent": False, "held_active": True}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
