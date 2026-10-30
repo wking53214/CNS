@@ -17,6 +17,9 @@ judges each new submission against that history:
     unchanged, under the cap      PASS             allowed; see below
     unchanged, at the cap         TERMINAL_BREACH  resubmitted unchanged too often
     an earlier version again      TERMINAL_BREACH  oscillation (A, B, A)
+    this content, too often,      TERMINAL_BREACH  renaming the subject does not
+      under any subject                            reset the count
+    a new subject, table full     TERMINAL_BREACH  nothing is forgotten to make room
 
 WHY SOME UNCHANGED RESUBMISSIONS ARE ALLOWED
 
@@ -36,10 +39,20 @@ deterministic: resubmitting the same refused content is refused the same way.
 Memory is bounded in two directions, because an unbounded history is the
 defect DIT's 2026-07-07 audit recorded for its own loop guard. Each subject
 keeps at most `max_history` digests (oscillation back to a version older than
-that is not detected), and at most `max_subjects` subjects are held; the
-least recently judged one is forgotten first and starts fresh if it returns.
-`forget(subject)` clears one subject on purpose, for a caller whose work on
-it is finished.
+that is not detected), and at most `max_subjects` subjects are held. When the
+table is full a new subject is refused: forgetting another subject to make
+room would let a caller reset any subject's count by flooding the table with
+new names. `forget(subject)` clears one subject on purpose, for a caller whose
+work on it is finished, and is how room is made.
+
+COUNTING BY CONTENT
+
+A subject is the caller's name for the thing, so a caller can also rename it.
+Each content digest is therefore counted across every subject held, and once
+it has been accepted `max_same_content` times under any names, the next
+submission of it is refused. The budget is looser than `max_unchanged` on
+purpose: two different items can honestly share a text, and each may need its
+own retry. It bounds a rename loop; it does not try to tell the two apart.
 
 The guard holds state, so it lives here rather than in `cns`, whose rows
 never mutate themselves. It is an ALPHA gate: it runs before the work, and
@@ -62,7 +75,7 @@ two could disagree; the digest here is content only.
 
 from __future__ import annotations
 
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass
 
 from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
@@ -110,11 +123,14 @@ class ResubmissionGuard:
     position = GatePosition.ALPHA
 
     def __init__(self, max_unchanged: int = 3, max_history: int = 64,
-                 max_subjects: int = 10_000) -> None:
+                 max_subjects: int = 10_000, max_same_content: int = 12) -> None:
         self.max_unchanged = _positive_int("max_unchanged", max_unchanged)
         self.max_history = _positive_int("max_history", max_history)
         self.max_subjects = _positive_int("max_subjects", max_subjects)
+        self.max_same_content = _positive_int("max_same_content", max_same_content)
         self._history: OrderedDict[str, list[str]] = OrderedDict()
+        #: How many times each digest appears across every history held; kept in step with `_history`.
+        self._content: Counter[str] = Counter()
 
     def check(self, candidate: object) -> GateResult:
         """Judge one submission and, unless it is refused, remember it."""
@@ -123,6 +139,16 @@ class ResubmissionGuard:
                 f"ResubmissionGuard judges a Resubmission; got {type(candidate).__name__}")
         history = self._history.get(candidate.subject, [])
         outcome, reason = self._judge(history, candidate.content_digest)
+        if outcome is GateOutcome.PASS and candidate.subject not in self._history \
+                and len(self._history) >= self.max_subjects:
+            outcome, reason = (GateOutcome.TERMINAL_BREACH,
+                               (f"the guard holds {self.max_subjects} subjects already; a new one is refused "
+                                "rather than forgetting another's count (forget() makes room)"))
+        if outcome is GateOutcome.PASS and self._content[candidate.content_digest] >= self.max_same_content:
+            outcome, reason = (GateOutcome.TERMINAL_BREACH,
+                               (f"this content was already accepted {self._content[candidate.content_digest]} "
+                                f"times across subjects (limit {self.max_same_content}); renaming the subject "
+                                "does not reset the count"))
         if outcome is GateOutcome.PASS:
             self._remember(candidate.subject, history, candidate.content_digest)
         elif candidate.subject in self._history:
@@ -141,7 +167,8 @@ class ResubmissionGuard:
 
     def forget(self, subject: str) -> None:
         """Clear one subject's history. Unknown subjects are ignored."""
-        self._history.pop(subject, None)
+        self._content.subtract(self._history.pop(subject, []))
+        self._content += Counter()  # drops the digests that reached zero
 
     def attempts(self, subject: str) -> int:
         """How many accepted submissions are remembered for a subject."""
@@ -169,8 +196,10 @@ class ResubmissionGuard:
         return GateOutcome.PASS, "changed since the last submission"
 
     def _remember(self, subject: str, history: list[str], digest: str) -> None:
-        updated = (history + [digest])[-self.max_history:]
+        grown = history + [digest]
+        updated = grown[-self.max_history:]
+        self._content[digest] += 1
+        self._content.subtract(grown[:-self.max_history] if len(grown) > self.max_history else [])
+        self._content += Counter()  # drops the digests that reached zero
         self._history[subject] = updated
         self._history.move_to_end(subject)
-        while len(self._history) > self.max_subjects:
-            self._history.popitem(last=False)
