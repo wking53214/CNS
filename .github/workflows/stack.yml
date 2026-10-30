@@ -16,11 +16,13 @@
 #   install_stack --check  the install file is the rendering of the manifest and the release table
 #   repin --check   the manifest equals the HEAD of each checkout (the checkouts ARE the manifest, so this holds the
 #                   manifest to itself and fails if a commit could not be checked out as named)
-#   circuit_canary  the whole circuit runs on a throwaway repository and ends ACCEPT
+#   circuit_canary  the whole circuit runs on a throwaway repository, claiming one ordinary code change through
+#                   Warden's claim seat (the stack holds no Drafter and no Burnish), and ends ACCEPT
 #   circuit_refusals  on throwaway copies of the stack, each thing the manifest exists to refuse (a dirty member, a
 #                   seat the manifest does not name, a short, uppercase or wrong pin, a change hidden from git status
-#                   by an index flag or the caller's git configuration) is refused, and a red target suite is not
-#                   accepted. At the pinned Warden all ten cases are refused. A manifest at a Warden that does not
+#                   by an index flag or the caller's git configuration, a seat the manifest names that the folder lacks,
+#                   a Burnish checkout the manifest does not name) is refused, and a red target suite is not
+#                   accepted. At the pinned Warden all twelve cases are refused. A manifest at a Warden that does not
 #                   refuse one of them (0.13.7 did not refuse four) makes this step red, and the red is the finding.
 #
 # It runs on pushes and pull requests to main and to the horsemen branch, and weekly, because the stack can break

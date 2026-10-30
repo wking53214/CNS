@@ -14,8 +14,10 @@ remembered from a changelog.
 WHAT IT DOES
 
 For each case it clones every folder of the stack into a temporary folder (local clones, read-only for the
-source), writes a manifest for those clones into a throwaway hub (the real manifest's names and order, the
-clones' commits), applies one change, runs `warden tagteam` the way the canary does, and passes only when the
+source; a case may leave one out), writes a manifest for those clones into a throwaway hub (the real manifest's names
+and order, the clones' commits), applies one change, runs `warden tagteam` the way the canary does (the claim seat
+proposes one ordinary change, because a stack without the released Drafter needs a proposer and a refusal for want of
+one would prove nothing), and passes only when the
 decision and the exit code are the refusal the case expects. The documented refusals are, for Warden 0.13.7 and
 later: USAGE_ERROR, exit 2, "Nothing was run", for every stack problem; and for a target whose suite is red from
 the start, one of INCONCLUSIVE exit 6 (the Drafter proposed), FINISH_REJECTED exit 1 (the Finisher did) or
@@ -60,6 +62,8 @@ class Case:
     apply: Callable[[Path, Path, Dict[str, str], Dict[str, str]], None]
     #: Whether the throwaway target's suite is red from the start.
     red_target: bool = False
+    #: Stack folders left out of the throwaway copy (a seat the manifest names but the folder lacks).
+    leave_out: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -134,6 +138,19 @@ def _nothing(stack: Path, hub: Path, manifest: Dict[str, str], env: Dict[str, st
     pass
 
 
+def _add_unnamed_burnish(stack: Path, hub: Path, manifest: Dict[str, str], env: Dict[str, str]) -> None:
+    """A checkout of a releasable seat, which the manifest does not name, is put into the stack folder. It is a
+    throwaway repository holding one stub file: Warden refuses the folder before it runs anything in it. BURNISH, not
+    DRAFTER: with the claim seat proposing, Warden 0.16.1 does not use a DRAFTER folder at all (the claim seat holds
+    the option the folder would fill) and so does not refuse it; a BURNISH folder fills the finisher and is refused."""
+    folder = stack / "BURNISH"
+    (folder / "burnish").mkdir(parents=True)
+    (folder / "burnish" / "__init__.py").write_text("", encoding="utf-8")
+    _git(folder, "init", "-q")
+    _git(folder, "add", "-A")
+    _git(folder, "commit", "-q", "-m", "a seat the manifest does not name")
+
+
 CASES: Tuple[Case, ...] = (
     Case("dirty_tracked", f"a tracked file of {_SEAT} is modified after the pin", _REFUSED, _edit_seat_file),
     Case("dirty_untracked", f"an untracked file is added to {_SEAT}", _REFUSED, _add_untracked),
@@ -148,12 +165,21 @@ CASES: Tuple[Case, ...] = (
     Case("global_excludes", f"an untracked {_SEAT} file is hidden by the caller's global excludes file and "
          "status.showUntrackedFiles=no", _REFUSED, _global_excludes),
     Case("red_suite", "the target's own suite is red before anything is written", _RED_SUITE, _nothing, red_target=True),
+    # Warden's roster rule, and nothing else: a seat the manifest names must be in the folder, and a seat the folder
+    # holds must be named by the manifest, including the releasable one. Configuration integrity, not a detector.
+    Case("missing_seat", "SWIZZLE is in the manifest but not in the stack folder", _REFUSED, _nothing,
+         leave_out=("SWIZZLE",)),
+    Case("unnamed_burnish", "a BURNISH checkout is in the stack folder but not in the manifest", _REFUSED,
+         _add_unnamed_burnish),
 )
 
 
-def _clone_stack(src: Path, dst: Path) -> None:
+def _clone_stack(src: Path, dst: Path, leave_out: Sequence[str] = ()) -> None:
     dst.mkdir(parents=True)
+    skipped = {name.casefold() for name in leave_out}
     for folder in repin.stack_folders(src):
+        if folder.name.casefold() in skipped:
+            continue
         _git(dst, "clone", "--quiet", str(folder.resolve()), str(dst / folder.name))
 
 
@@ -172,7 +198,8 @@ def _write_hub(hub: Path, real_manifest: Path, manifest: Dict[str, str]) -> None
     (hub / "contracts" / "warden-stack.json").write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def _make_target(root: Path, red: bool) -> Path:
+def _make_target(root: Path, red: bool) -> Tuple[Path, str]:
+    """The throwaway target, at its base, and the commit the claim seat is asked to apply to it."""
     target = canary._make_target(root)
     if red:
         (target / "tests" / "test_area.py").write_text(
@@ -180,7 +207,7 @@ def _make_target(root: Path, red: bool) -> Path:
             encoding="utf-8")
         canary._git(target, "add", "-A")
         canary._git(target, "commit", "-q", "-m", "a red suite")
-    return target
+    return target, canary._claim_commit(target)
 
 
 def run_case(case: Case, stack: Path, cns: Path, *, python: Optional[str] = None,
@@ -193,19 +220,19 @@ def run_case(case: Case, stack: Path, cns: Path, *, python: Optional[str] = None
         copy, hub = root / "stack", root / "hub"
         env: Dict[str, str] = dict(os.environ)
         try:
-            _clone_stack(stack, copy)
-            manifest = _hub_manifest(real_manifest, copy)
+            _clone_stack(stack, copy, case.leave_out)
+            manifest = _hub_manifest(real_manifest, stack)
             case.apply(copy, hub, manifest, env)
             _write_hub(hub, real_manifest, manifest)
-            target = _make_target(root, case.red_target)
+            target, claimed = _make_target(root, case.red_target)
         except (OSError, subprocess.SubprocessError, repin.RepinError) as err:
             return Outcome(case.name, False, "REFUSAL_ERROR", -1, f"the case could not be built: {type(err).__name__}: {err}")
         paths = [str(canary._folder(copy, name)) for name in canary._IMPORTED] + [str(hub)]
         env["PYTHONPATH"] = os.pathsep.join(paths)
         cmd = [python or sys.executable, "-m", "warden.cli", "tagteam", str(target),
-               "--stack", str(copy), "--cns", str(hub),
+               "--stack", str(copy), "--cns", str(hub), "--claim-commit", claimed,
                "--authorize", "circuit-refusals", "--reason", f"must the circuit refuse: {case.what}",
-               "--scope", "documentation"]
+               "--scope", "code"]
         try:
             done = subprocess.run(cmd, capture_output=True, text=True, env=env,  # nosec B603 - fixed list, no shell
                                   timeout=timeout, check=False)

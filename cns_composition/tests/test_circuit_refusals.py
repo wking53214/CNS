@@ -40,7 +40,9 @@ for name, pinned in manifest.items():
     head = subprocess.run(["git", "-C", str(folder), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     if head != pinned:
         out("USAGE_ERROR", 2, f"the stack manifest pins {name!r} to {pinned[:12]}, but the checkout is at {head[:12]}")
-for used in ("judge", "drafter", "burnish"):
+if "drafter" not in folders and "--claim-commit" not in args:
+    out("USAGE_ERROR", 2, "this stack has no drafter and nothing to propose; give --claim-commit, --claim-diff or --drafter")
+for used in ("judge", "burnish"):
     if used in folders and used not in {n.lower() for n in manifest}:
         out("USAGE_ERROR", 2, f"the stack manifest does not name {used!r}, yet this run uses it as a seat")
 env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
@@ -91,14 +93,14 @@ def make_repo(stack, name, files):
 
 @pytest.fixture
 def circuit(tmp_path, monkeypatch):
-    """A stack of four seats plus a hub whose manifest pins them, with the strict stand-in as Warden."""
+    """A stack of the circuit (Warden, the Judge and an instrument) plus a hub whose manifest pins them, with the strict
+    stand-in as Warden. DRAFTER and BURNISH are released from the circuit: neither is in the stack or the manifest."""
     monkeypatch.setattr(cr.canary, "_missing_modules", lambda python, modules=cr.canary._NEEDED: [])
     stack = tmp_path / "stack"
     heads = {}
     heads["WARDEN"] = make_repo(stack, "WARDEN", {"warden/__init__.py": "", "warden/cli.py": STRICT_CLI})
     heads["JUDGE"] = make_repo(stack, "JUDGE", {"judge/__init__.py": "", "judge/seat.py": "class Judge: pass\n"})
-    heads["DRAFTER"] = make_repo(stack, "DRAFTER", {"drafter/seat.py": "x = 1\n"})
-    heads["BURNISH"] = make_repo(stack, "BURNISH", {"burnish/finisher.py": "x = 1\n"})
+    heads["SWIZZLE"] = make_repo(stack, "SWIZZLE", {"swizzle/__init__.py": ""})
     make_repo(stack, "WATCHER_MCU", {"watcher/cli.py": "x = 1\n"})  # in the stack, not in the manifest, not used
     cns = tmp_path / "cns"
     (cns / "contracts").mkdir(parents=True)
@@ -135,12 +137,21 @@ def test_a_circuit_that_accepts_everything_fails_every_case(circuit, case):
     assert not outcome.ok and outcome.decision == "ACCEPT" and outcome.exit_code == 0
 
 
-def test_the_ten_cases_the_decision_record_promises_are_all_here():
+@pytest.mark.parametrize("case", [c.name for c in cr.CASES])
+def test_no_case_is_refused_for_want_of_a_proposer(circuit, case):
+    """The stack has no Drafter, so a run with no claim is refused for that and every case would pass for the wrong
+    reason. Each case hands Warden a claimed commit, so the refusal it reads is the one the case is about."""
+    stack, cns = circuit
+    outcome = cr.run_case(next(c for c in cr.CASES if c.name == case), stack, cns)
+    assert "nothing to propose" not in outcome.reason
+
+
+def test_the_ten_cases_the_decision_record_promises_and_the_two_roster_cases_are_all_here():
     assert [c.name for c in cr.CASES] == [
         "dirty_tracked", "dirty_untracked", "omitted_seat", "short_pin", "uppercase_pin", "wrong_commit",
-        "assume_unchanged", "skip_worktree", "global_excludes", "red_suite"]
-    assert all(c.expected == cr._REFUSED for c in cr.CASES[:-1])
-    assert cr.CASES[-1].expected == frozenset({("INCONCLUSIVE", 6), ("FINISH_REJECTED", 1), ("JUDGE_REJECTED", 1)})
+        "assume_unchanged", "skip_worktree", "global_excludes", "red_suite", "missing_seat", "unnamed_burnish"]
+    assert all(c.expected == cr._REFUSED for c in cr.CASES[:9] + cr.CASES[10:])
+    assert cr.CASES[9].expected == frozenset({("INCONCLUSIVE", 6), ("FINISH_REJECTED", 1), ("JUDGE_REJECTED", 1)})
 
 
 def test_the_real_stack_is_never_written_and_the_scratch_is_removed(circuit, tmp_path):

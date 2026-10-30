@@ -2,13 +2,15 @@
 
 WHY THIS EXISTS
 
-`repin` can say what the heads of the seven repositories are. It cannot say whether those seven still work
-together, and a manifest that names a combination nobody ran is a guess with a commit hash on it. This is the
-run: it builds a small throwaway repository, hands it to Warden with `--stack` and `--cns`, and reports whether
-the whole circuit (Ghost Tools, SWIZZLE, ASSAY, the Drafter, the Judge, Burnish) ended ACCEPT.
+`repin` can say what the heads of the circuit repositories are. It cannot say whether they still work together, and
+a manifest that names a combination nobody ran is a guess with a commit hash on it. This is the run: it builds a
+small throwaway repository with one ordinary change committed on a side branch, hands it to Warden with `--stack`,
+`--cns` and `--claim-commit`, and reports whether the whole circuit (Ghost Tools, SWIZZLE, ASSAY, the Judge, with
+Warden's claim seat in the Drafter's place and no finisher) ended ACCEPT. DRAFTER and BURNISH are released from the
+circuit: the stack folder holds neither, and Warden runs without them because the manifest does not name them.
 
 It is also a daily health check for the combination, because the same run answers "did a merge to any one of
-the seven break the others". That check is what an exact-commit pin was standing in for.
+them break the others". That check is what an exact-commit pin was standing in for.
 
 WHAT COUNTS AS A PASS
 
@@ -46,12 +48,12 @@ __all__ = ["CanaryResult", "run_canary", "main"]
 #: matplotlib are for ASSAY: a claim it cannot run is a failure, so without them Warden ends INCONCLUSIVE.
 _NEEDED = ("pytest", "cns", "numpy", "matplotlib")
 #: The checkouts whose packages Warden imports as seats. Matched without regard to case, as Warden matches a stack.
-_IMPORTED = ("WARDEN", "JUDGE", "DRAFTER", "BURNISH")
+_IMPORTED = ("WARDEN", "JUDGE")
 _TIMEOUT_SECONDS = 1800
 _GIT_IDENT = ("-c", "user.name=circuit-canary", "-c", "user.email=canary@invalid", "-c", "commit.gpgsign=false")
 
-#: The throwaway repository: a tiny package whose README says nothing about its tests, which is what the
-#: circuit has already been shown to accept under a documentation grant.
+#: The throwaway repository: a tiny package whose README says nothing about its tests. The canary claims one
+#: ordinary change to it (`_claim_commit`) under a code grant.
 _TARGET = {
     "README.md": "# shapes\n\nArea helpers for circles and rectangles.\n",
     "shapes/__init__.py": '"""Small geometry helpers."""\n',
@@ -64,6 +66,12 @@ _TARGET = {
         "def test_circle():\n    assert math.isclose(circle(1), math.pi)\n\n\n"
         "def test_rectangle():\n    assert rectangle(2, 3) == 6\n"),
 }
+
+
+#: The one change the canary claims: an ordinary edit to a code file that no test or configuration covers, which Ghost
+#: reads as clean (a new function nobody calls is a dead-code finding; a rewrite of an expression is not).
+_CLAIM_PATH = Path("shapes") / "area.py"
+_CLAIM_OLD, _CLAIM_NEW = "return math.pi * radius * radius", "return math.pi * radius ** 2"
 
 
 @dataclass(frozen=True)
@@ -116,6 +124,32 @@ def _make_target(root: Path) -> Path:
     return target
 
 
+def _rev(folder: Path) -> str:
+    exe = shutil.which("git")
+    if exe is None:
+        raise OSError("git is not on PATH")
+    done = subprocess.run([exe, "-C", str(folder), "rev-parse", "HEAD"],  # nosec B603 - fixed argument list
+                          capture_output=True, text=True, check=True, timeout=60)
+    return done.stdout.strip()
+
+
+def _claim_commit(target: Path) -> str:
+    """Commit the one claimed change on a side branch of `target`, return to the base it applies to, and return the
+    claimed commit. Warden's claim seat reads the diff of that commit from the target's own git and applies it to the
+    target as it stands, so the target is left at the base with nothing uncommitted."""
+    path = target / _CLAIM_PATH
+    text = path.read_text(encoding="utf-8")
+    if _CLAIM_OLD not in text:
+        raise OSError(f"the claimed change does not apply to {_CLAIM_PATH.as_posix()}")
+    _git(target, "checkout", "-q", "-b", "claimed-change")
+    path.write_text(text.replace(_CLAIM_OLD, _CLAIM_NEW), encoding="utf-8")
+    _git(target, "add", "-A")
+    _git(target, "commit", "-q", "-m", "write the circle area with a power")
+    claimed = _rev(target)
+    _git(target, "checkout", "-q", "-")
+    return claimed
+
+
 def run_canary(stack: Path, cns: Path, *, python: Optional[str] = None,
                timeout: int = _TIMEOUT_SECONDS) -> CanaryResult:
     """Run the whole circuit over `stack` with the manifest from `cns`; say whether it ended ACCEPT."""
@@ -141,12 +175,13 @@ def run_canary(stack: Path, cns: Path, *, python: Optional[str] = None,
     with tempfile.TemporaryDirectory(prefix="circuit-canary-") as tmp:
         try:
             target = _make_target(Path(tmp))
+            claimed = _claim_commit(target)
         except (OSError, subprocess.SubprocessError) as err:
             return _fail("CANARY_ERROR", f"could not build the throwaway repository: {type(err).__name__}")
         cmd = [python or sys.executable, "-m", "warden.cli", "tagteam", str(target),
-               "--stack", str(stack), "--cns", str(cns),
+               "--stack", str(stack), "--cns", str(cns), "--claim-commit", claimed,
                "--authorize", "circuit-canary", "--reason", "does the whole circuit still work together",
-               "--scope", "documentation"]
+               "--scope", "code"]
         try:
             done = subprocess.run(cmd, capture_output=True, text=True, env=env,  # nosec B603 - fixed list, no shell
                                   timeout=timeout, check=False)

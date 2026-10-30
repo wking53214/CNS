@@ -33,7 +33,7 @@ def interpreter_is_ready(monkeypatch):
 @pytest.fixture
 def stack(tmp_path, monkeypatch):
     s = tmp_path / "stack"
-    for name in ("WARDEN", "JUDGE", "DRAFTER", "BURNISH"):
+    for name in ("WARDEN", "JUDGE"):
         (s / name).mkdir(parents=True)
     pkg = s / "WARDEN" / "warden"
     pkg.mkdir()
@@ -104,7 +104,7 @@ def test_a_circuit_that_does_not_finish_is_a_timeout(stack, tmp_path):
     assert not result.ok and result.decision == "CANARY_TIMEOUT"
 
 
-def test_warden_is_handed_the_stack_the_hub_and_a_documentation_grant(stack, tmp_path):
+def test_warden_is_handed_the_stack_the_hub_a_claimed_commit_and_a_code_grant(stack, tmp_path):
     (stack / "WARDEN" / "warden" / "cli.py").write_text(
         "import json, sys\nprint(json.dumps({'decision': 'ACCEPT', 'reason': ' '.join(sys.argv[1:]), "
         "'converged': True, 'put_back': False}))\n")
@@ -112,7 +112,8 @@ def test_warden_is_handed_the_stack_the_hub_and_a_documentation_grant(stack, tmp
     assert result.ok
     assert "tagteam" in result.reason
     assert f"--stack {stack}" in result.reason and f"--cns {tmp_path / 'cns'}" in result.reason
-    assert "--scope documentation" in result.reason
+    assert "--scope code" in result.reason and "--claim-commit " in result.reason
+    assert "--drafter" not in result.reason
 
 
 def test_the_seats_are_importable_from_the_stack_and_the_hub(stack, tmp_path):
@@ -120,7 +121,7 @@ def test_the_seats_are_importable_from_the_stack_and_the_hub(stack, tmp_path):
         "import json, os\nprint(json.dumps({'decision': 'ACCEPT', 'reason': os.environ['PYTHONPATH'], "
         "'converged': True, 'put_back': False}))\n")
     got = run(stack, tmp_path).reason.split(os.pathsep)
-    assert got == [str(stack / n) for n in ("WARDEN", "JUDGE", "DRAFTER", "BURNISH")] + [str(tmp_path / "cns")]
+    assert got == [str(stack / n) for n in ("WARDEN", "JUDGE")] + [str(tmp_path / "cns")]
 
 
 def test_the_canary_leaves_the_stack_as_it_found_it_and_removes_its_scratch(stack, tmp_path):
@@ -199,3 +200,19 @@ def test_an_interpreter_that_does_not_exist_is_a_failure_not_a_crash(stack, tmp_
     monkeypatch.undo()
     result = cc.run_canary(stack, tmp_path / "cns", python=str(tmp_path / "no-such-python"))
     assert not result.ok and result.decision == "CANARY_ERROR" and "could not be started" in result.reason
+
+
+def test_the_claimed_commit_is_one_ordinary_code_change_on_a_side_branch_and_the_target_stays_at_its_base(stack, tmp_path):
+    """The claim seat reads the diff of the commit from the target's own git and applies it to the target as it
+    stands, so the target must be at the base, clean, with the claimed commit one step ahead on another branch."""
+    (stack / "WARDEN" / "warden" / "cli.py").write_text(
+        "import json, subprocess, sys\n"
+        "target, sha = sys.argv[2], sys.argv[sys.argv.index('--claim-commit') + 1]\n"
+        "def git(*a):\n    return subprocess.run(['git', '-C', target, *a], capture_output=True, text=True).stdout.strip()\n"
+        "facts = {'files': git('diff', '--name-only', sha + '~1', sha), 'parents': git('rev-list', '--count', sha + '~1'),\n"
+        "         'dirty': git('status', '--porcelain'), 'head_is_parent': git('rev-parse', 'HEAD') == git('rev-parse', sha + '~1'),\n"
+        "         'branch': git('branch', '--show-current')}\n"
+        "print(json.dumps({'decision': 'ACCEPT', 'reason': json.dumps(facts), 'converged': True, 'put_back': False}))\n")
+    facts = json.loads(run(stack, tmp_path).reason)
+    assert facts["files"] == "shapes/area.py" and facts["parents"] == "1"
+    assert facts["dirty"] == "" and facts["head_is_parent"] is True and facts["branch"] != "claimed-change"
