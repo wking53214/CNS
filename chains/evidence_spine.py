@@ -644,6 +644,14 @@ def unguarded_kernel_gets_no_approval() -> Dict[str, object]:
     return facts(decide(read, kernel, root, door(root, "doc-1")), evidence, refusal)
 
 
+def evidence_unguarded_kernel_gets_no_approval() -> Dict[str, object]:
+    """Everything is in order except that the kernel's registry takes evidence from any caller: no approval."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, evidence_guarded=False)
+    return facts(decide(read, kernel, root, door(root, "doc-1")), evidence, refusal)
+
+
 def approved_registration() -> Dict[str, object]:
     """The roster allows the document. The guard opens for the root it judged, once: a second root is refused."""
     read = herald(INVOICE, "doc-1")
@@ -908,6 +916,8 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
                      "signoff_reasons": ["checked against the paper invoice"], "signoff_timed": True}),
     ("SEAM HOLDS: a kernel built without a guard gets no approval from the roster, even when every other gate passes",
      unguarded_kernel_gets_no_approval, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"]}),
+    ("SEAM HOLDS: a kernel whose registry takes evidence from any caller gets no approval from the roster, even when every other gate passes",
+     evidence_unguarded_kernel_gets_no_approval, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"]}),
     ("SEAM HOLDS: the gateway refuses the door and the roster says no; the kernel built with the guard refuses to register the root",
      lambda: door_refused_kernel_proceeds(True),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "guard_opened": False,
