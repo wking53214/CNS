@@ -11,8 +11,8 @@
 # Every entry that needs CNS pins it the same way, the tag v2.2.0 (the commit ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f),
 # because pip treats a tag URL and a commit URL as two different sources and refuses to resolve them together.
 cns @ git+https://github.com/wking53214/CNS.git@v2.2.0
-ghost-tools @ git+https://github.com/wking53214/ghost_tools@e77f1bc65c91c48703bf767985cbb211df9c6d0e  # 1.10.12
-swizzle @ git+https://github.com/wking53214/SWIZZLE.git@dfef358d542da3488a27b85a703f7e4eb33312f6  # 0.8.11
-assay @ git+https://github.com/wking53214/ASSAY.git@fe0179d752835f89e620f871719cfd25ed7cb9a9  # 0.11.8
-warden @ git+https://github.com/wking53214/Warden.git@df212db32c230a00cf4100038637be873262a816  # 0.16.2
-judge @ git+https://github.com/wking53214/JUDGE.git@62843b8b807072db4c8b7a95569772b2a3f34cd0  # 0.5.3
+ghost-tools @ git+https://github.com/wking53214/ghost_tools@eaf2ae8845f9b4e39d79f50bbfaf70acde9a11a3  # 1.10.13
+swizzle @ git+https://github.com/wking53214/SWIZZLE.git@60ba9fc5bf383c0c4297bf94b8313b33e0ab039c  # 0.8.12
+assay @ git+https://github.com/wking53214/ASSAY.git@3faba860a7cfcce6547e5ddcf8d1b0d773a27001  # 0.11.9
+warden @ git+https://github.com/wking53214/Warden.git@cb45681ea80f845fb8f23bb091bda7f587c6a547  # 0.16.3
+judge @ git+https://github.com/wking53214/JUDGE.git@d239f40bbc7c579ee40de34cafde813f3b35f239  # 0.5.4
