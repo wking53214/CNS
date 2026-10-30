@@ -24,6 +24,8 @@ retries it should count.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
 
 from .ccc_admission import (
@@ -47,13 +49,14 @@ class GuardedCccRecordGate:
 
     position = GatePosition.ALPHA
 
-    def __init__(self, lookup: RecordLookup, guard: ResubmissionGuard) -> None:
+    def __init__(self, lookup: RecordLookup, guard: ResubmissionGuard, *,
+                 attestation_key: Optional[bytes] = None) -> None:
         if not isinstance(guard, ResubmissionGuard):
             raise TypeError(
                 "GuardedCccRecordGate needs a ResubmissionGuard; "
                 f"got {type(guard).__name__}."
             )
-        self._record_gate = CccRecordGate(lookup)
+        self._record_gate = CccRecordGate(lookup, attestation_key=attestation_key)
         self._guard = guard
 
     def check(self, candidate: object) -> GateResult:
@@ -75,10 +78,11 @@ class GuardedCccRecordGate:
 
 
 def guarded_admit(
-    output: TriadOutput, lookup: RecordLookup, guard: ResubmissionGuard
+    output: TriadOutput, lookup: RecordLookup, guard: ResubmissionGuard, *,
+    attestation_key: Optional[bytes] = None,
 ) -> TriadOutput:
     """The door, with the resubmission guard in front. Raises unless it passes."""
-    result = GuardedCccRecordGate(lookup, guard).check(output)
+    result = GuardedCccRecordGate(lookup, guard, attestation_key=attestation_key).check(output)
     if result.outcome is not GateOutcome.PASS:
         raise UnrecordedTriadOutput(result)
     return output

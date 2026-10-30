@@ -50,13 +50,29 @@ different item.
 Failure is loud. A missing lookup is refused when the gate is built, an
 exception from CCC propagates (it is never turned into a PASS), and `admit`
 raises rather than return output the gate did not pass.
+
+CHECKING THE STAMP HERE, NOT ONLY IN THE STORE
+
+The caller hands the gate its lookup, so a stand-in that simply answers
+"held" was believed. Given `attestation_key`, the gate does not take "held" on
+the store's word: it asks the lookup for the stamps the handoff wrote on the
+matching records (`stamps`, which `ccc.record_status.MachineRecords` shows) and
+checks one of them itself, with `handoff_stamp` and the caller's key. A store
+that cannot show a stamp that verifies is a TERMINAL_BREACH, whatever it
+answered. `handoff_stamp` is CCC's `attest` formula; both repositories test
+against `contracts/handoff-stamp-vectors.json`, so neither can drift alone.
+Whoever holds the key can stamp; this proves the handoff (or a key holder)
+wrote the record, not that the text is true.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
 from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
 
@@ -67,7 +83,9 @@ __all__ = [
     "RecordLookup",
     "TriadOutput",
     "UnrecordedTriadOutput",
+    "StampLookup",
     "admit",
+    "handoff_stamp",
     "text_digest",
 ]
 
@@ -99,6 +117,29 @@ class RecordLookup(Protocol):
     """The one question CNS asks CCC. `ccc.record_status.MachineRecords` answers it."""
 
     def status(self, source: str, candidate_id: str, text_digest: str) -> str: ...
+
+
+@runtime_checkable
+class StampLookup(Protocol):
+    """A lookup that also shows the stamps the handoff wrote on the records matching one item."""
+
+    def stamps(self, source: str, candidate_id: str, text_digest: str) -> Sequence[str]: ...
+
+
+_MIN_KEY_BYTES = 16
+
+
+def _require_key(key: object) -> bytes:
+    if not isinstance(key, (bytes, bytearray)) or len(key) < _MIN_KEY_BYTES:
+        raise ValueError(f"attestation_key must be at least {_MIN_KEY_BYTES} bytes")
+    return bytes(key)
+
+
+def handoff_stamp(key: bytes, *, source: str, candidate_id: str, text_digest: str) -> str:
+    """The stamp a handoff writes on a CCC record (CCC's `attest`): HMAC-SHA256, untruncated, over
+    ["ccc.handoff.v1", source, candidate_id, text_digest] as compact JSON. See contracts/handoff-stamp-vectors.json."""
+    message = json.dumps(["ccc.handoff.v1", source, candidate_id, text_digest], separators=(",", ":"))
+    return hmac.new(_require_key(key), message.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def text_digest(text: str) -> str:
@@ -134,14 +175,21 @@ class CccRecordGate:
     name = GATE_NAME
     position = GatePosition.ALPHA
 
-    def __init__(self, lookup: RecordLookup) -> None:
+    def __init__(self, lookup: RecordLookup, *, attestation_key: Optional[bytes] = None) -> None:
         if not isinstance(lookup, RecordLookup):
             raise TypeError(
                 "CccRecordGate needs CCC's record lookup "
                 "(ccc.record_status.MachineRecords); got "
                 f"{type(lookup).__name__}. Without CCC, Triad output is not used."
             )
+        if attestation_key is not None:
+            _require_key(attestation_key)
+            if not isinstance(lookup, StampLookup):
+                raise TypeError(
+                    "with an attestation_key, CccRecordGate needs a lookup that shows the handoff's stamps "
+                    f"(ccc.record_status.MachineRecords.stamps); {type(lookup).__name__} does not")
         self._lookup = lookup
+        self._key = attestation_key
 
     def check(self, candidate: object) -> GateResult:
         if not isinstance(candidate, TriadOutput):
@@ -154,6 +202,10 @@ class CccRecordGate:
             (GateOutcome.TERMINAL_BREACH,
              f"unrecognised answer from CCC ({answer!r}); not read as permission"),
         )
+        if outcome is GateOutcome.PASS and self._key is not None and not self._stamp_verifies(candidate, digest):
+            outcome, reason = (GateOutcome.TERMINAL_BREACH,
+                               "CCC answered held, but no stamp it shows for this item verifies under this key; "
+                               "a store that cannot show the handoff's stamp is never read as permission")
         return GateResult(
             gate=GATE_NAME,
             position=GatePosition.ALPHA,
@@ -168,9 +220,20 @@ class CccRecordGate:
         )
 
 
-def admit(output: TriadOutput, lookup: RecordLookup) -> TriadOutput:
-    """The door. Returns `output` only if CCC holds it; raises otherwise."""
-    result = CccRecordGate(lookup).check(output)
+    def _stamp_verifies(self, candidate: TriadOutput, digest: str) -> bool:
+        if self._key is None:
+            return False
+        expected = handoff_stamp(self._key, source=SOURCE, candidate_id=candidate.candidate_id, text_digest=digest)
+        shown = self._lookup.stamps(SOURCE, candidate.candidate_id, digest)  # type: ignore[attr-defined]
+        if isinstance(shown, (str, bytes)) or not isinstance(shown, Sequence):
+            return False
+        return any(isinstance(stamp, str) and hmac.compare_digest(stamp, expected) for stamp in shown)
+
+
+def admit(output: TriadOutput, lookup: RecordLookup, *, attestation_key: Optional[bytes] = None) -> TriadOutput:
+    """The door. Returns `output` only if CCC holds it (and, with a key, shows a stamp that verifies); raises
+    otherwise."""
+    result = CccRecordGate(lookup, attestation_key=attestation_key).check(output)
     if result.outcome is not GateOutcome.PASS:
         raise UnrecordedTriadOutput(result)
     return output
