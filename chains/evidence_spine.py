@@ -55,7 +55,9 @@ TIE produced its id from the verified export of this document, it is a source ob
 and this text's SHA-256. A record TIE never produced, one carrying another document's text or source, or one of
 another kind is refused, and a FACT root citing the forged id is then not admissible. This guard is not spent by a yes,
 because one document gives TIE many records. It checks provenance, not a person's approval. A kernel built without an
-evidence guard takes any evidence, and a scenario records that as the second GAP.
+evidence guard takes any evidence, and a scenario records that as the second GAP. As with the root guard, the roster
+refuses to approve such a kernel (the kernel's seat is built with `require_evidence_guard=True`), so no approval is
+issued for it; calling it directly is still not stopped.
 
 Two other seams are closed in the repositories themselves, and the scenarios check them from here. The kernel refuses a
 root stated as FACT that cites no evidence. A person's sign-off at HERALD reaches TIE on its own path
@@ -426,7 +428,7 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
 
     CCC judges `ccc` (by default, the document HERALD read) against `system` (by default, an empty store)."""
     steps = [("HERALD", HeraldSourceGate(), read.document),
-             ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True), root),
+             ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True), root),
              ("Governance_Gateway", GatewayGate(), entry),
              ("CCC", CccGate(CCCSystem() if system is None else system),
               ccc or ccc_ingest(read.document.text, read.document.source_id)),
@@ -641,6 +643,14 @@ def unguarded_kernel_gets_no_approval() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE, unguarded=True)
+    return facts(decide(read, kernel, root, door(root, "doc-1")), evidence, refusal)
+
+
+def evidence_unguarded_kernel_gets_no_approval() -> Dict[str, object]:
+    """Everything is in order except that the kernel's registry takes evidence from any caller: no approval."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, evidence_guarded=False)
     return facts(decide(read, kernel, root, door(root, "doc-1")), evidence, refusal)
 
 
@@ -864,7 +874,7 @@ def dropped_agreement_is_refused() -> str:
     read = herald(INVOICE, "doc-1")
     evidence, _ = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
-    seats = [("HERALD", HeraldSourceGate()), ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True)),
+    seats = [("HERALD", HeraldSourceGate()), ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True)),
              ("Governance_Gateway", GatewayGate()), ("CCC", CccGate(CCCSystem())),
              ("HERALD", HeraldConfidenceGate(read.gate, document=read.document))]
     try:
@@ -908,6 +918,8 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
                      "signoff_reasons": ["checked against the paper invoice"], "signoff_timed": True}),
     ("SEAM HOLDS: a kernel built without a guard gets no approval from the roster, even when every other gate passes",
      unguarded_kernel_gets_no_approval, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"]}),
+    ("SEAM HOLDS: a kernel whose registry takes evidence from any caller gets no approval from the roster, even when every other gate passes",
+     evidence_unguarded_kernel_gets_no_approval, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"]}),
     ("SEAM HOLDS: the gateway refuses the door and the roster says no; the kernel built with the guard refuses to register the root",
      lambda: door_refused_kernel_proceeds(True),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "guard_opened": False,
