@@ -11,8 +11,8 @@ exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the 
 
 The entry is changed to "tagged" in a commit after the tag, so the copy of this file inside `v2.0.0`, `v2.1.0` and
 `v2.2.0` still says "not yet tagged". A tag is never moved to fix that, because a pin to it would then install
-different code. This file on `main` says what is true now, and so does the GitHub Release for each tag, whose
-text is kept in `docs/releases/`. A heading's date is the day the tag was made; where the tagged commit is older, the
+different code. This file on `main` says what is true now, and so does the GitHub Release of each tag that has
+one; the text for every tag is kept in `docs/releases/`. A heading's date is the day the tag was made; where the tagged commit is older, the
 entry says so.
 
 ## [Unreleased]

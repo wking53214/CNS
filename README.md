@@ -324,7 +324,7 @@ second with the `cns` extra installed.
 
 | Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
 |---|---|---|---|---|---|
-| CNS | 2.2.0 | Tags `v0.1.0` to `v2.2.0`. Releases: `v1.5.1` published, `v2.2.0` a draft not yet published. The text for every tag is in `docs/releases/`. | green (6 jobs) | 1294 | not applicable |
+| CNS | 2.2.0 | Tags `v0.1.0` to `v2.2.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`. | green (6 jobs) | 1294 | not applicable |
 | HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.2.0` |
 | TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.2.0` |
 | Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.2.0` |
