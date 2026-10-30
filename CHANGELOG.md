@@ -52,6 +52,8 @@ not a release.
 - `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)
   lost earlier entries and a spent decision was accepted again. It now appends one line and fsyncs, and when it drops
   expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.
+- `RemoteDecisionGuard` checked trust only in `authorize`, so it still opened after its decider was revoked. Calling
+  the guard now returns False once the decider is in the guard's `trust.revoked`.
 
 ## [2.3.0] - 2026-10-30 (not yet tagged)
 

@@ -154,7 +154,7 @@ class RemoteDecisionGuard:
 
     `subject_of(artifact)` reads (identity, digest) from whatever the action is about to touch. Like `DecisionGuard`
     it answers True at most once, also under concurrent calls, never raises, and a refusal does not spend the
-    permission."""
+    permission. A decider revoked in the guard's `trust` after `authorize` closes the guard."""
 
     def __init__(self, subject_of: Callable[[object], Tuple[str, str]], *, acting_for: str,
                  capability: Tuple[str, int], trust: TrustPolicy, ledger: Ledger,
@@ -174,6 +174,7 @@ class RemoteDecisionGuard:
         self._capability = (capability[0], capability[1])
         self._lock = threading.Lock()
         self._approved: Optional[Tuple[str, str]] = None
+        self._decider: Optional[str] = None
         self._expires_at: Optional[int] = None
         self._spent = False
 
@@ -193,6 +194,7 @@ class RemoteDecisionGuard:
             if not got.allowed:
                 raise Refused("refused", "the decision is not a pass: " + "; ".join(got.reasons))
             self._approved = (got.subject["identity"], got.subject["digest"])
+            self._decider = got.envelope.sender
             self._expires_at = got.envelope.expires_at
             return got
 
@@ -203,6 +205,8 @@ class RemoteDecisionGuard:
             return False
         with self._lock:  # check and spend as one step, so concurrent callers cannot all pass the check
             if self._approved is None or self._spent:
+                return False
+            if self._decider in self._trust.revoked:  # trust was checked at authorize; revocation can come after it
                 return False
             if self._expires_at is not None and self._clock() >= self._expires_at:
                 return False

@@ -508,3 +508,28 @@ def test_a_guard_must_be_told_its_capability_and_it_must_be_a_name_and_a_version
         with pytest.raises(ValueError):
             RemoteDecisionGuard(lambda a: a, capability=bad, **kw)  # type: ignore[arg-type]
     RemoteDecisionGuard(lambda a: a, capability=["income-screen", 1], **kw)  # a list reads the same as a tuple
+
+
+def test_a_guard_closes_when_its_decider_is_revoked_after_it_was_authorized():
+    dec, req, clock = pair()
+    _, offer, accept, decision = run(dec, req)
+    terms = offer.body["terms"]
+    trust = TrustPolicy(pinned=frozenset({DEC.agent}))  # this guard's own policy, so the revocation touches no other
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=trust,
+                                ledger=MemoryLedger(), clock=clock)
+    guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
+    # The receiver revokes the decider. The policy is frozen, so it is updated the way TrustPolicy itself does it.
+    object.__setattr__(trust, "revoked", frozenset({DEC.agent}))
+    assert guard(("loan-app-17", terms["subject"]["digest"])) is False
+
+
+def test_a_revocation_of_someone_else_leaves_an_authorized_guard_open():
+    dec, req, clock = pair()
+    _, offer, accept, decision = run(dec, req)
+    terms = offer.body["terms"]
+    trust = TrustPolicy(pinned=frozenset({DEC.agent}))
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=trust,
+                                ledger=MemoryLedger(), clock=clock)
+    guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
+    object.__setattr__(trust, "revoked", frozenset({EVE.agent}))
+    assert guard(("loan-app-17", terms["subject"]["digest"])) is True
