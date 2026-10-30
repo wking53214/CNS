@@ -19,9 +19,10 @@ dev = ["pytest>=7", "mypy>=1.8", "ruff==0.17.2"]
 # shapes-only. `cns_composition` is a sibling (behaviour over cns.gate) that
 # used to be left out on purpose; Link imports it, and with it missing a
 # pinned install of this repository could not run Link at all. It ships beside
-# `cns`, never inside it, and its tests do not ship.
-include = ["cns", "cns.*", "cns_composition", "cns_composition.*"]
-exclude = ["cns_composition.tests", "cns_composition.tests.*"]
+# `cns`, never inside it, and its tests do not ship. `cns_interop` (UAI-1, the
+# interface to systems outside CNS) ships the same way, for the same reasons.
+include = ["cns", "cns.*", "cns_composition", "cns_composition.*", "cns_interop", "cns_interop.*"]
+exclude = ["cns_composition.tests", "cns_composition.tests.*", "cns_interop.tests", "cns_interop.tests.*"]
 
 # PEP 561. Without this marker a consumer's mypy or pyright treats the whole
 # package as untyped and silently ignores every annotation in it, which for a

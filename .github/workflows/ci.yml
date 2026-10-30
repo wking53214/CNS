@@ -48,6 +48,10 @@ jobs:
         # cns_composition is the code that does things: it reads files, runs git and writes the manifest. It is not
         # annotated to --strict, but it checks clean, and this keeps it so.
         run: python -m mypy cns_composition
+      - name: Type check the interface package (UAI-1)
+        run: python -m mypy cns_interop
+      - name: Node for the second UAI-1 implementation (the suite runs it and fails without it)
+        run: node --version
 
   packaging:
     runs-on: ubuntu-latest
