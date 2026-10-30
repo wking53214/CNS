@@ -183,7 +183,14 @@ only if it reads as exactly the approved document, and only once. A guard that
 was never authorized, or was given a refused decision, stays shut, and so does
 one given a decision the roster did not issue: `Decision.issued` is a
 process-local proof that `SuperGate.decide` made it, so a decision written or
-copied by hand cannot open a guard. The proof means nothing to another process. It protects
+copied by hand cannot open a guard. The proof means nothing to another process.
+Reading the same document is not the same as being the same object, so a guard can also be bound to one seat:
+`DecisionGuard(reader, seat="Conservation_Kernel:root_admission", binding_of=...)` opens only for the object whose
+`binding_of` equals what that seat's PASS verdict is bound to, so an approval for one root or one CCC call cannot be
+spent on another with the same source and text. Use the digest function the seat's own repository exports as
+`binding_of`, and pass `required_seats` so a decision from a roster that lacks the seats you require, such as a short
+roster of gates that pass anything, cannot open it. `required_seats` checks seat names, not what stands behind a
+name. One use means one yes: the guard answers under a lock. It protects
 the kernels built with it. A roster can insist on that: seat the kernel's root
 gate with `require_guard=True` and a kernel built without a guard gets no
 approval. Add `require_evidence_guard=True` and a kernel whose registry takes evidence

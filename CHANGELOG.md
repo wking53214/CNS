@@ -25,6 +25,14 @@ tagged: `contracts/cns-releases.json` keeps `current` at `v2.2.0` and the floor 
 
 ### Added
 
+- `DecisionGuard` binds a permission to one seat's verdict and to a required roster: `seat=` and `binding_of=` open it
+  only for the exact object that seat's PASS verdict is bound to, `required_seats=` refuses a decision from a roster
+  that lacks them, and the guard answers under a lock so one use is one yes. Without the new arguments it behaves as
+  before. CCC's `write_request_digest` is the matching helper (CCC, committed first). The spine binds its two
+  permissions this way and checks every seat's verdict against what it was given (`strict_binding`), with four new
+  scenarios, each shown failing against the unbound guards first. Pre-existing test edited, by this step:
+  `tests/test_chains.py::test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact`, the count of
+  SEAM HOLDS scenarios, 26 to 30, and nothing else about it.
 - CCC joins the evidence spine as the fifth hop: `CCC:ccc.transition` is a required seat in
   `chains/evidence_spine.py`, and `cns_composition.repo_gates` declares CCC's gate end (`902638f`, `b4c56a2`).
 - CCC's write permission is the roster's `DecisionGuard`: after a roster no, a direct ingest is refused and CCC's

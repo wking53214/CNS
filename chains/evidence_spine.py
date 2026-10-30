@@ -39,7 +39,11 @@ THE LAST HOP: A PERMISSION, NOT A HOPE
 The roster decides, but registering the root is an action in another repository, and the kernel imports no CNS. So
 the kernel here is built with `root_guard=DecisionGuard(reads_root)`: it registers a root only after the roster's
 decision was a go, and then once, for the root that decision judged. A refused decision leaves the guard shut, and so does one the roster
-did not issue (`Decision.issued`). A
+did not issue (`Decision.issued`). The guard is also bound to the kernel's own verdict: it opens only for the root whose
+whole artifact digest (every proposition, the producer, the time) is what the kernel's seat judged, and only for a decision
+whose roster seats every one of `REQUIRED_SEATS`, so a root with the same id, content and source but a rewritten
+proposition is refused, and so is a decision from some other roster. CCC's guard is bound the same way, to the exact
+operation and arguments its seat judged. A
 kernel built without a guard cannot be stopped from outside, but the roster refuses to approve one (the kernel's
 seat is built with `require_guard=True`), so no approval is ever issued for it. Calling such a kernel directly still
 registers a root, and a scenario records that as the one GAP left: the guard protects the kernels that carry it. Newer
