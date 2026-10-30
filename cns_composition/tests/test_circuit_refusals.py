@@ -7,6 +7,7 @@ each case really changes something. The real circuit is run by the stack workflo
 """
 
 import json
+import re
 import subprocess
 
 import pytest
@@ -78,6 +79,11 @@ LEGACY_CLI = STRICT_CLI.replace(
 VAGUE_CLI = STRICT_CLI.replace("the stack manifest does not name {used!r}, yet this run uses it as a seat",
                                "the stack is not what the manifest says").replace(
     "the stack manifest names {name!r}, which is not in the --stack folder", "the stack is not what the manifest says")
+
+#: A Warden that refuses every stack problem for a vague reason which quotes the stack's folder paths (as the real one
+#: quotes paths): the seat names and the throwaway folder's name appear only inside paths.
+PATH_LEAKING_CLI = VAGUE_CLI.replace(
+    '"the stack is not what the manifest says"', '"the stack is not what the manifest says (" + ", ".join(str(p) for p in folders.values()) + ", " + str(target) + ")"')
 
 LENIENT_CLI = '''
 import json
@@ -245,6 +251,7 @@ def test_each_path_that_supplies_a_seat_has_a_case_and_the_original_cases_keep_t
 
 def test_every_roster_case_requires_the_reason_to_name_the_seat():
     assert {c.name for c in cr.CASES if c.reason_names} == set(ROSTER)
+    assert {c.name for c in cr.CASES if c.roster} == set(ROSTER)
     assert {c.name: c.reason_names.casefold() for c in cr.CASES if c.reason_names} == {
         "omitted_seat": "judge", "missing_seat": "swizzle", "unnamed_burnish": "burnish", "unnamed_drafter": "drafter",
         "unnamed_drafter_claim_diff": "drafter", "unnamed_drafter_explicit": "drafter",
@@ -295,3 +302,60 @@ def test_the_claim_diff_path_hands_warden_a_diff_file_that_holds_the_claimed_cha
     assert "-one" in text and "+two" in text
     with pytest.raises(OSError):
         cr._supply_args("nope", target, "x", tmp_path)
+
+
+def test_a_roster_case_cannot_be_declared_without_a_seat_to_name():
+    """A roster case may not pass on exit 2 alone: declaring one with no reason_names is refused when it is built."""
+    with pytest.raises(ValueError, match="exit 2 alone"):
+        cr.Case("x", "y", cr._REFUSED, cr._nothing, roster=True)
+    assert cr.Case("x", "y", cr._REFUSED, cr._nothing, reason_names="judge", roster=True).roster
+
+
+@pytest.mark.parametrize("reason, name, expected", [
+    ("the stack manifest does not name 'drafter' (the checkout at '/t/stack/DRAFTER')", "drafter", True),
+    ("the --stack folder '/t/stack' has no swizzle checkout", "swizzle", True),
+    ("the stack is not what the manifest says (/t/stack/DRAFTER)", "drafter", False),
+    ("refused: /tmp/circuit-refusal-unnamed_drafter/target", "drafter", False),
+    ("the stack is not what the manifest says", "judge", False),
+    ("a drafterless stack", "drafter", False),
+])
+def test_a_seat_is_named_only_when_it_is_a_word_outside_every_path(reason, name, expected):
+    assert cr.names_the_seat(reason, name) is expected
+
+
+@pytest.mark.parametrize("case", ROSTER)
+def test_a_circuit_whose_reason_names_the_seat_only_inside_a_path_fails_the_roster_case(circuit, case):
+    """The audit's finding: Warden quotes paths, so a seat name in a folder path is not the reason being about the seat."""
+    stack, cns = circuit
+    (stack / "WARDEN" / "warden" / "cli.py").write_text(PATH_LEAKING_CLI)
+    git(stack / "WARDEN", "commit", "-q", "-am", "path leaking")
+    data = json.loads((cns / "contracts" / "warden-stack.json").read_text())
+    data["repos"]["WARDEN"] = git(stack / "WARDEN", "rev-parse", "HEAD")
+    (cns / "contracts" / "warden-stack.json").write_text(json.dumps(data, indent=2) + "\n")
+    outcome = cr.run_case(_case(case), stack, cns)
+    assert not outcome.ok and (outcome.decision, outcome.exit_code) == ("USAGE_ERROR", 2)
+    assert "as a seat" in outcome.reason
+
+
+@pytest.mark.parametrize("case", [c.name for c in cr.CASES])
+def test_the_case_name_never_appears_in_a_reason_or_in_a_folder_name(circuit, case, tmp_path):
+    """A roster case once passed because its throwaway folder was called unnamed_drafter and Warden quoted the path."""
+    stack, cns = circuit
+    (stack / "WARDEN" / "warden" / "cli.py").write_text(PATH_LEAKING_CLI)
+    git(stack / "WARDEN", "commit", "-q", "-am", "path leaking")
+    data = json.loads((cns / "contracts" / "warden-stack.json").read_text())
+    data["repos"]["WARDEN"] = git(stack / "WARDEN", "rev-parse", "HEAD")
+    (cns / "contracts" / "warden-stack.json").write_text(json.dumps(data, indent=2) + "\n")
+    outcome = cr.run_case(_case(case), stack, cns)
+    assert case not in outcome.reason and _case(case).what not in outcome.reason
+
+
+def test_the_throwaway_folders_are_numbered_not_named(circuit, monkeypatch):
+    stack, cns = circuit
+    seen = []
+    real = cr.tempfile.TemporaryDirectory
+    monkeypatch.setattr(cr.tempfile, "TemporaryDirectory", lambda prefix="", **kw: (seen.append(prefix), real(prefix=prefix, **kw))[1])
+    for case in cr.CASES[:3]:
+        cr.run_case(case, stack, cns)
+    assert len(seen) == 3 and all(re.fullmatch(r"circuit-refusal-\d{3}-", p) for p in seen)
+    assert not any(c.name in p for c in cr.CASES for p in seen)

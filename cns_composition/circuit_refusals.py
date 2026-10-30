@@ -24,14 +24,22 @@ the start, one of INCONCLUSIVE exit 6 (the Drafter proposed), FINISH_REJECTED ex
 JUDGE_REJECTED exit 1 (nobody did), as Warden 0.13.8's `docs/EXIT_CODES.md` states them. Every other answer,
 ACCEPT above all, is a failure that names the case, the answer and Warden's own reason.
 
+A roster case (a seat the manifest and the folder disagree about) may not pass on exit 2 alone: its reason must name
+the seat as a seat. Warden quotes paths in its reasons, so every path-like word is taken out first and a name that
+survives only inside a path does not count. The throwaway folders are numbered, never named after the case, so a case
+name cannot reach a reason through a path (found by the round-8 audit: a case named `unnamed_drafter_explicit`, whose only
+change was a dirty JUDGE file, passed because its folder was called that).
+
 The real stack is read, never written; the code that runs is the code in the stack, as for the canary.
 """
 
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
+import re
 import shutil
 import subprocess  # nosec B404 - fixed argument lists, never through a shell
 import sys
@@ -73,6 +81,14 @@ class Case:
     #: A refusal on exit 2 and USAGE_ERROR alone could be a refusal for another reason, so the roster cases also ask
     #: that Warden say which seat it refused.
     reason_names: str = ""
+    #: A roster case (a seat the manifest and the folder disagree about). It may not pass on a refusal alone: exit 2
+    #: and USAGE_ERROR could be a refusal for any other reason, so it needs `reason_names`, and the seat must be named
+    #: in the reason as a seat, not only inside a path.
+    roster: bool = False
+
+    def __post_init__(self) -> None:
+        if self.roster and not self.reason_names:
+            raise ValueError(f"the roster case {self.name!r} has no seat its reason must name, so it would pass on exit 2 alone")
 
 
 @dataclass(frozen=True)
@@ -168,7 +184,7 @@ CASES: Tuple[Case, ...] = (
     Case("dirty_tracked", f"a tracked file of {_SEAT} is modified after the pin", _REFUSED, _edit_seat_file),
     Case("dirty_untracked", f"an untracked file is added to {_SEAT}", _REFUSED, _add_untracked),
     Case("omitted_seat", f"{_SEAT} is in the stack but not in the manifest", _REFUSED, _omit_seat,
-         reason_names=_SEAT),
+         reason_names=_SEAT, roster=True),
     Case("short_pin", f"the manifest pins {_SEAT} by a 7-character prefix", _REFUSED, _pin_as(lambda c: c[:7])),
     Case("uppercase_pin", f"the manifest pins {_SEAT} in uppercase hex", _REFUSED, _pin_as(str.upper)),
     Case("wrong_commit", f"the manifest pins {_SEAT} to a commit the checkout is not at", _REFUSED, _pin_as(lambda c: "0" * 40)),
@@ -182,23 +198,36 @@ CASES: Tuple[Case, ...] = (
     # Warden's roster rule, and nothing else: a seat the manifest names must be in the folder, and a seat the folder
     # holds must be named by the manifest, including the releasable one. Configuration integrity, not a detector.
     Case("missing_seat", "SWIZZLE is in the manifest but not in the stack folder", _REFUSED, _nothing,
-         leave_out=("SWIZZLE",), reason_names="swizzle"),
+         leave_out=("SWIZZLE",), reason_names="swizzle", roster=True),
     Case("unnamed_burnish", "a BURNISH checkout is in the stack folder but not in the manifest", _REFUSED,
-         _add_unnamed_seat("burnish"), reason_names="burnish"),
+         _add_unnamed_seat("burnish"), reason_names="burnish", roster=True),
     Case("unnamed_drafter", "a DRAFTER checkout is in the stack folder but not in the manifest, and the claim seat "
-         "proposes", _REFUSED, _add_unnamed_seat("drafter"), reason_names="drafter"),
+         "proposes", _REFUSED, _add_unnamed_seat("drafter"), reason_names="drafter", roster=True),
     # The same roster rule through each other path that supplies a seat (Warden 0.16.1 compared the folder with the
     # manifest only for a seat whose option was still unset, so the path mattered). Configuration integrity again.
     Case("unnamed_drafter_claim_diff", "a DRAFTER checkout is in the stack folder but not in the manifest, and the "
          "change is claimed as a diff file", _REFUSED, _add_unnamed_seat("drafter"), supply="claim-diff",
-         reason_names="drafter"),
+         reason_names="drafter", roster=True),
     Case("unnamed_drafter_explicit", "a DRAFTER checkout is in the stack folder but not in the manifest, and "
          "--drafter names the seat", _REFUSED, _add_unnamed_seat("drafter"), supply="drafter",
-         reason_names="drafter"),
+         reason_names="drafter", roster=True),
     Case("unnamed_burnish_explicit", "a BURNISH checkout is in the stack folder but not in the manifest, and "
          "--finisher names the seat", _REFUSED, _add_unnamed_seat("burnish"), supply="finisher",
-         reason_names="burnish"),
+         reason_names="burnish", roster=True),
 )
+
+
+#: A counter for the throwaway folders, so that a case name never appears in a path: Warden quotes paths in its reasons,
+#: and a roster case once passed because its folder was called "unnamed_drafter" while the refusal was for something else.
+_FOLDERS = itertools.count(1)
+_PATH_LIKE = re.compile(r"\S*[/\\]\S*")
+
+
+def names_the_seat(reason: str, name: str) -> bool:
+    """Whether `reason` names the seat `name` as a seat: with every path-like word (anything with a slash) taken out
+    first, the name still appears as a whole word, in any case."""
+    words = _PATH_LIKE.sub(" ", reason)
+    return re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", words, re.IGNORECASE) is not None
 
 
 def _clone_stack(src: Path, dst: Path, leave_out: Sequence[str] = ()) -> None:
@@ -261,7 +290,7 @@ def run_case(case: Case, stack: Path, cns: Path, *, python: Optional[str] = None
     """Build the case on throwaway clones of `stack` and say what Warden answered."""
     stack, cns = Path(stack), Path(cns)
     real_manifest = cns / "contracts" / "warden-stack.json"
-    with tempfile.TemporaryDirectory(prefix=f"circuit-refusal-{case.name}-") as tmp:
+    with tempfile.TemporaryDirectory(prefix=f"circuit-refusal-{next(_FOLDERS):03d}-") as tmp:
         root = Path(tmp)
         copy, hub = root / "stack", root / "hub"
         env: Dict[str, str] = dict(os.environ)
@@ -281,7 +310,7 @@ def run_case(case: Case, stack: Path, cns: Path, *, python: Optional[str] = None
             return Outcome(case.name, False, "REFUSAL_ERROR", -1, f"the case could not be built: {type(err).__name__}: {err}")
         cmd = [python or sys.executable, "-m", "warden.cli", "tagteam", str(target),
                "--stack", str(copy), "--cns", str(hub), *supply,
-               "--authorize", "circuit-refusals", "--reason", f"must the circuit refuse: {case.what}",
+               "--authorize", "circuit-refusals", "--reason", "must the circuit refuse this stack",
                "--scope", "code"]
         try:
             done = subprocess.run(cmd, capture_output=True, text=True, env=env,  # nosec B603 - fixed list, no shell
@@ -300,9 +329,10 @@ def run_case(case: Case, stack: Path, cns: Path, *, python: Optional[str] = None
         return Outcome(case.name, False, "REFUSAL_ERROR", done.returncode, "Warden's run record is not an object")
     decision, reason = str(record.get("decision", "")), str(record.get("reason", ""))
     ok = (decision, done.returncode) in case.expected
-    if ok and case.reason_names and case.reason_names.casefold() not in reason.casefold():
+    if ok and case.reason_names and not names_the_seat(reason, case.reason_names):
         return Outcome(case.name, False, decision, done.returncode,
-                       f"refused, but the reason does not name {case.reason_names}: {reason[:300]}")
+                       f"refused, but the reason does not name {case.reason_names} as a seat (a name inside a path "
+                       f"does not count): {reason[:300]}")
     return Outcome(case.name, ok, decision, done.returncode, reason)
 
 
