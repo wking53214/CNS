@@ -226,6 +226,10 @@ def _main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--table", type=Path, default=DEFAULT_TABLE, help="the release table (default: contracts/)")
     parser.add_argument("--manifest", type=Path, default=repin.DEFAULT_MANIFEST,
                         help="the manifest whose repositories must all be read (default: contracts/warden-stack.json)")
+    parser.add_argument("--consumers", type=Path, default=None, metavar="DIR",
+                        help="a folder holding a checkout of each repository released from the circuit "
+                             "(contracts/released-seats.json): their CNS pins are held to the same rules, and each "
+                             "must be read; they are never part of Warden's stack folder")
     parser.add_argument("--spelling", choices=("any", "tag"), default="any",
                         help="tag: also fail a pin that names its release by commit instead of by tag, the spelling "
                              "the circuit repositories share (default: any)")
@@ -234,8 +238,18 @@ def _main(argv: Optional[List[str]] = None) -> int:
         names = repin.manifest_names(args.manifest)
         table = load_table(args.table)
         pins, read = scan(args.stack)
-        problems, notes = assess(pins, table, spelling=args.spelling)
         folders = [p.name for p in repin.stack_folders(args.stack)]
+        beside = repin.released_beside(args.manifest)
+        released = list(repin.load_released(beside)) if beside is not None else []
+        consumer_read: List[str] = []
+        if args.consumers is not None:
+            consumer_pins, consumer_read = scan(args.consumers)
+            pins += consumer_pins
+            folders += [p.name for p in repin.stack_folders(args.consumers)]
+        problems, notes = assess(pins, table, spelling=args.spelling)
+        if released and args.consumers is None:
+            notes.append(f"{', '.join(released)} are released from the circuit and no --consumers folder was given, so "
+                         "their CNS pins are not covered")
     except repin.RepinError as err:
         print(f"cns_versions: {err}", file=sys.stderr)
         return 2
@@ -247,6 +261,13 @@ def _main(argv: Optional[List[str]] = None) -> int:
         print(f"note: no direct CNS pin in: {', '.join(absent)}")
     for problem in problems:
         print(f"cns_versions: {problem}", file=sys.stderr)
+    if args.consumers is not None:
+        absent_released = repin.unread(released, consumer_read)
+        if absent_released:
+            print(f"cns_versions: the repositories released from the circuit are {', '.join(released)}, but nothing "
+                  f"was read from: {', '.join(absent_released)}. It is missing, not a folder, or has none of the "
+                  "files this reads, so no version can be claimed for it", file=sys.stderr)
+            return 2
     missing = repin.unread(names, read)
     if missing:
         print(f"cns_versions: read {len(read)} repositories, but the manifest names {len(names)} and nothing was "
@@ -255,7 +276,8 @@ def _main(argv: Optional[List[str]] = None) -> int:
         return 2
     if problems:
         return 1
-    print(f"cns_versions: read {len(read)} repositories ({len(names)} of {len(names)} named by the manifest); "
+    consumers = f" and {len(consumer_read)} released" if args.consumers is not None else ""
+    print(f"cns_versions: read {len(read)}{consumers} repositories ({len(names)} of {len(names)} named by the manifest); "
           f"{len(pins)} pin(s) in {len(pinned)} repositories, all at or above the floor {table.floor} "
           f"(current {table.current.version})")
     return 0

@@ -163,6 +163,12 @@ def lag_notes(stack: Path, pins: Sequence[Pin]) -> List[str]:
     return notes
 
 
+def _released_names(manifest: Path) -> List[str]:
+    """The repositories released from the circuit, from the file beside the manifest ([] when there is none)."""
+    beside = repin.released_beside(manifest)
+    return list(repin.load_released(beside)) if beside is not None else []
+
+
 def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.seat_pins",
@@ -170,6 +176,10 @@ def _main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--stack", required=True, type=Path, help="a folder holding one checkout per repository")
     parser.add_argument("--manifest", type=Path, default=repin.DEFAULT_MANIFEST,
                         help="the manifest whose repositories must all be read (default: contracts/warden-stack.json)")
+    parser.add_argument("--consumers", type=Path, default=None, metavar="DIR",
+                        help="a folder holding a checkout of each repository released from the circuit "
+                             "(contracts/released-seats.json): their pins are read and must agree too, and each must "
+                             "be read; they are never part of Warden's stack folder")
     parser.add_argument("--install", type=Path, default=None, metavar="FILE",
                         help="a requirements file (contracts/install-stack.txt) whose pins must agree with the "
                              "repositories' pins too; a URL spelled another way there is a disagreement")
@@ -177,11 +187,19 @@ def _main(argv: Optional[List[str]] = None) -> int:
     try:
         names = repin.manifest_names(args.manifest)
         pins, read = scan(args.stack)
+        released = _released_names(args.manifest)
+        consumer_read: List[str] = []
+        if args.consumers is not None:
+            consumer_pins, consumer_read = scan(args.consumers)
+            pins += consumer_pins
         if args.install is not None:
             pins += read_install(args.install)
         problems = agreement_problems(pins)
         notes = lag_notes(args.stack, pins)
         notes += repin.uncovered_notes(args.stack, names)
+        if released and args.consumers is None:
+            notes.append(f"{', '.join(released)} are released from the circuit and no --consumers folder was given, so "
+                         "their pins are not covered")
     except repin.RepinError as err:
         print(f"seat_pins: {err}", file=sys.stderr)
         return 2
@@ -189,6 +207,13 @@ def _main(argv: Optional[List[str]] = None) -> int:
         print(f"note: {note}")
     for problem in problems:
         print(f"seat_pins: {problem}", file=sys.stderr)
+    if args.consumers is not None:
+        absent = repin.unread(released, consumer_read)
+        if absent:
+            print(f"seat_pins: the repositories released from the circuit are {', '.join(released)}, but no "
+                  f"pyproject.toml was read from: {', '.join(absent)}. It is missing, not a folder, or has no "
+                  "pyproject.toml of its own, so no agreement can be claimed for it", file=sys.stderr)
+            return 2
     missing = repin.unread(names, read)
     if missing:
         print(f"seat_pins: read {len(read)} repositories, but the manifest names {len(names)} and no pyproject.toml "
@@ -198,7 +223,8 @@ def _main(argv: Optional[List[str]] = None) -> int:
     if problems:
         return 1
     shared = sorted({p.package for p in pins})
-    print(f"seat_pins: read {len(read)} repositories ({len(names)} of {len(names)} named by the manifest); every "
+    consumers = f" and {len(consumer_read)} released" if args.consumers is not None else ""
+    print(f"seat_pins: read {len(read)}{consumers} repositories ({len(names)} of {len(names)} named by the manifest); every "
           f"shared pin agrees ({len(pins)} pin(s) across {len({p.repo for p in pins})} repositories: "
           f"{', '.join(shared)})")
     return 0

@@ -45,10 +45,15 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from cns.stack import StackManifest, StackPin
 from cns_composition import delivery
 
-__all__ = ["RepinError", "DEFAULT_MANIFEST", "stack_folders", "load_manifest", "manifest_names", "unread",
-           "uncovered_notes", "read_heads", "uncommitted", "repin_text", "changes", "render_install", "main"]
+__all__ = ["RepinError", "DEFAULT_MANIFEST", "DEFAULT_RELEASED", "stack_folders", "load_manifest", "manifest_names",
+           "load_released", "released_beside", "unread", "uncovered_notes", "read_heads", "uncommitted", "repin_text",
+           "changes", "render_install", "main"]
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
+#: The repositories released from the circuit, each at the commit its CNS pin is read at. The manifest never names
+#: them; they are consumers of CNS, read by `seat_pins` and `cns_versions` and never part of Warden's stack.
+DEFAULT_RELEASED = Path(__file__).resolve().parents[1] / "contracts" / "released-seats.json"
+RELEASED_SCHEMA = "released-seats/1"
 
 #: Config that names a program is overridden on the command line, because a checkout's own config is data
 #: written by somebody else and git will run what it names. The rest is what a status of uncommitted work must
@@ -121,12 +126,54 @@ def load_manifest(path: Optional[Path] = None) -> Dict[str, str]:
     except (OSError, UnicodeDecodeError) as err:
         raise RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
     _, manifest = _load(text)
+    _refuse_released(path, [p.name for p in manifest.repos])
     return {p.name: p.commit for p in manifest.repos}
 
 
 def manifest_names(path: Optional[Path] = None) -> List[str]:
     """The repository names a manifest pins, in its order. Raises RepinError if it cannot be read as a manifest."""
     return list(load_manifest(path))
+
+
+def released_beside(manifest: Path) -> Optional[Path]:
+    """The released-seats file that sits beside a manifest, or None when the manifest has none (a throwaway one)."""
+    path = Path(manifest).with_name(DEFAULT_RELEASED.name)
+    return path if path.is_file() else None
+
+
+def load_released(path: Optional[Path] = None) -> Dict[str, str]:
+    """The repositories released from the circuit, name to commit, in the file's order. Raises RepinError if the file
+    cannot be read as a released-seats file or names a repository twice (without regard to case)."""
+    path = Path(path) if path else DEFAULT_RELEASED
+    try:
+        data = json.loads(delivery.read_text(path))
+    except delivery.DeliveryError as err:
+        raise RepinError(str(err)) from err
+    except (OSError, ValueError) as err:
+        raise RepinError(f"{str(path)!r} cannot be read as JSON: {type(err).__name__}") from err
+    if not isinstance(data, dict) or data.get("schema") != RELEASED_SCHEMA or not isinstance(data.get("seats"), dict):
+        raise RepinError(f"{str(path)!r} is not a {RELEASED_SCHEMA} file with a \"seats\" object")
+    seats: Dict[str, str] = {}
+    for name, commit in data["seats"].items():
+        if not isinstance(commit, str) or len(commit) != 40 or commit.strip("0123456789abcdef"):
+            raise RepinError(f"{str(path)!r}: {name!r} is not pinned to a full lowercase 40-character commit")
+        if name.casefold() in {n.casefold() for n in seats}:
+            raise RepinError(f"{str(path)!r} names {name!r} twice")
+        seats[str(name)] = commit
+    return seats
+
+
+def _refuse_released(manifest: Path, names: Sequence[str]) -> None:
+    """A manifest that sits beside a released-seats file must not name a released repository: re-pinning would put it
+    back into the circuit. A manifest with no such file beside it (a throwaway one) is not held to it."""
+    beside = released_beside(manifest)
+    if beside is None:
+        return
+    released = {n.casefold() for n in load_released(beside)}
+    back = [n for n in names if n.casefold() in released]
+    if back:
+        raise RepinError(f"the manifest names {', '.join(back)}, which {beside.name} lists as released from the "
+                         "circuit; a released repository is not part of the stack")
 
 
 def unread(names: Sequence[str], read: Sequence[str]) -> List[str]:
@@ -246,6 +293,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
     try:
         text = delivery.read_text(path)
         _, manifest = _load(text)
+        _refuse_released(path, [p.name for p in manifest.repos])
         heads = read_heads(args.stack, [p.name for p in manifest.repos], allow_dirty=args.allow_dirty)
         moved = changes(text, heads)
         new = repin_text(text, heads)
