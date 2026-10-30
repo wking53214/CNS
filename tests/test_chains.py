@@ -152,7 +152,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 2
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 26
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 30
 
 
 def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
@@ -209,3 +209,24 @@ def test_the_workflow_runs_when_any_module_the_chains_import_changes():
     triggers = WORKFLOW.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
     listed = set(re.findall(r"(?m)^      - (\S+)$", triggers))
     assert _chain_imports() <= listed, sorted(_chain_imports() - listed)
+
+
+def test_the_evidence_script_binds_each_permission_to_its_seat_and_to_the_required_roster():
+    """The permissions are policy, pinned here so loosening one is a change made in review. Each guard opens only for
+    the exact object one seat judged and only for a decision from a roster that seats every required seat; and the
+    roster checks every verdict against what its gate was given."""
+    tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
+    functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    wanted = {"fresh_guard": "Conservation_Kernel:root_admission", "fresh_ccc_guard": "CCC:ccc.transition"}
+    for name, seat in wanted.items():
+        calls = [c for c in ast.walk(functions[name]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "DecisionGuard"]
+        assert len(calls) == 1, name
+        given = {k.arg: k.value for k in calls[0].keywords}
+        assert isinstance(given.get("seat"), ast.Constant) and given["seat"].value == seat, name
+        assert isinstance(given.get("required_seats"), ast.Name) and given["required_seats"].id == "REQUIRED_SEATS", name
+        assert "binding_of" in given, name
+    gates = [c for c in ast.walk(functions["decide"]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "SuperGate"]
+    assert len(gates) == 1
+    given = {k.arg: k.value for k in gates[0].keywords}
+    assert isinstance(given.get("strict_binding"), ast.Constant) and given["strict_binding"].value is True
+    assert "binding_of" in given

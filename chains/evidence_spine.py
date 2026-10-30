@@ -97,7 +97,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ccc.cns_connector import Attempt, CccGate
 from ccc.cns_connector import attempt as ccc_attempt
-from ccc.cns_connector import attempt_digest
+from ccc.cns_connector import attempt_digest, write_request_digest
 from ccc.errors import WritePermissionRefused
 from ccc.models import Actor as CccActor
 from ccc.models import EpistemicStatus as CccStatus
@@ -362,15 +362,26 @@ BINDINGS = {"HERALD:herald_source": binds_document, "Conservation_Kernel:root_ad
             "CCC:ccc.transition": binds_attempt}
 
 
+def binds_write(request: WriteRequest) -> Tuple[str, str]:
+    """What a direct write to CCC must be bound to: the same subject and digest CCC's verdict on the attempt carries.
+
+    The operation is the subject (an `Attempt` is labelled by its operation) and the digest covers the operation and
+    every argument with its defaults applied, so `record` where `ingest` was judged, another actor, another status
+    or any other changed argument does not match."""
+    return request.operation, write_request_digest(request)
+
+
 def fresh_guard() -> DecisionGuard:
-    """A closed guard that will open, once, for the root the roster's decision judged. Policy, like READERS."""
-    return DecisionGuard(reads_root)
+    """A closed guard that will open, once, for the exact root the kernel's seat judged, and only for a decision from
+    a roster that seats every required seat. Policy, like READERS."""
+    return DecisionGuard(reads_root, seat="Conservation_Kernel:root_admission", binding_of=binds_root,
+                         required_seats=REQUIRED_SEATS)
 
 
 def fresh_ccc_guard() -> DecisionGuard:
-    """A closed guard to give CCC as its `write_permission`: it opens, once, for the document the roster's decision
-    judged. Policy, like READERS."""
-    return DecisionGuard(reads_write)
+    """A closed guard to give CCC as its `write_permission`: it opens, once, for the exact call CCC's seat judged, and
+    only for a decision from a roster that seats every required seat. Policy, like READERS."""
+    return DecisionGuard(reads_write, seat="CCC:ccc.transition", binding_of=binds_write, required_seats=REQUIRED_SEATS)
 
 
 def refused_by_permission(call: Callable[[], object]) -> bool:
@@ -892,6 +903,83 @@ def approval_does_not_open_ccc_finding_doors() -> Dict[str, object]:
                  ccc_findings_after_ingest=findings_written(system))
 
 
+def approved_root() -> Tuple[Read, list, str, DecisionGuard, ConservationKernel, RootArtifact, Tuple[Decision, int], bool]:
+    """The roster allows the true invoice's root and the kernel's guard is opened for it."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_guard()
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+    decided = decide(read, kernel, root, door(root, "doc-1"))
+    return read, evidence, refusal, guard, kernel, root, decided, authorize(guard, decided[0])
+
+
+def root_with_rewritten_proposition() -> Dict[str, object]:
+    """The roster allows a root of inferences. The approval is used for a root with the same id, content, source and
+    time whose first proposition is rewritten as a FACT that says the invoice was approved for payment."""
+    _, evidence, refusal, _, kernel, root, decided, opened = approved_root()
+    rewritten = Proposition(proposition_id="p0", text="The invoice came to $41,200.00 and is approved for payment.",
+                            epistemic_status=RootStatus.FACT, origin=OriginStatus.MACHINE_ORIGINATED,
+                            evidence_refs=(evidence[0].evidence_id,), source_refs=("doc-1",))
+    other = RootArtifact(artifact_id=root.artifact_id, content=root.content, propositions=(rewritten, *root.propositions[1:]),
+                         producer=root.producer, created_at=root.created_at)
+    registered, by_guard = register(kernel, other)
+    honest, _ = register(kernel, root)
+    return facts(decided, evidence, refusal, guard_opened=opened, substitute_registered=registered,
+                 refused_by_guard=by_guard, honest_registered=honest)
+
+
+def root_with_other_metadata() -> Dict[str, object]:
+    """The roster allows the true invoice's root. The approval is used for a root with the same content and
+    propositions but another id, another producer and another time."""
+    _, evidence, refusal, _, kernel, root, decided, opened = approved_root()
+    other = RootArtifact(artifact_id="root:mallory", content=root.content, propositions=root.propositions,
+                         producer=Actor.human("mallory"), created_at="2001-01-01T00:00:00+00:00")
+    registered, by_guard = register(kernel, other)
+    honest, _ = register(kernel, root)
+    return facts(decided, evidence, refusal, guard_opened=opened, substitute_registered=registered,
+                 refused_by_guard=by_guard, honest_registered=honest)
+
+
+def approved_ccc() -> Tuple[Read, list, str, CCCSystem, Attempt, Tuple[Decision, int], bool]:
+    """The roster allows the true invoice's ingest and CCC's guard is opened for it."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
+    return read, evidence, refusal, system, attempt_, decided, authorize(guard, decided[0])
+
+
+def ccc_other_operation_and_actor() -> Dict[str, object]:
+    """The roster allows a model's ingest of the true invoice as an inference. The approval is used for `record` of
+    the same text by a human, as a historical record with a stated basis. The refusal does not spend it."""
+    _, evidence, refusal, system, attempt_, decided, opened = approved_ccc()
+    substitute = refused_by_permission(lambda: system.record(
+        INVOICE, metadata={"source_id": "doc-1"}, actor=CccActor.human("mallory"),
+        epistemic_status=CccStatus.HISTORICAL_RECORD, authorization_basis="I say so"))
+    after_substitute = len(system.store.artifacts)
+    true_refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_substitute_refused=substitute,
+                 ccc_artifacts_after_substitute=after_substitute, ccc_true_ingest_refused=true_refused,
+                 ccc_artifacts_after_true=len(system.store.artifacts))
+
+
+def ccc_altered_arguments() -> Dict[str, object]:
+    """The roster allows a model's ingest of the true invoice. The approval is used for an ingest of the same text, by the
+    same actor, with a higher priority, a topic and an extra metadata entry. The refusal does not spend it."""
+    _, evidence, refusal, system, attempt_, decided, opened = approved_ccc()
+    substitute = refused_by_permission(lambda: system.ingest(
+        INVOICE, actor=CccActor.model("herald"), epistemic_status=CccStatus.INFERENCE, presentation_priority=100,
+        topics=("payments-approved",), metadata={"source_id": "doc-1", "approved_amount": "4120.00"},
+        reason="document read by HERALD"))
+    after_substitute = len(system.store.artifacts)
+    true_refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_substitute_refused=substitute,
+                 ccc_artifacts_after_substitute=after_substitute, ccc_true_ingest_refused=true_refused,
+                 ccc_artifacts_after_true=len(system.store.artifacts))
+
+
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
     """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
@@ -1007,6 +1095,20 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      evidence_not_from_tie,
      {"evidence_refused": [True, True, True, True], "evidence_held_after_refusals": 0, "honest_record_accepted": True,
       "kernel_the_chain_builds_refuses_forged": True, "fact_root_citing_forged_admissible": False}),
+    ("SEAM HOLDS: the approval for a root of inferences cannot register a root with the same id, content and source whose proposition is rewritten as a FACT",
+     root_with_rewritten_proposition,
+     {**HELD, "guard_opened": True, "substitute_registered": False, "refused_by_guard": True, "honest_registered": True}),
+    ("SEAM HOLDS: the approval for the true invoice's root cannot register a root with another id, producer and time",
+     root_with_other_metadata,
+     {**HELD, "guard_opened": True, "substitute_registered": False, "refused_by_guard": True, "honest_registered": True}),
+    ("SEAM HOLDS: the approval for a model's ingest cannot be spent on `record` of the same text by a human as a historical record, and the refusal does not spend it",
+     ccc_other_operation_and_actor,
+     {**HELD, "guard_opened": True, "ccc_substitute_refused": True, "ccc_artifacts_after_substitute": 0,
+      "ccc_true_ingest_refused": False, "ccc_artifacts_after_true": 1}),
+    ("SEAM HOLDS: the approval for a model's ingest cannot be spent on the same ingest with a higher priority, a topic and an extra metadata entry, and the refusal does not spend it",
+     ccc_altered_arguments,
+     {**HELD, "guard_opened": True, "ccc_substitute_refused": True, "ccc_artifacts_after_substitute": 0,
+      "ccc_true_ingest_refused": False, "ccc_artifacts_after_true": 1}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
