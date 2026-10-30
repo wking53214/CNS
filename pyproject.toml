@@ -50,4 +50,4 @@ select = ["E4", "E7", "E9", "F"]
 # Every test directory. The composition tests once lived under a directory
 # the runner never looked at, which is where five skips hid from the
 # no-skip conftest for a while.
-testpaths = ["tests", "cns_composition/tests"]
+testpaths = ["tests", "cns_composition/tests", "cns_interop/tests"]
