@@ -725,6 +725,27 @@ def door_refused_ccc_finding_doors_hold() -> Dict[str, object]:
                  ccc_findings_written=findings_written(system), ccc_audit_events=len(system.audit_trail.all()))
 
 
+def approval_does_not_open_ccc_finding_doors() -> Dict[str, object]:
+    """The roster allows the document. No seat judges a finding or an observation, so the four doors that create
+    findings and road signs stay refused.
+
+    Their refusals do not spend the approval: the document's own ingest still goes in afterwards."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
+    refused = direct_finding_writes(system)
+    written, audited = findings_written(system), len(system.audit_trail.all())
+    ingest_refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_finding_doors_refused=refused,
+                 ccc_findings_written=written, ccc_audit_events=audited, ccc_ingest_refused=ingest_refused,
+                 ccc_artifacts_after_ingest=len(system.store.artifacts),
+                 ccc_findings_after_ingest=findings_written(system))
+
+
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
     """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
@@ -829,6 +850,11 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      door_refused_ccc_finding_doors_hold,
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "guard_opened": False,
       "ccc_finding_doors_refused": [True, True, True, True], "ccc_findings_written": 0, "ccc_audit_events": 0}),
+    ("SEAM HOLDS: an approved decision names a document, not a finding or an observation, so CCC's four finding and road sign doors stay refused and the approval is not spent",
+     approval_does_not_open_ccc_finding_doors,
+     {**HELD, "guard_opened": True, "ccc_finding_doors_refused": [True, True, True, True], "ccc_findings_written": 0,
+      "ccc_audit_events": 0, "ccc_ingest_refused": False, "ccc_artifacts_after_ingest": 1,
+      "ccc_findings_after_ingest": 0}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
