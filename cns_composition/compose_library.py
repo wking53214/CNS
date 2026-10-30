@@ -9,6 +9,7 @@ Superseded by SuperGate / run_chain: the supported path is `super_gate.py` over 
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
@@ -108,6 +109,10 @@ class LibraryComposer:
     """
 
     def __init__(self):
+        warnings.warn(
+            "LibraryComposer is retired: use cns_composition.super_gate.SuperGate over gate_chain.run_chain. "
+            "It is kept for reference only (docs/history/LIBRARY_COMPOSITION_GUIDE.md).",
+            DeprecationWarning, stacklevel=2)
         self.adapters: Dict[str, SystemAdapter] = {}
         self.translation_rules: Dict[Tuple[SystemModel, SystemModel], Callable[[str], str]] = {}
         self._build_compatibility_graph()
