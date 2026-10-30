@@ -95,6 +95,8 @@ class DecisionGuard:
         self._seat = seat
         self._binding_of = binding_of
         self._bound_to: Optional[Tuple[str, str]] = None
+        #: Held across the whole of `__call__`, so two callers cannot both read "not spent" and both be told yes.
+        self._lock = threading.Lock()
         self._expires_at: Optional[float] = None
         self._approved: Optional[Judged] = None
         self._spent = False
@@ -156,6 +158,10 @@ class DecisionGuard:
         return verdict.subject, verdict.subject_digest
 
     def __call__(self, artifact: object) -> bool:
+        with self._lock:
+            return self._answer(artifact)
+
+    def _answer(self, artifact: object) -> bool:
         if self._approved is None or self._spent:
             return False
         if self._expires_at is not None and self._clock() >= self._expires_at:

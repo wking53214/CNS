@@ -402,3 +402,27 @@ def test_a_short_roster_that_passes_anything_cannot_open_a_guard_that_requires_t
 def test_required_seats_must_be_distinct_non_empty_names(seats):
     with pytest.raises(ValueError, match="required_seats"):
         guard_requiring(*seats)
+
+
+# -- one use means one yes, even when callers arrive together ---------------------------------------------------------
+
+def test_many_callers_at_once_get_exactly_one_yes_from_a_one_use_permission():
+    import time
+
+    def slow_reader(artifact):
+        time.sleep(0.002)  # widens the window between "not spent yet" and "spent now"
+        return Judged(*artifact)
+
+    for _ in range(20):
+        g = DecisionGuard(slow_reader)
+        g.authorize(decision())
+        answers, ready = [], threading.Barrier(8)
+
+        def knock():
+            ready.wait()
+            answers.append(g(("doc-1", "abc")))
+
+        threads = [threading.Thread(target=knock) for _ in range(8)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        assert answers.count(True) == 1 and g.spent
