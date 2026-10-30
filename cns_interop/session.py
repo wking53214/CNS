@@ -181,16 +181,25 @@ class Requester:
         return env
 
     def on_reply(self, wire: Mapping[str, Any]) -> Union[Envelope, Verified]:
-        """An offer returns the accept to send; a decision returns it verified; a refuse raises Refused('declined')."""
+        """Either step: an offer returns the accept to send, a decision returns it verified, a refuse raises
+        Refused('declined'). `on_offer` and `on_decision` are the same, each limited to its own step."""
+        kind = wire.get("kind") if isinstance(wire, Mapping) else None
+        return self.on_decision(wire) if kind == "decision" else self.on_offer(wire)
+
+    def on_decision(self, wire: Mapping[str, Any]) -> Verified:
         now = self._clock()
-        env = open_envelope(wire, now=now, audience=self.agent, kinds={"offer", "refuse", "decision"})
+        env = open_envelope(wire, now=now, audience=self.agent, kinds={"decision"})
         _must_expire(env)
-        if env.kind == "decision":
-            pending = self._accepts.pop(env.in_reply_to, None)
-            if pending is None:
-                raise Refused("terms", "the decision answers no accept this requester sent")
-            accept_digest, terms = env.in_reply_to, pending[1]
-            return verify_decision(wire, terms=terms, accept_digest=accept_digest, ledger=self._ledger, now=now)
+        pending = self._accepts.pop(env.in_reply_to, None)
+        if pending is None:
+            raise Refused("terms", "the decision answers no accept this requester sent")
+        return verify_decision(wire, terms=pending[1], accept_digest=env.in_reply_to, ledger=self._ledger, now=now)
+
+    def on_offer(self, wire: Mapping[str, Any]) -> Envelope:
+        """An offer returns the accept to send; a refuse raises Refused('declined') with the other side's reasons."""
+        now = self._clock()
+        env = open_envelope(wire, now=now, audience=self.agent, kinds={"offer", "refuse"})
+        _must_expire(env)
         known = self._requests.get(env.in_reply_to) or self._accepts.get(env.in_reply_to)
         if known is None or known[0] != env.sender:
             raise Refused("terms", f"the {env.kind} answers nothing this requester sent to its sender")
@@ -198,9 +207,11 @@ class Requester:
         if env.kind == "refuse":
             self._requests.pop(env.in_reply_to, None)
             self._accepts.pop(env.in_reply_to, None)
-            reasons = env.body.get("reasons") if isinstance(env.body, Mapping) else None
+            reasons = env.body.get("reasons")
             raise Refused("declined", "; ".join(r for r in reasons if isinstance(r, str))
                           if isinstance(reasons, list) else "the other side refused")
+        if env.in_reply_to not in self._requests:
+            raise Refused("terms", "an offer must answer a request")
         decider, body, document = self._requests.pop(env.in_reply_to)
         if set(env.body) != {"terms"}:
             raise Refused("malformed", "an offer carries exactly its terms")
