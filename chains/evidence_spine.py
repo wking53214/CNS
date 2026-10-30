@@ -553,8 +553,12 @@ def evidence_not_from_tie() -> Dict[str, object]:
     refusals = [refused_by_evidence_guard(call) for call in (forged, other_text, other_source, other_kind)]
     held_before = len(kernel.registry.snapshot()["evidence"])
     kernel.registry.add_evidence(evidence_record(honest, "doc-1", INVOICE))
+    chain_kernel, _ = kernel_root(evidence, "doc-1", INVOICE)
+    chain_refused = refused_by_evidence_guard(
+        lambda: chain_kernel.registry.add_evidence(evidence_record("forged-1", "doc-1", INVOICE)))
     return {"evidence_refused": refusals, "evidence_held_after_refusals": held_before,
             "honest_record_accepted": kernel.registry.evidence(honest) is not None,
+            "kernel_the_chain_builds_refuses_forged": chain_refused,
             "fact_root_citing_forged_admissible": not kernel.admit_root(fact_root_citing("forged-1"))}
 
 
@@ -955,7 +959,7 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("SEAM HOLDS: a caller adds evidence TIE never produced, evidence with the inflated text, with another source, or of another kind to a kernel built with the evidence guard; each is refused, the honest record goes in, and a FACT root citing the forged id is not admissible",
      evidence_not_from_tie,
      {"evidence_refused": [True, True, True, True], "evidence_held_after_refusals": 0, "honest_record_accepted": True,
-      "fact_root_citing_forged_admissible": False}),
+      "kernel_the_chain_builds_refuses_forged": True, "fact_root_citing_forged_admissible": False}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
