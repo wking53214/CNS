@@ -153,3 +153,32 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 2
     assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 17
+
+
+def _chain_imports():
+    """Every cns and cns_composition module the chain scripts import, followed through their own imports."""
+    def names(path):
+        found = set()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.split(".")[0] in ("cns", "cns_composition"):
+                found.add(node.module)
+                found.update(f"{node.module}.{a.name}" for a in node.names)
+            elif isinstance(node, ast.Import):
+                found.update(a.name for a in node.names if a.name.split(".")[0] in ("cns", "cns_composition"))
+        return found
+
+    seen, todo = set(), []
+    for script in (ROOT / "chains").glob("*.py"):
+        todo.extend(names(script))
+    while todo:
+        module = ROOT / (todo.pop().replace(".", "/") + ".py")
+        if module.exists() and module not in seen:
+            seen.add(module)
+            todo.extend(names(module))
+    return {m.relative_to(ROOT).as_posix() for m in seen}
+
+
+def test_the_workflow_runs_when_any_module_the_chains_import_changes():
+    triggers = WORKFLOW.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+    listed = set(re.findall(r"(?m)^      - (\S+)$", triggers))
+    assert _chain_imports() <= listed, sorted(_chain_imports() - listed)

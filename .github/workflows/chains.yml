@@ -25,8 +25,13 @@ on:
   pull_request:
     paths:
       - chains/**
+      - cns/gate.py
+      - cns/rowenum.py
+      - cns_composition/decision_guard.py
+      - cns_composition/gate_chain.py
       - cns_composition/repo_gates.py
       - cns_composition/spine_trace.py
+      - cns_composition/super_gate.py
       - .github/workflows/chains.yml
 
 permissions: {}
