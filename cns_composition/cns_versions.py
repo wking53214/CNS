@@ -2,8 +2,8 @@
 
 WHY THIS EXISTS
 
-`seat_pins` checks that repositories which pin the same package pin it identically, but only over the seven circuit
-repositories' pyproject.toml. Measured on 2026-10-21 across all of them: seven pinned CNS 1.9.0, fourteen pinned
+`seat_pins` checks that repositories which pin the same package pin it identically, but only over the circuit
+repositories' pyproject.toml (seven when this was measured, five since the owner ruling of 2026-10-29). Measured on 2026-10-21 across all of them: seven pinned CNS 1.9.0, fourteen pinned
 1.8.0, ten pinned a commit that is CNS 1.4.0, one pinned 1.6.0. Every one of them was "connected" and the ledger was
 green, yet they were not on the same CNS, and a connector built against 1.9.0 shapes was being installed against 1.4.0.
 Nothing said so. This reads every direct CNS pin and states the version it resolves to.

@@ -184,7 +184,7 @@ def unread(names: Sequence[str], read: Sequence[str]) -> List[str]:
 
 def uncovered_notes(stack: Path, names: Sequence[str]) -> List[str]:
     """One note when the stack folder holds checkouts the manifest does not name. A note, not a failure: Warden
-    refuses only a folder it uses (WATCHER_MCU sits beside the seven and reads the record afterwards), but a
+    refuses only a folder it uses (WATCHER_MCU, released from the circuit, may sit beside the five and read the record afterwards), but a
     person reading "every pin agrees" should know which folders that claim does not cover."""
     covered = {n.casefold() for n in names}
     extra = [p.name for p in stack_folders(stack) if p.name.casefold() not in covered and not p.name.startswith(".")]

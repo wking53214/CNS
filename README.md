@@ -3,7 +3,7 @@
 The central nervous system of the library: one package holding
 the contracts every repo joins on.
 
-Where the eight-repository circuit stands today (what was checked, what it found when it ran on itself, what is
+Where the five-repository circuit stands today (what was checked, what it found when it ran on itself, what is
 still open): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
 remains to be done: [docs/RELEASED_SEATS.md](docs/RELEASED_SEATS.md).
 
@@ -132,7 +132,7 @@ still not stopped.
 `cns.stack` is the contract for a claim no single repository can make
 about itself: these checkouts, at these commits, are the whole. The
 governance circuit found the gap on 2026-10-14 when it ran on its own
-seven repositories and four could not be fully measured, each importing
+seven repositories (the circuit of that date; it is five since 2026-10-29) and four could not be fully measured, each importing
 a sibling the scanner had not been shown. Warden 0.11.2 can be told the
 siblings (`--join`, `--stack-manifest`); this is the shape of what it is
 told, held here so every consumer reads it the same way.
@@ -151,7 +151,7 @@ this repository) in place of a file a person wrote.
 
 ### Keeping the pins true
 
-Warden refuses a stack whose checkout is at any commit but the pinned one, so every merge to any of the seven
+Warden refuses a stack whose checkout is at any commit but the pinned one, so every merge to any of the five
 circuit repositories used to make the manifest wrong until someone edited it. Two programs beside the package
 (behaviour, so not inside it) and one workflow now do that:
 
@@ -175,7 +175,7 @@ stack gives an unchanged file. `circuit_canary` builds a throwaway repository an
 ACCEPT; a refusal over a stale pin is a failure that names the pin.
 
 `.github/workflows/repin.yml` runs both every six hours and on demand. The canary runs every time, so a red run
-means a merge to one of the seven broke the others. When a pin moved and the circuit still ends ACCEPT it opens
+means a merge to one of the five broke the others. When a pin moved and the circuit still ends ACCEPT it opens
 or updates one pull request (branch `auto/repin`) that changes nothing but the commits. A person merges it.
 The canary needs `pytest`, `numpy`, `matplotlib` and an installed `cns` in the interpreter (the workflow installs them; the canary says so if they are missing). The job that runs the other repositories' code has a read-only token; the job that can write runs none of it
 and re-checks the manifest before using it. One setting is needed once: Settings > Actions > General >
@@ -195,7 +195,7 @@ manifest, so a new repository needs no edit there; `tests/test_stack_workflow.py
 checkout step against local fixtures.
 
 The job's steps, in order: install the circuit; `pip check`; assert exactly one `cns` distribution;
-`install_stack --installed` (each version comment in the install file is the version pip installed, and each commit in it, watcher-mcu's included, is the commit pip recorded; the installed `cns` is the commit the release table records for the pinned tag); check out the
+`install_stack --installed` (each version comment in the install file is the version pip installed, and each commit in it is the commit pip recorded; the installed `cns` is the commit the release table records for the pinned tag); check out the
 repositories at the manifest's commits; `seat_pins`; `cns_versions --spelling tag`; `install_stack --check` (the install
 file is the rendering of the manifest and the release table); `repin --check`; `circuit_canary`; `circuit_refusals`.
 
