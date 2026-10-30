@@ -7,6 +7,58 @@ Where the five-repository circuit stands today (what was checked, what it found 
 still open): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
 remains to be done: [docs/RELEASED_SEATS.md](docs/RELEASED_SEATS.md).
 
+## What CNS is for
+
+The library is many repositories, and many of them decide something: whether a change may merge, whether a document
+may be stored, whether a claim may be used. CNS exists so that they decide in one shared vocabulary. It holds the
+shapes of a decision (a gate that runs before an action, a gate that judges its result, and the three answers PASS,
+RETRY and TERMINAL_BREACH), so one repository can read and check another's verdict without the two inventing a
+protocol between them.
+
+Three aims follow from that. Each is measured rather than claimed:
+
+- **One rule, carried by a type.** The library's governing constraint is a gate with two ends: an origin condition
+  checked before anything runs (ALPHA) and an outcome condition checked on the result (OMEGA), with a failing check
+  aborting rather than repairing. Measured on 2026-09-12, no repository implemented both ends; the ordering had lived
+  only as a convention and drifted. `cns.gate` makes the end a gate runs at a declared property, because a convention
+  cannot carry an invariant across twenty repositories and a type can. The full argument is in `cns/gate.py`.
+- **One copy of each shared shape.** A class two repositories share lives here once and is imported, not copied. The
+  copies that remain are counted (ghost-buster's `kernel_shadow` and `drifted_contract`; the baseline was 84 sites
+  across six of ten repositories on 2026-09-11), and the aim is zero. `docs/ROADMAP.md` tracks it.
+- **Proof across repositories, not only within them.** Each repository's own suite proves that repository. CNS adds
+  the checks no single repository can make about itself: the governance circuit (Warden and its seats, joined by
+  `cns.stack`, below) checks a code change against pinned checkouts, and the evidence spine checks that a document
+  stays the same document as it passes from one repository to the next.
+
+How far this has got is in `docs/STATUS.md` and in "What works" and "What does not work, or is not proven" below.
+
+### The evidence spine
+
+`chains/evidence_spine.py` runs one document through five repositories, in order:
+
+| hop | what it does with the document |
+|---|---|
+| HERALD | reads it and extracts claims, judging the document first and then each claim |
+| TIE | records HERALD's signed export as evidence, and refuses an export that was changed |
+| Conservation_Kernel | judges a root artifact built from that evidence before it becomes ancestry |
+| Governance_Gateway | judges the artifact at its admission door |
+| CCC | judges the attempt to ingest the document into its store |
+
+Each of the five is tested alone and binds its own verdict to what it judged. What no single suite can see is the
+seams: whether the document that reaches the last door is the one HERALD read, and whether a verdict at one hop says
+anything about the next. The spine holds the five gates in one roster (`SuperGate`), refuses a decision unless every
+seat judged the same document (`same_subject`), and turns an approved decision into a one-use permission
+(`DecisionGuard`) that the kernel needs to register a root and CCC needs to write. A refused decision, or one written
+by hand, opens nothing.
+
+The script then breaks the run at each seam (a document relabelled, an inflated invoice, an export edited after it was
+signed, a decision copied by hand, a direct write after a "no") and states what must happen. A seam that holds is a
+scenario that must keep holding. A seam that nothing checks is stated as a GAP, an assertion and not a skip, so the day
+a repository starts checking it the script goes red and the fact is updated on purpose. One GAP is recorded: a kernel
+built without its guard and called directly. The `chains` workflow runs the spine every day and on pull requests that
+touch the decision core; "Where the six spine repositories stand" below gives its latest result. The spine does not
+cover ZTS, sentinel_os or GSA-815, and it speaks for CCC only as far as CCC's gate and write permission go.
+
 ## The rule
 
 `cns` carries **row shapes and interfaces**: dataclasses, enums,
