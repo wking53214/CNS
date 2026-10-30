@@ -9,10 +9,16 @@ release and "floor" the lowest a consumer may pin; both are defined in `cns_comp
 Tagging is the owner's decision. An entry whose heading says "not yet tagged" describes this tree; after the tag
 exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the table and moves `current`.
 
+The entry is changed to "tagged" in a commit after the tag, so the copy of this file inside `v2.0.0`, `v2.1.0` and
+`v2.2.0` still says "not yet tagged". A tag is never moved to fix that, because a pin to it would then install
+different code. This file on `main` says what is true now. A heading's date is the day the tag was made; where the
+tagged commit is older, the entry says so.
+
 ## [2.2.0] - 2026-10-29
 
 The decision guard, in `cns_composition` only. The `cns` package is untouched: no shape changed, so `tests/public_shape.json`
-moves only its version. Tagged `v2.2.0` (commit `ce6bd05`). The 2.x line lacked main's SuperGate work, so this also
+moves only its version. Tagged `v2.2.0` by the owner, a lightweight tag at `ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f`;
+its row in `contracts/cns-releases.json` was recorded after the tag (`521e6ce`). The 2.x line lacked main's SuperGate work, so this also
 carries the required-roster fix; merged by #48.
 
 ### Added
@@ -33,8 +39,8 @@ carries the required-roster fix; merged by #48.
 ## [2.1.0] - 2026-10-29
 
 Three optional fields, nothing removed, renamed or retyped. Tagged `v2.1.0` by the owner (the annotated tag object is
-`0cc90472f7edc46c3bf40079e69fb03a06718e29`, peeling to `fde931ffa89aebec95647742256ad53033bd3d02`):
-`contracts/cns-releases.json` has `current` at `v2.1.0` and keeps the floor at 1.9.0, which is the owner's decision. A reader built against 2.0.0 ignores every field below, because each has a default and `cns.run/1`
+`0cc90472f7edc46c3bf40079e69fb03a06718e29`, peeling to `fde931ffa89aebec95647742256ad53033bd3d02`, a commit of
+2026-10-28; the tag was made 2026-10-29): `contracts/cns-releases.json` then moved `current` to `v2.1.0` and kept the floor at 1.9.0, which is the owner's decision. A reader built against 2.0.0 ignores every field below, because each has a default and `cns.run/1`
 already allowed extra keys. Each entry names the test that holds it.
 
 ### Added
@@ -51,7 +57,8 @@ already allowed extra keys. Each entry names the test that holds it.
 
 ## [2.0.0] - 2026-10-22
 
-The release candidate built from five audit rounds of the circuit. The decision record is
+The release built from five audit rounds of the circuit. Tagged `v2.0.0` by the owner on 2026-10-22 (the annotated
+tag object is `bb220f65d4629abc8073b976d1ea23f76d090e5e`, peeling to `b13e5d2f9e0e4291725f82794b89117c3d840ac1`). The decision record is
 `docs/decisions/2026-10-22-cns-2.0.0.md`; the migration guide for the eight circuit repositories is
 `docs/migrations/2.0.0.md`. Every change below names the test or workflow job that holds it.
 
@@ -168,13 +175,16 @@ The release candidate built from five audit rounds of the circuit. The decision 
 
 ## Earlier releases, from the git history
 
+`v1.4.0`, `v1.5.1`, `v1.6.0`, `v1.7.0` and `v1.8.0` are lightweight tags (as is `v2.2.0`), so their date is the
+commit's; the others are annotated, and their date is the day the tag was made.
+
 | tag | version | date | commit | what it added |
 |---|---|---|---|---|
-| `v1.9.0` | 1.9.0 | 2026-10-17 | `da18e411743d4e3b0e783105394d845fb1c16746` | `cns.assay` (the ASSAY answer-key summary row); the cns_composition tools that followed on main (`cns_versions`, 2026-10-21) are not in this tag |
+| `v1.9.0` | 1.9.0 | 2026-10-21 (commit of 2026-10-17) | `da18e411743d4e3b0e783105394d845fb1c16746` | `cns.assay` (the ASSAY answer-key summary row); the cns_composition tools that followed on main (`cns_versions`, 2026-10-21) are not in this tag |
 | `v1.8.0` | 1.8.0 | 2026-10-15 | `5252ceebe98185f7be81212d988055ccf9884568` | `cns.attack` and `cns.finding` |
 | `v1.7.0` | 1.7.0 | 2026-10-15 | `84ee0f491b06a2b746c374e76b14d1952addebd7` | the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite` |
 | `v1.6.0` | 1.6.0 | 2026-10-15 | `0a4d385b8ec48f11522ced33761b6f0ac28eaa97` | `cns.run`, the run record contract |
-| `v1.5.1` | 1.4.0 | 2026-10-09 | `da9ab8c8c47097b38ad9792dec23fed45d31ae3f` | a tag that points at a tree older than v1.5.0 whose package says 1.4.0; recorded as it is |
+| `v1.5.1` | 1.4.0 | 2026-10-09 | `da9ab8c8c47097b38ad9792dec23fed45d31ae3f` | a tag that points at a tree older than v1.5.0 whose package says 1.4.0; recorded as it is. It is the merge of #12 on the 1.4.0 line and has neither `cns.stack` nor `contracts/`, so a pin to `v1.5.1` installs 1.4.0, not something newer than 1.5.0. It is left where it is, because moving it would change what an existing pin installs; the table's row carries a note |
 | `v1.5.0` | 1.5.0 | 2026-10-15 | `f212c00e43cfad76d641a8d04523ad12f789de2a` | `cns.stack` and the circuit's manifest in `contracts/` |
 | `v1.4.0` | 1.4.0 | 2026-09-30 | `3b465dbcc1a6a4ab6f1040f93d44483196abd737` | `cns.gate`; the composition layer moved out of the package to `cns_composition` |
 | `v1.0.0` | 1.0.0 | 2026-09-11 | `01e9522387265445bbad2d8edc24eea05dd36b7a` | every enum a `RowEnum`; `CallerState.default_likelihoods` removed |
