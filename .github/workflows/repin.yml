@@ -93,14 +93,32 @@ jobs:
         # numpy and matplotlib: ASSAY treats a claim it cannot run as a failure, and one claim needs them. Without
         # them Warden ends INCONCLUSIVE ("ASSAY's answer key could not be used to grade Ghost").
         run: python -m pip install pytest numpy matplotlib ./hub
-      - name: Move the pins to the heads of the five checkouts
+      - name: Check out the released repositories at their current default-branch heads
+        # They are consumers of CNS, not part of the circuit: their own folder, never the stack's. Only their HEADs are
+        # read, to record them in contracts/released-seats.json; none of their code runs in this job.
+        env:
+          BASE_URL: https://github.com/${{ github.repository_owner }}
+        run: |
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+          base = os.environ["BASE_URL"].rstrip("/")
+          seats = json.load(open("hub/contracts/released-seats.json", encoding="utf-8"))["repos"]
+          if not seats:
+              sys.exit("contracts/released-seats.json names no repository")
+          os.makedirs("released", exist_ok=True)
+          for name in seats:
+              if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name):
+                  sys.exit(f"{name!r} is not a repository name")
+              subprocess.run(["git", "clone", "--quiet", "--depth", "1", f"{base}/{name}.git", f"released/{name}"], check=True)
+          PY
+      - name: Move the pins to the heads of the five checkouts, and the released commits to their repositories' heads
         id: repin
         working-directory: hub
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: |
-          python -m cns_composition.repin --stack ../stack --manifest contracts/warden-stack.json | tee ../repin.txt
-          if git diff --quiet -- contracts/warden-stack.json contracts/install-stack.txt; then
+          python -m cns_composition.repin --stack ../stack --released ../released --manifest contracts/warden-stack.json | tee ../repin.txt
+          if git diff --quiet -- contracts/warden-stack.json contracts/install-stack.txt contracts/released-seats.json; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -116,6 +134,7 @@ jobs:
           mkdir proposed
           cp hub/contracts/warden-stack.json proposed/warden-stack.json
           cp hub/contracts/install-stack.txt proposed/install-stack.txt
+          cp hub/contracts/released-seats.json proposed/released-seats.json
           cp repin.txt proposed/repin.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: steps.repin.outputs.changed == 'true'
@@ -229,9 +248,16 @@ jobs:
           assert list(new["repos"]) == list(old["repos"]), "the set of repositories changed"
           assert all(re.fullmatch(r"[0-9a-f]{40}", v) for v in new["repos"].values()), "a pin is not a full commit"
           assert set(new) == set(old), "a top-level field was added or removed"
+          released_old = json.load(open("contracts/released-seats.json"))
+          released_new = json.load(open("proposed/released-seats.json"))
+          assert released_new["schema"] == released_old["schema"], "the released-seats schema changed"
+          assert list(released_new["repos"]) == list(released_old["repos"]), "the set of released repositories changed"
+          assert all(re.fullmatch(r"[0-9a-f]{40}", v) for v in released_new["repos"].values()), "a released commit is not a full commit"
+          assert set(released_new) == set(released_old), "a top-level field of the released-seats file was added or removed"
           PY
           cp proposed/warden-stack.json contracts/warden-stack.json
           cp proposed/install-stack.txt contracts/install-stack.txt
+          cp proposed/released-seats.json contracts/released-seats.json
       - name: The install file is the rendering of that manifest, and both pass the tests that read them
         run: |
           pip install -e ".[dev]"
@@ -247,7 +273,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B auto/repin
-          git add contracts/warden-stack.json contracts/install-stack.txt
+          git add contracts/warden-stack.json contracts/install-stack.txt contracts/released-seats.json
           git commit -m "Re-pin the circuit manifest to the current main heads"
           git push --force origin auto/repin
           {
@@ -257,7 +283,7 @@ jobs:
             cat proposed/repin.txt
             echo '```'
             echo
-            echo "Changes nothing but the commits in contracts/warden-stack.json and the install file rendered from it. Merge it before the next merge to any of the five repositories."
+            echo "Changes nothing but the commits in contracts/warden-stack.json, the install file rendered from it and contracts/released-seats.json (the released repositories at their current heads). Merge it before the next merge to any of the five repositories."
           } > body.md
           if gh pr list --head auto/repin --state open --json number --jq '.[0].number' | grep -q .; then
             gh pr edit auto/repin --body-file body.md

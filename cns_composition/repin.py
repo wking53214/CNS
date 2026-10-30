@@ -46,8 +46,8 @@ from cns.stack import StackManifest, StackPin
 from cns_composition import delivery
 
 __all__ = ["RepinError", "DEFAULT_MANIFEST", "DEFAULT_RELEASED", "stack_folders", "load_manifest", "manifest_names",
-           "load_released", "released_beside", "unread", "uncovered_notes", "read_heads", "uncommitted", "repin_text",
-           "changes", "render_install", "main"]
+           "load_released", "released_beside", "released_text", "released_drift", "unread", "uncovered_notes",
+           "read_heads", "uncommitted", "repin_text", "changes", "render_install", "main"]
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
 #: The repositories released from the circuit, each at the commit its CNS pin is read at. The manifest never names
@@ -277,6 +277,41 @@ def repin_text(text: str, heads: Mapping[str, str]) -> str:
     return new
 
 
+def released_text(text: str, heads: Mapping[str, str]) -> str:
+    """The released-seats file with each commit moved to `heads[name]`. Only `repos` values change; the set and the
+    order of the names, the schema and every other field stay."""
+    try:
+        data = json.loads(text)
+    except ValueError as err:
+        raise RepinError(f"the released-seats file cannot be read as JSON: {type(err).__name__}") from err
+    if not isinstance(data, dict) or data.get("schema") != RELEASED_SCHEMA or not isinstance(data.get("repos"), dict):
+        raise RepinError(f"the released-seats file is not a {RELEASED_SCHEMA} file with a \"repos\" object")
+    missing = [n for n in data["repos"] if n not in heads]
+    if missing:
+        raise RepinError("no commit was given for: " + ", ".join(missing))
+    new = json.dumps({**data, "repos": {n: heads[n] for n in data["repos"]}}, indent=2) + "\n"
+    return new
+
+
+def released_drift(consumers: Path, released: Mapping[str, str]) -> List[str]:
+    """One sentence per released repository whose checkout in `consumers` is at a commit other than the one the
+    released-seats file records. A repository with no checkout there, or a folder that is not a git checkout, is not
+    compared (seat_pins says separately when none was read)."""
+    problems: List[str] = []
+    for name, recorded in released.items():
+        try:
+            folder = _folder_for(Path(consumers), name)
+        except RepinError:
+            continue
+        if not (folder / ".git").exists():
+            continue
+        head = _git(folder, "rev-parse", "HEAD")
+        if head != recorded:
+            problems.append(f"{name} is checked out at {head[:12]}, but contracts/released-seats.json records "
+                            f"{recorded[:12]}; run repin with --released to record it, or check out the recorded commit")
+    return problems
+
+
 def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.repin",
@@ -287,6 +322,10 @@ def _main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--check", action="store_true",
                         help="write nothing; exit 1 if any pin is stale, 0 if all are current")
     parser.add_argument("--allow-dirty", action="store_true", help="pin a checkout that has uncommitted changes")
+    parser.add_argument("--released", type=Path, default=None, metavar="DIR",
+                        help="a folder holding a checkout of each repository released from the circuit: the "
+                             "released-seats file beside the manifest is re-pinned to their HEADs the same way (and "
+                             "--check counts a stale one). Without it the file is left as it is")
     args = parser.parse_args(argv)
 
     path = args.manifest or Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
@@ -297,26 +336,44 @@ def _main(argv: Optional[List[str]] = None) -> int:
         heads = read_heads(args.stack, [p.name for p in manifest.repos], allow_dirty=args.allow_dirty)
         moved = changes(text, heads)
         new = repin_text(text, heads)
+        released_file = released_beside(path)
+        released_moved: List[Tuple[str, str, str]] = []
+        released_new: Optional[str] = None
+        if args.released is not None:
+            if released_file is None:
+                raise RepinError(f"--released was given but there is no {DEFAULT_RELEASED.name} beside {str(path)!r}")
+            seats = load_released(released_file)
+            released_heads = read_heads(args.released, list(seats), allow_dirty=args.allow_dirty)
+            released_moved = [(n, seats[n], released_heads[n]) for n in seats if released_heads[n] != seats[n]]
+            released_new = released_text(delivery.read_text(released_file), released_heads)
     except (RepinError, OSError) as err:
         print(f"repin: {err}", file=sys.stderr)
         return 2
     for note in uncovered_notes(args.stack, [p.name for p in manifest.repos]):
         print(f"note: {note}")
-    for name, old, now in moved:
+    if args.released is None and released_file is not None:
+        print(f"note: {released_file.name} was not compared with any checkout (no --released folder), so it is left as it is")
+    for name, old, now in moved + released_moved:
         print(f"{name}: {old[:12]} -> {now[:12]}")
-    if not moved:
+    if not moved and not released_moved:
         print("repin: every pin is current")
         return 0
     if args.check:
-        print(f"repin: {len(moved)} pin(s) are stale", file=sys.stderr)
+        print(f"repin: {len(moved) + len(released_moved)} pin(s) are stale", file=sys.stderr)
         return 1
     try:
-        delivery.write_file(path, new)
+        if moved:
+            delivery.write_file(path, new)
+        if released_moved and released_file is not None and released_new is not None:
+            delivery.write_file(released_file, released_new)
     except delivery.DeliveryError as err:
         print(f"repin: {err}", file=sys.stderr)
         return 2
-    print(f"repin: wrote {len(moved)} pin(s) to {path}")
-    return render_install(path, args.stack)
+    if moved:
+        print(f"repin: wrote {len(moved)} pin(s) to {path}")
+    if released_moved and released_file is not None:
+        print(f"repin: wrote {len(released_moved)} released commit(s) to {released_file}")
+    return render_install(path, args.stack) if moved else 0
 
 
 def render_install(manifest_path: Path, stack: Path) -> int:

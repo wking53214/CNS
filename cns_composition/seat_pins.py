@@ -203,6 +203,12 @@ def _main(argv: Optional[List[str]] = None) -> int:
     except repin.RepinError as err:
         print(f"seat_pins: {err}", file=sys.stderr)
         return 2
+    if args.consumers is not None and released:
+        # A released repository's checkout is compared with the commit contracts/released-seats.json records for it
+        # (when that checkout is a git checkout at all): the file is state, and nothing else read it against a checkout.
+        beside = repin.released_beside(args.manifest)
+        if beside is not None:
+            problems += repin.released_drift(args.consumers, repin.load_released(beside))
     for note in notes:
         print(f"note: {note}")
     for problem in problems:

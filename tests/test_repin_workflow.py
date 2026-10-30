@@ -121,11 +121,15 @@ def recheck_source():
     return textwrap.dedent(heredoc.group(1))
 
 
-def recheck(tmp_path, old, new):
+def recheck(tmp_path, old, new, released_new=None):
     (tmp_path / "contracts").mkdir(exist_ok=True)
     (tmp_path / "proposed").mkdir(exist_ok=True)
     (tmp_path / "contracts" / "warden-stack.json").write_text(json.dumps(old), encoding="utf-8")
     (tmp_path / "proposed" / "warden-stack.json").write_text(json.dumps(new), encoding="utf-8")
+    # Stage 5: the re-check reads the released-seats file too (the canary now proposes it beside the manifest).
+    released_old = json.loads((ROOT / "contracts" / "released-seats.json").read_text(encoding="utf-8"))
+    (tmp_path / "contracts" / "released-seats.json").write_text(json.dumps(released_old), encoding="utf-8")
+    (tmp_path / "proposed" / "released-seats.json").write_text(json.dumps(released_new or released_old), encoding="utf-8")
     return subprocess.run([sys.executable, "-c", recheck_source()], cwd=tmp_path, capture_output=True, text=True)
 
 
@@ -229,3 +233,47 @@ def test_the_manifest_the_workflow_can_propose_never_names_a_released_seat(tmp_p
     """The proposing job only moves commits (its re-check refuses a changed set), and repin refuses a manifest that
     names a released seat, so the automation cannot put one back."""
     assert not {n.casefold() for n in MANIFEST["repos"]} & {n.casefold() for n in RELEASED}
+
+
+# ---------------------------------------------------------------------------
+# Stage 5: the released-seats file is re-pinned by the same job, from the released repositories' own folder.
+# ---------------------------------------------------------------------------
+
+def test_the_canary_reads_the_released_repositories_into_their_own_folder_and_repins_the_file_from_them():
+    block = job("canary")
+    assert 'seats = json.load(open("hub/contracts/released-seats.json", encoding="utf-8"))["repos"]' in block
+    assert 'f"released/{name}"' in block and "path: stack/" + "DRAFTER" not in block
+    assert "python -m cns_composition.repin --stack ../stack --released ../released --manifest contracts/warden-stack.json" in block
+    assert block.index("released/{name}") < block.index("cns_composition.repin")
+    assert "git diff --quiet -- contracts/warden-stack.json contracts/install-stack.txt contracts/released-seats.json" in block
+    assert "cp hub/contracts/released-seats.json proposed/released-seats.json" in block
+
+
+def test_the_proposing_job_re_checks_the_released_file_and_commits_it_with_the_manifest():
+    block = job("propose")
+    assert 'released_new["schema"] == released_old["schema"]' in block
+    assert "the set of released repositories changed" in block and "a released commit is not a full commit" in block
+    assert "cp proposed/released-seats.json contracts/released-seats.json" in block
+    assert "git add contracts/warden-stack.json contracts/install-stack.txt contracts/released-seats.json" in block
+
+
+def test_the_released_repositories_are_never_checked_out_as_actions_or_into_the_stack():
+    block = job("canary")
+    for name in RELEASED:
+        assert f"repository: ${{{{ github.repository_owner }}}}/{name}" not in block
+        assert f"path: stack/{name}" not in block
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda r: {**r, "schema": "released-seats/2"}, "released-seats schema"),
+    (lambda r: {**r, "repos": {**r["repos"], "EXTRA": "f" * 40}}, "set of released repositories"),
+    (lambda r: {**r, "repos": dict(reversed(list(r["repos"].items())))}, "set of released repositories"),
+    (lambda r: {**r, "repos": {**r["repos"], "DRAFTER": "abc1234"}}, "released commit is not a full commit"),
+    (lambda r: {**r, "note": "smuggled"}, "top-level field of the released-seats file"),
+])
+def test_the_recheck_refuses_a_released_file_that_is_anything_but_a_commit_move(tmp_path, edit, why):
+    released = json.loads((ROOT / "contracts" / "released-seats.json").read_text(encoding="utf-8"))
+    moved_released = {**released, "repos": {n: "e" * 40 for n in released["repos"]}}
+    assert recheck(tmp_path, MANIFEST, moved(MANIFEST), moved_released).returncode == 0
+    done = recheck(tmp_path, MANIFEST, moved(MANIFEST), edit(moved_released))
+    assert done.returncode != 0 and why in done.stderr

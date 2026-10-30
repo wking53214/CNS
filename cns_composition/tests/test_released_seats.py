@@ -6,6 +6,8 @@ read them from a separate `--consumers` folder, so Warden's stack folder holds o
 """
 
 import json
+import shutil
+import subprocess
 
 import pytest
 
@@ -178,3 +180,114 @@ def test_cns_versions_fails_when_a_released_seat_was_not_read(tmp_path, capsys):
     argv = ["--stack", str(stack), "--consumers", str(consumers), "--manifest", str(manifest), "--table", str(table)]
     assert cv.main(argv) == 2
     assert "BURNISH" in capsys.readouterr().err
+
+
+# ------------------------------------------------ the file is written by repin and compared by seat_pins (Stage 5)
+# Nothing wrote contracts/released-seats.json and nothing compared its commits with a checkout, so it was a hand-kept
+# list of 40-character strings. `repin --released DIR` now re-pins it from the released repositories' HEADs, the way it
+# re-pins the manifest, and `seat_pins --consumers DIR` compares each git checkout in DIR with the file.
+
+IDENT = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+
+
+def git(folder, *args):
+    return subprocess.run(["git", *IDENT, "-C", str(folder), *args], capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def repo(folder, extra=""):
+    folder.mkdir(parents=True, exist_ok=True)
+    git(folder, "init", "-q")
+    (folder / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\ndependencies = []\n' + extra,
+                                           encoding="utf-8")
+    git(folder, "add", "-A")
+    git(folder, "commit", "-q", "-m", "c")
+    return git(folder, "rev-parse", "HEAD")
+
+
+def scene(tmp_path):
+    """A stack of two circuit repositories pinned at their heads, three released repositories recorded at old commits,
+    and the released repositories' checkouts at newer heads."""
+    stack, released = tmp_path / "stack", tmp_path / "released"
+    heads = {name: repo(stack / name) for name in ("JUDGE", "WARDEN")}
+    manifest = write_json(tmp_path / "contracts" / "warden-stack.json",
+                          {"schema": "warden-stack/1", "contract": "1", "repos": heads})
+    write_json(tmp_path / "contracts" / "released-seats.json",
+               {"schema": "released-seats/1", "repos": {"DRAFTER": A, "BURNISH": A, "WATCHER_MCU": B}})
+    new = {name: repo(released / name) for name in ("DRAFTER", "BURNISH", "WATCHER_MCU")}
+    return stack, released, manifest, new
+
+
+def test_repin_with_released_writes_the_file_from_the_checkouts_heads_and_keeps_its_order(tmp_path, capsys):
+    stack, released, manifest, new = scene(tmp_path)
+    assert repin.main(["--stack", str(stack), "--released", str(released), "--manifest", str(manifest)]) == 0
+    data = json.loads((tmp_path / "contracts" / "released-seats.json").read_text(encoding="utf-8"))
+    assert data == {"schema": "released-seats/1", "repos": new}
+    assert list(data["repos"]) == ["DRAFTER", "BURNISH", "WATCHER_MCU"]
+    out = capsys.readouterr().out
+    assert "DRAFTER: " in out and "wrote 3 released commit(s)" in out
+
+
+def test_check_counts_a_stale_released_file_and_writes_nothing(tmp_path, capsys):
+    stack, released, manifest, _ = scene(tmp_path)
+    before = (tmp_path / "contracts" / "released-seats.json").read_text(encoding="utf-8")
+    assert repin.main(["--stack", str(stack), "--released", str(released), "--manifest", str(manifest), "--check"]) == 1
+    assert "3 pin(s) are stale" in capsys.readouterr().err
+    assert (tmp_path / "contracts" / "released-seats.json").read_text(encoding="utf-8") == before
+
+
+def test_a_second_run_finds_every_pin_current(tmp_path, capsys):
+    stack, released, manifest, _ = scene(tmp_path)
+    assert repin.main(["--stack", str(stack), "--released", str(released), "--manifest", str(manifest)]) == 0
+    capsys.readouterr()
+    assert repin.main(["--stack", str(stack), "--released", str(released), "--manifest", str(manifest), "--check"]) == 0
+    assert "every pin is current" in capsys.readouterr().out
+
+
+def test_without_released_the_file_is_left_alone_and_the_run_says_it_did_not_compare_it(tmp_path, capsys):
+    stack, _, manifest, _ = scene(tmp_path)
+    before = (tmp_path / "contracts" / "released-seats.json").read_text(encoding="utf-8")
+    assert repin.main(["--stack", str(stack), "--manifest", str(manifest)]) == 0
+    assert (tmp_path / "contracts" / "released-seats.json").read_text(encoding="utf-8") == before
+    assert "released-seats.json was not compared" in capsys.readouterr().out
+
+
+def test_a_missing_released_checkout_is_exit_two_and_nothing_is_written(tmp_path, capsys):
+    stack, released, manifest, _ = scene(tmp_path)
+    shutil.move(str(released / "BURNISH"), str(tmp_path / "elsewhere"))   # the checkout is not in the folder
+    before = (tmp_path / "contracts" / "released-seats.json").read_text(encoding="utf-8")
+    assert repin.main(["--stack", str(stack), "--released", str(released), "--manifest", str(manifest)]) == 2
+    assert "BURNISH" in capsys.readouterr().err
+    assert (tmp_path / "contracts" / "released-seats.json").read_text(encoding="utf-8") == before
+
+
+def test_released_text_keeps_the_schema_and_refuses_a_missing_commit():
+    text = json.dumps({"schema": "released-seats/1", "repos": {"DRAFTER": A}}, indent=2) + "\n"
+    assert json.loads(repin.released_text(text, {"DRAFTER": B})) == {"schema": "released-seats/1", "repos": {"DRAFTER": B}}
+    with pytest.raises(repin.RepinError, match="no commit was given for: DRAFTER"):
+        repin.released_text(text, {})
+
+
+def test_seat_pins_names_a_released_checkout_that_is_not_at_the_recorded_commit(tmp_path, capsys):
+    stack, released, manifest, new = scene(tmp_path)
+    # the file records what the checkouts are at, except for WATCHER_MCU
+    write_json(tmp_path / "contracts" / "released-seats.json",
+               {"schema": "released-seats/1", "repos": {**new, "WATCHER_MCU": B}})
+    code = sp._main(["--stack", str(stack), "--manifest", str(manifest), "--consumers", str(released)])
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "WATCHER_MCU is checked out at" in err and B[:12] in err and "DRAFTER" not in err
+
+
+def test_seat_pins_is_satisfied_when_every_released_checkout_is_at_the_recorded_commit(tmp_path, capsys):
+    stack, released, manifest, new = scene(tmp_path)
+    write_json(tmp_path / "contracts" / "released-seats.json", {"schema": "released-seats/1", "repos": new})
+    assert sp._main(["--stack", str(stack), "--manifest", str(manifest), "--consumers", str(released)]) == 0
+
+
+def test_seat_pins_does_not_compare_a_released_folder_that_is_not_a_git_checkout(tmp_path):
+    stack, released, manifest, new = scene(tmp_path)
+    plain = tmp_path / "plain"
+    for name in new:
+        put(plain, name)
+    assert sp._main(["--stack", str(stack), "--manifest", str(manifest), "--consumers", str(plain)]) == 0

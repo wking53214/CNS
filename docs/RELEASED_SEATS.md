@@ -65,7 +65,7 @@ behaviour as a result of it. That is no longer true: see the next section.
 names DRAFTER or BURNISH. `contracts/install-stack.txt` is its rendering and installs CNS at `v2.2.0` and those five, and
 no longer installs drafter, burnish or watcher-mcu. The three released repositories are listed in
 `contracts/released-seats.json` (schema `released-seats/1`), each at the commit its CNS pin is read at. That file is
-CNS's own; the `warden-stack/1` schema Warden reads did not change.
+CNS's own; the `warden-stack/1` schema Warden reads did not change. Until 2026-10-30 nothing wrote it and nothing compared its commits with a checkout. `repin --released DIR` now writes it from the released repositories' current branch heads, the way it writes the manifest (the canary job of the repin workflow passes it, and the proposal carries the file with the manifest), and `seat_pins --consumers DIR` compares each git checkout in that folder with the file (`cns_composition/tests/test_released_seats.py`).
 
 They are still consumers of CNS, and are still checked as such: the link ledger lists them (DRAFTER and BURNISH cite the
 released-seats file as their `from_cns` proof, WATCHER_MCU keeps `cns_composition/watcher_oath.py`), and the `stack` and
