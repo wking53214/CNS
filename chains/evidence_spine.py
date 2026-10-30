@@ -426,7 +426,7 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
 
     CCC judges `ccc` (by default, the document HERALD read) against `system` (by default, an empty store)."""
     steps = [("HERALD", HeraldSourceGate(), read.document),
-             ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True), root),
+             ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True), root),
              ("Governance_Gateway", GatewayGate(), entry),
              ("CCC", CccGate(CCCSystem() if system is None else system),
               ccc or ccc_ingest(read.document.text, read.document.source_id)),
@@ -864,7 +864,7 @@ def dropped_agreement_is_refused() -> str:
     read = herald(INVOICE, "doc-1")
     evidence, _ = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
-    seats = [("HERALD", HeraldSourceGate()), ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True)),
+    seats = [("HERALD", HeraldSourceGate()), ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True)),
              ("Governance_Gateway", GatewayGate()), ("CCC", CccGate(CCCSystem())),
              ("HERALD", HeraldConfidenceGate(read.gate, document=read.document))]
     try:
