@@ -151,8 +151,8 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
-    assert sum(name.startswith("GAP: ") for name in names) == 1
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 24
+    assert sum(name.startswith("GAP: ") for name in names) == 2
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 25
 
 
 def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
@@ -168,6 +168,18 @@ def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_aga
     assert not set(policy["WRITES_A_DOCUMENT"]) & set(policy["WRITES_NO_DOCUMENT"])
     text = EVIDENCE.read_text(encoding="utf-8")
     assert "ccc_doors_all_named()" in text and "def ccc_gated_doors" in text and "__wrapped__" in text
+
+
+def test_the_evidence_script_builds_its_kernel_with_an_evidence_guard_that_checks_where_a_record_came_from():
+    """The evidence guard is policy, pinned here so changing what it checks is a change made in review. A decision
+    guard cannot do this job (the evidence must exist before any decision does), so the guard checks provenance."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    guard = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "tie_evidence_guard")
+    body = ast.get_source_segment(text, guard)
+    for required in ("evidence_id in produced", "EvidenceKind.SOURCE_OBSERVATION", '"source_id"', '"source_sha256"'):
+        assert required in body, required
+    assert "evidence_guard=tie_evidence_guard(" in text
 
 
 def _chain_imports():

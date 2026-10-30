@@ -45,6 +45,11 @@ tagged: `contracts/cns-releases.json` keeps `current` at `v2.2.0` and the floor 
 - `CccRecordGate(..., attestation_key=...)`: with a key, the admission door does not take "held" on the store's word;
   it checks a stamp the handoff wrote (`StampLookup.stamps`, `handoff_stamp`), pinned by
   `contracts/handoff-stamp-vectors.json`. Without a key nothing changes (CNS-013, `b5a3608`).
+- The spine builds its kernel with Conservation_Kernel's new `evidence_guard`: `tie_evidence_guard` takes an evidence
+  record only if TIE produced its id from the verified export of the document, it is a source observation, and it
+  names that source and the SHA-256 of that text. One scenario holds forged, other-document, other-source and
+  other-kind records refused; a second recorded GAP states that a kernel built without the guard takes any evidence
+  (the SEAM HOLDS count in `tests/test_chains.py` went from 24 to 25 and the GAP count from 1 to 2 under rule 5).
 
 ### Changed
 

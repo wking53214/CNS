@@ -46,6 +46,17 @@ registers a root, and a scenario records that as the one GAP left: the guard pro
 kernels refuse to be built that way unless the builder passes `allow_unguarded_roots=True`, which this script does
 only for that scenario, so the gap is reachable only by saying so.
 
+THE EVIDENCE: A PERMISSION THAT CHECKS WHERE A RECORD CAME FROM
+
+The kernel's registry holds the evidence a root cites, and the root seat checks that a citation exists, so the
+evidence has to be added before the roster can decide. No decision exists yet, so a decision guard cannot be the
+permission here. The kernel is built with `evidence_guard=tie_evidence_guard(...)` instead: it takes a record only if
+TIE produced its id from the verified export of this document, it is a source observation, and it names this source
+and this text's SHA-256. A record TIE never produced, one carrying another document's text or source, or one of
+another kind is refused, and a FACT root citing the forged id is then not admissible. This guard is not spent by a yes,
+because one document gives TIE many records. It checks provenance, not a person's approval. A kernel built without an
+evidence guard takes any evidence, and a scenario records that as the second GAP.
+
 Two other seams are closed in the repositories themselves, and the scenarios check them from here. The kernel refuses a
 root stated as FACT that cites no evidence. A person's sign-off at HERALD reaches TIE on its own path
 (`signoffs_from_herald_export`), naming who confirmed it, why and when, apart from machine readings. HERALD's
@@ -97,6 +108,7 @@ from conservation_kernel import Actor, Artifact as RootArtifact, ConservationKer
 from conservation_kernel.cns_connector import CnsRootAdmissionGate
 from conservation_kernel.enums import EpistemicStatus as RootStatus
 from conservation_kernel.enums import EvidenceKind, OriginStatus
+from conservation_kernel.errors import InvalidEvent
 from governance_gateway.cns_connector import CnsGate as GatewayGate
 from governance_gateway.models import Artifact as DoorArtifact
 from governance_gateway.models import Authority, EpistemicStatus, Scope
@@ -164,19 +176,41 @@ def tie(export: dict, source_id: str, text: str) -> Tuple[list, str]:
         return [], str(exc)
 
 
+def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[EvidenceRecord], bool]:
+    """The kernel's `evidence_guard`: it permits an evidence record only if TIE produced it from this document.
+
+    The evidence has to be in the kernel's registry before the roster can decide (the root seat checks that a root's
+    citations exist), so no decision exists yet and a decision guard cannot be the permission here. What the caller
+    can show instead is where the record came from: its id is one TIE produced from the verified export of `text`
+    (`evidence`), and it says it is a source observation of that source id and of the SHA-256 of that text. A record
+    TIE never produced, one about another document, or one that claims another kind, is refused. Unlike the root
+    guard it is not spent by a yes, because one document gives TIE many records. Policy, like READERS."""
+    produced, digest = {record.evidence_id for record in evidence}, sha256(text)
+
+    def permits(record: EvidenceRecord) -> bool:
+        return (record.evidence_id in produced and record.kind is EvidenceKind.SOURCE_OBSERVATION
+                and record.detail.get("source_id") == source_id and record.detail.get("source_sha256") == digest)
+
+    return permits
+
+
 def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = RootStatus.INFERENCE,
                 cite_evidence: bool = True, guard: Optional[DecisionGuard] = None,
-                unguarded: bool = False) -> Tuple[ConservationKernel, RootArtifact]:
+                unguarded: bool = False, evidence_guarded: bool = True) -> Tuple[ConservationKernel, RootArtifact]:
     """The caller's step from TIE evidence to a kernel root. No repository ships this; it is written here.
 
     The kernel is built with a guard (the one given, else a fresh one that nothing opens): it registers a root only
-    when the guard says so. `unguarded=True` builds the kernel without one, which registers any root it admits."""
-    kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded)
+    when the guard says so. `unguarded=True` builds the kernel without one, which registers any root it admits. It is
+    also built with an evidence guard (`tie_evidence_guard`), so its registry takes only the evidence TIE produced
+    from this document; `evidence_guarded=False` builds it without one, which takes any evidence at all."""
+    kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded,
+                                evidence_guard=tie_evidence_guard(evidence, source_id, text) if evidence_guarded else None)
     propositions = []
     for n, record in enumerate(evidence):
         pid = f"p{n}"
         kernel.registry.add_evidence(EvidenceRecord(evidence_id=record.evidence_id, subject_id=pid,
-                                                    kind=EvidenceKind.SOURCE_OBSERVATION, provided_by=Actor.model("herald")))
+                                                    kind=EvidenceKind.SOURCE_OBSERVATION, provided_by=Actor.model("herald"),
+                                                    detail={"source_id": source_id, "source_sha256": sha256(text)}))
         propositions.append(Proposition(proposition_id=pid, text=record.statement, epistemic_status=status,
                                         origin=OriginStatus.MACHINE_ORIGINATED,
                                         evidence_refs=(record.evidence_id,) if cite_evidence else (),
@@ -483,6 +517,68 @@ def root_from_unread_source() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     kernel, root = kernel_root([], "doc-never-read", "The invoice came to $41,200.00.")
     return facts(decide(read, kernel, root, door(root, "doc-never-read")), [], "")
+
+
+def refused_by_evidence_guard(call: Callable[[], object]) -> bool:
+    """Run a direct add of evidence: True if the kernel's evidence guard refused it, False if it went in."""
+    try:
+        call()
+        return False
+    except InvalidEvent as exc:
+        return "evidence guard did not authorize" in str(exc)
+
+
+def evidence_record(evidence_id: str, source_id: str, text: str, kind: EvidenceKind = EvidenceKind.SOURCE_OBSERVATION,
+                    subject: str = "p0") -> EvidenceRecord:
+    """An evidence record as `kernel_root` writes one, with every part open to change."""
+    return EvidenceRecord(evidence_id=evidence_id, subject_id=subject, kind=kind, provided_by=Actor.model("herald"),
+                          detail={"source_id": source_id, "source_sha256": sha256(text)})
+
+
+def evidence_not_from_tie() -> Dict[str, object]:
+    """Evidence added straight to a kernel's registry by a caller, when the kernel carries the evidence guard.
+
+    The guard knows the evidence TIE produced from the true invoice. A record with an id TIE never produced, one that
+    carries a real TIE id but the inflated invoice's text, one that names another source, and one that claims another
+    kind are each refused; the honest record goes in. Then a root stated as FACT that cites the forged id is judged by
+    the kernel, which finds nothing behind the citation."""
+    read = herald(INVOICE, "doc-1")
+    evidence, _ = tie(read.export, "doc-1", INVOICE)
+    honest = evidence[0].evidence_id
+    kernel = ConservationKernel(root_guard=fresh_guard(), evidence_guard=tie_evidence_guard(evidence, "doc-1", INVOICE))
+    forged = lambda: kernel.registry.add_evidence(evidence_record("forged-1", "doc-1", INVOICE))  # noqa: E731
+    other_text = lambda: kernel.registry.add_evidence(evidence_record(honest, "doc-1", INFLATED))  # noqa: E731
+    other_source = lambda: kernel.registry.add_evidence(evidence_record(honest, "doc-7", INVOICE))  # noqa: E731
+    other_kind = lambda: kernel.registry.add_evidence(evidence_record(honest, "doc-1", INVOICE, EvidenceKind.CITATION))  # noqa: E731
+    refusals = [refused_by_evidence_guard(call) for call in (forged, other_text, other_source, other_kind)]
+    held_before = len(kernel.registry.snapshot()["evidence"])
+    kernel.registry.add_evidence(evidence_record(honest, "doc-1", INVOICE))
+    chain_kernel, _ = kernel_root(evidence, "doc-1", INVOICE)
+    chain_refused = refused_by_evidence_guard(
+        lambda: chain_kernel.registry.add_evidence(evidence_record("forged-1", "doc-1", INVOICE)))
+    return {"evidence_refused": refusals, "evidence_held_after_refusals": held_before,
+            "honest_record_accepted": kernel.registry.evidence(honest) is not None,
+            "kernel_the_chain_builds_refuses_forged": chain_refused,
+            "fact_root_citing_forged_admissible": not kernel.admit_root(fact_root_citing("forged-1"))}
+
+
+def fact_root_citing(evidence_id: str) -> RootArtifact:
+    """A root stated as FACT about the true invoice that cites one piece of evidence by id."""
+    proposition = Proposition(proposition_id="p0", text="The invoice came to $412.00.", epistemic_status=RootStatus.FACT,
+                              origin=OriginStatus.MACHINE_ORIGINATED, evidence_refs=(evidence_id,), source_refs=("doc-1",))
+    return RootArtifact(artifact_id="root:doc-1", content=INVOICE, propositions=(proposition,),
+                        producer=Actor.system("tie"))
+
+
+def evidence_unguarded_accepts_anything() -> Dict[str, object]:
+    """The same forged record, added directly to a kernel built without the evidence guard."""
+    read = herald(INVOICE, "doc-1")
+    evidence, _ = tie(read.export, "doc-1", INVOICE)
+    kernel, _ = kernel_root(evidence, "doc-1", INVOICE, evidence_guarded=False)
+    refused = refused_by_evidence_guard(lambda: kernel.registry.add_evidence(evidence_record("forged-1", "doc-1", INVOICE)))
+    return {"has_evidence_guard": kernel.has_evidence_guard, "forged_evidence_refused": refused,
+            "forged_evidence_held": kernel.registry.evidence("forged-1") is not None,
+            "fact_root_citing_forged_admissible": not kernel.admit_root(fact_root_citing("forged-1"))}
 
 
 def fact_without_evidence() -> Dict[str, object]:
@@ -860,10 +956,18 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      {**HELD, "guard_opened": True, "ccc_finding_doors_refused": [True, True, True, True], "ccc_findings_written": 0,
       "ccc_audit_events": 0, "ccc_ingest_refused": False, "ccc_artifacts_after_ingest": 1,
       "ccc_findings_after_ingest": 0}),
+    ("SEAM HOLDS: a caller adds evidence TIE never produced, evidence with the inflated text, with another source, or of another kind to a kernel built with the evidence guard; each is refused, the honest record goes in, and a FACT root citing the forged id is not admissible",
+     evidence_not_from_tie,
+     {"evidence_refused": [True, True, True, True], "evidence_held_after_refusals": 0, "honest_record_accepted": True,
+      "kernel_the_chain_builds_refuses_forged": True, "fact_root_citing_forged_admissible": False}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
       "kernel_registered_after_refusal": True, "refused_by_guard": False}),
+    ("GAP: a kernel built without the evidence guard and called directly takes evidence TIE never produced, and a FACT root citing it is admissible",
+     evidence_unguarded_accepts_anything,
+     {"has_evidence_guard": False, "forged_evidence_refused": False, "forged_evidence_held": True,
+      "fact_root_citing_forged_admissible": True}),
 ]
 
 
