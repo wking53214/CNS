@@ -288,3 +288,17 @@ def test_negative_zero_digests_the_same_as_zero():
     different digests, or a verdict stops binding to content that did not
     change."""
     assert subject_digest({"d": -0.0}) == subject_digest({"d": 0.0})
+
+
+@pytest.mark.parametrize("key", [1, 1.5, None, True, ("a",), b"a"])
+def test_a_mapping_key_that_is_not_text_is_a_type_error_before_any_lookup(key):
+    """Documented as TypeError; it used to be a KeyError for {1: "a"}, which a caller catching TypeError missed."""
+    with pytest.raises(TypeError, match="keys must be text"):
+        subject_digest({key: "a"})
+    with pytest.raises(TypeError, match="keys must be text"):
+        subject_digest({"outer": {key: "a"}})
+
+
+def test_a_text_key_that_looks_like_a_number_still_digests_as_text():
+    assert subject_digest({"1": "a"}) == subject_digest({"1": "a"})
+    assert len(subject_digest({"1": "a"})) == 64

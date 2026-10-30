@@ -272,6 +272,10 @@ def _canonical(value: Any) -> str:
     if isinstance(value, str):
         return f"s:{len(value)}:{value}"
     if isinstance(value, Mapping):
+        if any(not isinstance(k, str) for k in value.keys()):
+            # Checked before any lookup: {1: "a"} would otherwise fail with KeyError, and a mapping that answered
+            # the lookup would render the same as {"1": "a"}.
+            raise TypeError("mapping keys must be text")
         items = sorted((str(k) for k in value.keys()))
         if len(set(items)) != len(items):
             raise TypeError("mapping keys collide once stringified")
