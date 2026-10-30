@@ -71,7 +71,9 @@ function decider() {
     try {
       if (Object.keys(env.body).sort().join() !== "disclosure,terms_digest") throw new U.Refused("terms", "an accept is exactly terms_digest and disclosure");
       if (env.body.terms_digest !== U.termsDigest(terms)) throw new U.Refused("terms", "the accept does not agree to the terms offered");
-      seen = U.openDisclosure(terms.subject.digest, env.body.disclosure, terms.disclose);
+      if (terms.disclose.length) seen = U.openDisclosure(terms.subject.digest, env.body.disclosure, terms.disclose);
+      else if (env.body.disclosure !== null) throw new U.Refused("disclosure", "the terms disclose nothing, so the accept's disclosure must be null");
+      else seen = {};
     } catch (e) { return out(refuse(env, e)); }
     const j = judge(seen);
     return out(U.issueDecision(me, env, terms, j.verdict, { reasons: j.reasons, evidence: j.verdict === "pass" ? j.evidence : {} }));
@@ -96,7 +98,7 @@ function requester() {
       ledger.spend(env.from, env.id);
       if (env.kind === "refuse") return out({ uai_result: { declined: env.body.reasons } });
       terms = U.checkTerms(env.body.terms, req, { decider, requester: me.agent });
-      accept = U.seal(me, "accept", { terms_digest: U.termsDigest(terms), disclosure: document.reveal(terms.disclose) }, { to: decider, replyTo: env, ttlMs: TTL });
+      accept = U.seal(me, "accept", { terms_digest: U.termsDigest(terms), disclosure: terms.disclose.length ? document.reveal(terms.disclose) : null }, { to: decider, replyTo: env, ttlMs: TTL });
       return out(accept);
     }
     const got = U.verifyDecision(wire, { terms, acceptDigest: U.envelopeDigest(accept), ledger });

@@ -33,6 +33,11 @@ not a release.
   `interop/demo.py`, which runs Python and Node against each other in both directions, with a third process acting
   once on the result. `docs/interop/SCORECARD.md` maps it to the 2026-10-30 assessment and lists the ten findings
   of an independent review made before merge, all fixed and kept as tests.
+- The evidence spine carries the roster's approval across the process boundary: four PORTABLE scenarios in
+  `chains/evidence_spine.py` sign the SuperGate decision with UAI-1 and give the kernel and CCC a
+  `RemoteDecisionGuard`, with `interop/act.py` as a second process sharing the ledger, and a third GAP records that
+  single use holds per shared ledger. `Requester.request_judgment` asks for a judgment of a document the decider
+  already holds, disclosing nothing.
 
 ## [2.3.0] - 2026-10-30 (not yet tagged)
 

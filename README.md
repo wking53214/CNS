@@ -51,12 +51,18 @@ seat judged the same document (`same_subject`), and turns an approved decision i
 (`DecisionGuard`) that the kernel needs to register a root and CCC needs to write. A refused decision, or one written
 by hand, opens nothing.
 
+The same approval also leaves the process. In the PORTABLE scenarios the roster signs its decision as a UAI-1
+message (`cns_interop`), and the kernel and CCC act on it through a `RemoteDecisionGuard` that holds only the
+roster's public identity, the identity it acts for and a shared ledger file, so a separate program can check the
+approval and spend it once. Neither the kernel nor CCC changed.
+
 The script then breaks the run at each seam (a document relabelled, an inflated invoice, an export edited after it was
 signed, a decision copied by hand, a direct write after a "no") and states what must happen. A seam that holds is a
 scenario that must keep holding. A seam that nothing checks is stated as a GAP, an assertion and not a skip, so the day
-a repository starts checking it the script goes red and the fact is updated on purpose. Two GAPs are recorded: a
-kernel built without its root guard and called directly registers a root the roster refused, and a kernel built
-without its evidence guard takes evidence TIE never produced. The `chains` workflow runs the spine every day and on pull requests that
+a repository starts checking it the script goes red and the fact is updated on purpose. Three GAPs are recorded: a
+kernel built without its root guard and called directly registers a root the roster refused, a kernel built
+without its evidence guard takes evidence TIE never produced, and a process acting on a signed approval with a
+ledger of its own (not the shared one) accepts an approval already spent. The `chains` workflow runs the spine every day and on pull requests that
 touch the decision core; "Where the six spine repositories stand" below gives its latest result. The spine does not
 cover ZTS, sentinel_os or GSA-815, and it speaks for CCC only as far as CCC's gate and write permission go.
 

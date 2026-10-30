@@ -32,6 +32,8 @@ on:
       - cns_composition/repo_gates.py
       - cns_composition/spine_trace.py
       - cns_composition/super_gate.py
+      - cns_interop/**
+      - interop/act.py
       - .github/workflows/chains.yml
 
 permissions: {}

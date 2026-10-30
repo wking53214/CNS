@@ -143,7 +143,7 @@ def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repo
     tree = ast.parse(text)
     assert "SCENARIOS" in text and "return 1 if" in text and "raise SystemExit(main())" in text
     imported = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-    assert imported == {"__future__", "ccc", "cns", "cns_composition", "conservation_kernel", "governance_gateway", "herald", "tie", "typing"}
+    assert imported == {"__future__", "ccc", "cns", "cns_composition", "cns_interop", "conservation_kernel", "governance_gateway", "herald", "tie", "typing"}
 
 
 def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact():
@@ -151,8 +151,18 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
-    assert sum(name.startswith("GAP: ") for name in names) == 2
+    assert sum(name.startswith("GAP: ") for name in names) == 3
     assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 26
+
+
+def test_the_evidence_script_carries_the_roster_decision_across_the_process_boundary():
+    """The PORTABLE scenarios: the roster's decision signed with UAI-1 and acted on by a RemoteDecisionGuard."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
+             and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
+    assert sum(name.startswith("PORTABLE: ") for name in names) == 4
+    assert "RemoteDecisionGuard(" in text and "request_judgment(" in text and "interop" in text
 
 
 def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
