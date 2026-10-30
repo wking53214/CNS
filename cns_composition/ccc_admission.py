@@ -35,6 +35,10 @@ for that source, id and fingerprint. The answer decides the verdict:
                                 what arrived is not what was recorded
     erased     TERMINAL_BREACH  a human erased it; nothing brings it back
     redacted   TERMINAL_BREACH  a human redacted it
+    rejected   TERMINAL_BREACH  a human rejected this text
+    superseded TERMINAL_BREACH  CCC holds a newer version; this text is the old one
+    unattested TERMINAL_BREACH  the lookup checks the handoff's stamp, and no
+                                record of this item carries a valid one
     anything   TERMINAL_BREACH  an answer this module does not recognise is
     else                        never read as permission
 
@@ -81,6 +85,12 @@ _VERDICTS = {
                 "CCC recorded this item with different text; what arrived is not what was recorded"),
     "erased": (GateOutcome.TERMINAL_BREACH, "a human erased this item in CCC"),
     "redacted": (GateOutcome.TERMINAL_BREACH, "a human redacted this item in CCC"),
+    "rejected": (GateOutcome.TERMINAL_BREACH, "a human rejected this text in CCC"),
+    "superseded": (GateOutcome.TERMINAL_BREACH,
+                   "CCC holds a newer version of this item; this text is the old one"),
+    "unattested": (GateOutcome.TERMINAL_BREACH,
+                   "no CCC record of this item carries the handoff's stamp; an unstamped record is never "
+                   "read as permission"),
 }
 
 

@@ -5,7 +5,7 @@
 > it were removed when innovation_os was retired. This report is kept as the
 > record of what was built and describes the state before that removal. The
 > core chain is now SWIZZLE, ghost_tools and WIZZLE, with no core translation
-> rules. See `LIBRARY_COMPOSITION_GUIDE.md` for the current shape.
+> rules. See `docs/history/LIBRARY_COMPOSITION_GUIDE.md` for the current shape.
 
 ## Completed Work
 
@@ -56,7 +56,7 @@ All translation rules registered via `register_core_translation_rules()`:
 **Key Achievement**: Full end-to-end validation of library-wide orchestration.
 
 ### 5. Documentation (COMPLETED)
-- **File**: `LIBRARY_COMPOSITION_GUIDE.md` (380 lines)
+- **File**: `docs/history/LIBRARY_COMPOSITION_GUIDE.md` (380 lines)
 - **Status**: Committed and pushed
 - **Content**:
   - Architecture overview with diagram
@@ -244,7 +244,7 @@ if not converged:
 | `cns_composition/compose_library.py` | 343 | ✅ Committed | Generic orchestration engine |
 | `cns_composition/adapters.py` | 270 | ✅ Committed | Core system adapter implementations |
 | `Tests/test_library_composition.py` | 421 | ✅ Committed | Comprehensive test suite (21 passing) |
-| `LIBRARY_COMPOSITION_GUIDE.md` | 380 | ✅ Committed | Usage guide and scaling patterns |
+| `docs/history/LIBRARY_COMPOSITION_GUIDE.md` | 380 | ✅ Committed | Usage guide and scaling patterns |
 | `COMPOSITION_IMPLEMENTATION_STATUS.md` | This file | Documentation | Current status and roadmap |
 
 **Total new code**: 1,414 lines across 4 files
