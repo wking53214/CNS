@@ -79,10 +79,17 @@ class CanaryResult:
     ok: bool
     decision: str
     reason: str
+    #: True when the canary could not be set up (no stack folder, a checkout or a module missing, no interpreter): the
+    #: question was not asked, which the command reports as exit 2, not as the exit 1 of "the circuit did not ACCEPT".
+    unusable: bool = False
 
 
 def _fail(decision: str, reason: str) -> CanaryResult:
     return CanaryResult(ok=False, decision=decision, reason=reason)
+
+
+def _unusable(reason: str) -> CanaryResult:
+    return CanaryResult(ok=False, decision="CANARY_ERROR", reason=reason, unusable=True)
 
 
 def _folder(stack: Path, name: str) -> Optional[Path]:
@@ -155,22 +162,22 @@ def run_canary(stack: Path, cns: Path, *, python: Optional[str] = None,
     """Run the whole circuit over `stack` with the manifest from `cns`; say whether it ended ACCEPT."""
     stack, cns = Path(stack), Path(cns)
     if not stack.is_dir():
-        return _fail("CANARY_ERROR", f"the stack folder {str(stack)!r} does not exist")
+        return _unusable(f"the stack folder {str(stack)!r} does not exist")
     paths: List[str] = []
     for name in _IMPORTED:
         found = _folder(stack, name)
         if found is None:
-            return _fail("CANARY_ERROR", f"the stack folder has no {name} checkout")
+            return _unusable(f"the stack folder has no {name} checkout")
         paths.append(str(found))
     paths.append(str(cns))
     try:
         missing = _missing_modules(python or sys.executable)
     except (OSError, subprocess.SubprocessError) as err:
-        return _fail("CANARY_ERROR", f"the interpreter could not be started: {type(err).__name__}")
+        return _unusable(f"the interpreter could not be started: {type(err).__name__}")
     if missing:
-        return _fail("CANARY_ERROR",
-                     f"this interpreter cannot import {', '.join(missing)} without PYTHONPATH, and the circuit's "
-                     "instruments do not inherit PYTHONPATH; install them (pip install pytest numpy matplotlib . from a CNS checkout)")
+        return _unusable(f"this interpreter cannot import {', '.join(missing)} without PYTHONPATH, and the circuit's "
+                         "instruments do not inherit PYTHONPATH; install them (pip install pytest numpy matplotlib . "
+                         "from a CNS checkout)")
     env: Dict[str, str] = {**os.environ, "PYTHONPATH": os.pathsep.join(paths)}
     with tempfile.TemporaryDirectory(prefix="circuit-canary-") as tmp:
         try:
@@ -220,7 +227,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
         print("circuit canary: ACCEPT")
         return 0
     print(f"circuit canary: {result.decision}: {result.reason}", file=sys.stderr)
-    return 1
+    return 2 if result.unusable else 1
 
 
 def main(argv: Optional[List[str]] = None) -> int:

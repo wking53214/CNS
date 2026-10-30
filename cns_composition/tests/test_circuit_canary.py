@@ -216,3 +216,29 @@ def test_the_claimed_commit_is_one_ordinary_code_change_on_a_side_branch_and_the
     facts = json.loads(run(stack, tmp_path).reason)
     assert facts["files"] == "shapes/area.py" and facts["parents"] == "1"
     assert facts["dirty"] == "" and facts["head_is_parent"] is True and facts["branch"] != "claimed-change"
+
+
+# -- exit codes: 1 is "the circuit did not ACCEPT", 2 is "the canary could not be set up" ---------------------------
+
+def test_a_missing_stack_folder_is_exit_two_not_the_exit_one_of_a_refused_circuit(tmp_path, capsys):
+    assert cc.main(["--stack", str(tmp_path / "absent"), "--cns", str(tmp_path)]) == 2
+    err = capsys.readouterr().err
+    assert "does not exist" in err and "Traceback" not in err
+
+
+def test_a_stack_folder_with_no_checkouts_is_exit_two(tmp_path, capsys):
+    (tmp_path / "stack").mkdir()
+    assert cc.main(["--stack", str(tmp_path / "stack"), "--cns", str(tmp_path)]) == 2
+    assert "has no" in capsys.readouterr().err
+
+
+def test_an_interpreter_that_cannot_import_the_modules_is_exit_two(stack, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cc, "_missing_modules", lambda python, modules=cc._NEEDED: ["pytest"])
+    assert cc.main(["--stack", str(stack), "--cns", str(tmp_path / "cns")]) == 2
+    assert "cannot import pytest" in capsys.readouterr().err
+
+
+def test_a_circuit_that_does_not_accept_is_still_exit_one(stack, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cc, "run_canary", lambda *a, **k: cc.CanaryResult(False, "REJECT", "the suite is red"))
+    assert cc.main(["--stack", str(stack), "--cns", str(tmp_path / "cns")]) == 1
+    assert "REJECT" in capsys.readouterr().err

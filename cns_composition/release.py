@@ -251,6 +251,16 @@ def _main(argv: Optional[List[str]] = None) -> int:
         # Exit 2, "the question could not be answered": there is no tree to check, which is not a finding about one.
         print(f"release: the root {str(args.root)!r} is not a folder, so nothing was checked", file=sys.stderr)
         return 2
+    absent = [name for name in ("pyproject.toml", "cns/__init__.py") if not (args.root / name).is_file()]
+    if absent:
+        # A root with no pyproject.toml is not a CNS checkout (the installed wheel carries neither it nor contracts/).
+        # Nothing was checked, which is not a finding about a tree: exit 2 with one line, never a raw [Errno 2] and exit 1.
+        why = ("contracts/ is not beside this package: this is an installed wheel, not a checkout, and the maintenance "
+               "tools run from a CNS checkout" if args.root == ROOT and not delivery.CONTRACTS.is_dir()
+               else "pass --root a CNS checkout")
+        print(f"release: the root {str(args.root)!r} is not a CNS checkout ({', '.join(absent)} not found): {why}",
+              file=sys.stderr)
+        return 2
     if args.record:
         try:
             lines = record(args.root, args.record)

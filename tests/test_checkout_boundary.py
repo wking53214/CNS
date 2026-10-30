@@ -36,7 +36,12 @@ def run(installed, tmp_path, *args):
 
 @pytest.mark.parametrize("args", [
     ("cns_composition.seat_pins", "--stack", "."),
+    ("cns_composition.seat_pins", "--stack", ".", "--install", "install.txt"),
+    ("cns_composition.seat_pins", "--stack", ".", "--consumers", "."),
     ("cns_composition.cns_versions", "--stack", "."),
+    ("cns_composition.cns_versions", "--stack", ".", "--spelling", "tag"),
+    ("cns_composition.release", "--check"),
+    ("cns_composition.release",),
     ("cns_composition.repin", "--stack", ".", "--check"),
     ("cns_composition.install_stack", "--check"),
     ("cns_composition.link_ledger",),
@@ -64,4 +69,4 @@ def test_the_two_canaries_take_the_hub_explicitly_and_refuse_one_without_contrac
     (tmp_path / "stack").mkdir()
     for module in ("cns_composition.circuit_canary", "cns_composition.circuit_refusals"):
         done = run(installed, tmp_path, module, "--stack", "stack", "--cns", str(installed))
-        assert done.returncode != 0 and "Traceback" not in done.stderr, module
+        assert done.returncode == 2 and "Traceback" not in done.stderr, (module, done.returncode, done.stderr)
