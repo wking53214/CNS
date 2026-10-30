@@ -138,17 +138,21 @@ def _nothing(stack: Path, hub: Path, manifest: Dict[str, str], env: Dict[str, st
     pass
 
 
-def _add_unnamed_burnish(stack: Path, hub: Path, manifest: Dict[str, str], env: Dict[str, str]) -> None:
+def _add_unnamed_seat(name: str) -> Callable[[Path, Path, Dict[str, str], Dict[str, str]], None]:
     """A checkout of a releasable seat, which the manifest does not name, is put into the stack folder. It is a
-    throwaway repository holding one stub file: Warden refuses the folder before it runs anything in it. BURNISH, not
-    DRAFTER: with the claim seat proposing, Warden 0.16.1 does not use a DRAFTER folder at all (the claim seat holds
-    the option the folder would fill) and so does not refuse it; a BURNISH folder fills the finisher and is refused."""
-    folder = stack / "BURNISH"
-    (folder / "burnish").mkdir(parents=True)
-    (folder / "burnish" / "__init__.py").write_text("", encoding="utf-8")
-    _git(folder, "init", "-q")
-    _git(folder, "add", "-A")
-    _git(folder, "commit", "-q", "-m", "a seat the manifest does not name")
+    throwaway repository holding one stub file: Warden refuses the folder before it runs anything in it. Every case
+    here hands Warden a claimed commit, so the claim seat already holds the option a DRAFTER folder would fill. Warden
+    0.16.1 did not refuse that folder, although its README said it did (found by the 2026-10-30 work here, fixed in
+    Warden 0.16.2, which compares the folder with the manifest before any option is substituted); it did refuse a
+    BURNISH folder, which fills the finisher. Both are cases now."""
+    def apply(stack: Path, hub: Path, manifest: Dict[str, str], env: Dict[str, str]) -> None:
+        folder = stack / name.upper()
+        (folder / name).mkdir(parents=True)
+        (folder / name / "__init__.py").write_text("", encoding="utf-8")
+        _git(folder, "init", "-q")
+        _git(folder, "add", "-A")
+        _git(folder, "commit", "-q", "-m", "a seat the manifest does not name")
+    return apply
 
 
 CASES: Tuple[Case, ...] = (
@@ -170,7 +174,9 @@ CASES: Tuple[Case, ...] = (
     Case("missing_seat", "SWIZZLE is in the manifest but not in the stack folder", _REFUSED, _nothing,
          leave_out=("SWIZZLE",)),
     Case("unnamed_burnish", "a BURNISH checkout is in the stack folder but not in the manifest", _REFUSED,
-         _add_unnamed_burnish),
+         _add_unnamed_seat("burnish")),
+    Case("unnamed_drafter", "a DRAFTER checkout is in the stack folder but not in the manifest, and the claim seat "
+         "proposes", _REFUSED, _add_unnamed_seat("drafter")),
 )
 
 

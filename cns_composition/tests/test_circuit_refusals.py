@@ -42,7 +42,7 @@ for name, pinned in manifest.items():
         out("USAGE_ERROR", 2, f"the stack manifest pins {name!r} to {pinned[:12]}, but the checkout is at {head[:12]}")
 if "drafter" not in folders and "--claim-commit" not in args:
     out("USAGE_ERROR", 2, "this stack has no drafter and nothing to propose; give --claim-commit, --claim-diff or --drafter")
-for used in ("judge", "burnish"):
+for used in ("drafter", "judge", "burnish"):
     if used in folders and used not in {n.lower() for n in manifest}:
         out("USAGE_ERROR", 2, f"the stack manifest does not name {used!r}, yet this run uses it as a seat")
 env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
@@ -146,10 +146,11 @@ def test_no_case_is_refused_for_want_of_a_proposer(circuit, case):
     assert "nothing to propose" not in outcome.reason
 
 
-def test_the_ten_cases_the_decision_record_promises_and_the_two_roster_cases_are_all_here():
+def test_the_ten_cases_the_decision_record_promises_and_the_three_roster_cases_are_all_here():
     assert [c.name for c in cr.CASES] == [
         "dirty_tracked", "dirty_untracked", "omitted_seat", "short_pin", "uppercase_pin", "wrong_commit",
-        "assume_unchanged", "skip_worktree", "global_excludes", "red_suite", "missing_seat", "unnamed_burnish"]
+        "assume_unchanged", "skip_worktree", "global_excludes", "red_suite", "missing_seat", "unnamed_burnish",
+        "unnamed_drafter"]
     assert all(c.expected == cr._REFUSED for c in cr.CASES[:9] + cr.CASES[10:])
     assert cr.CASES[9].expected == frozenset({("INCONCLUSIVE", 6), ("FINISH_REJECTED", 1), ("JUDGE_REJECTED", 1)})
 
