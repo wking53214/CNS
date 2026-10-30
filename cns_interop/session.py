@@ -33,7 +33,7 @@ from .identity import Signer
 from .ledger import Ledger, MemoryLedger
 from .manifest import Capability, Manifest, publish, read_manifest
 from .negotiate import check_terms, propose_terms, read_request, request_body, terms_digest
-from .trust import TrustPolicy
+from .trust import Admission, TrustPolicy
 
 __all__ = ["Judgment", "Judge", "Decider", "Requester"]
 
@@ -52,9 +52,16 @@ class Judgment:
 Judge = Callable[[Capability, Dict[str, Any], Dict[str, str]], Any]
 
 
+#: The longest a session message may claim to live. A receiver remembers each message it accepted until it expires,
+#: so a sender must not be able to make that memory permanent by choosing a far expiry.
+MAX_MESSAGE_LIFETIME_MS = 24 * 3600 * 1000
+
+
 def _must_expire(env: Envelope) -> None:
     if env.expires_at is None:
         raise Refused("malformed", "session messages must expire")
+    if env.expires_at - env.issued_at > MAX_MESSAGE_LIFETIME_MS:
+        raise Refused("malformed", "a session message may live at most 24 hours")
 
 
 class Decider:
@@ -66,7 +73,7 @@ class Decider:
         self._caps = {(c.name, c.version): (c, j) for c, j in capabilities}
         self._trust, self._ledger, self._clock, self._ttl = trust, ledger or MemoryLedger(), clock, message_ttl_ms
         self._endorsements = list(endorsements)
-        self._presented: Dict[str, Tuple[Mapping[str, Any], ...]] = {}
+        self._admitted: Dict[str, Admission] = {}
         self._offers: Dict[str, Tuple[Mapping[str, Any], Capability, Judge, Optional[int]]] = {}
 
     @property
@@ -77,6 +84,17 @@ class Decider:
         return publish(self.signer, self.name, self.implementation, [c for c, _ in self._caps.values()],
                        endorsements=self._endorsements, ttl_ms=24 * 3600 * 1000, now=self._clock())
 
+    def _admit(self, agent: str, now: int) -> None:
+        if agent in self._trust.revoked:
+            self._admitted.pop(agent, None)
+            raise Refused("untrusted", "this receiver has revoked that identity")
+        cached = self._admitted.get(agent)
+        if cached is not None and (cached.expires_at is None or now < cached.expires_at) and \
+                cached.authority not in self._trust.revoked and cached.endorsement not in self._trust.revoked:
+            return
+        self._admitted.pop(agent, None)
+        self._trust.admit(agent, now=now)  # pinned, or refused
+
     def _refuse(self, env: Envelope, code: str, reason: str) -> Envelope:
         return seal(self.signer, "refuse", {"code": code, "reasons": [reason]}, to=env.sender, reply_to=env,
                     ttl_ms=self._ttl, now=self._clock())
@@ -85,15 +103,17 @@ class Decider:
         """Process one inbound message; return the reply to send, or None (a manifest needs none)."""
         now = self._clock()
         if isinstance(wire, Mapping) and wire.get("kind") == "manifest":
-            manifest, _ = read_manifest(wire, now=now)
-            self._presented[manifest.agent] = manifest.endorsements
+            # Admitted once, here, and remembered until the endorsement lapses; a sender who is not admitted
+            # leaves nothing behind to re-check on every later message.
+            manifest, admission = read_manifest(wire, now=now, trust=self._trust)
+            if admission is not None and admission.via == "endorsed":
+                self._admitted[manifest.agent] = admission
             return None
         env = open_envelope(wire, now=now, audience=self.agent, kinds={"request", "accept"})
         _must_expire(env)
         try:
-            self._trust.admit(env.sender, self._presented.get(env.sender, ()), now=now)
+            self._admit(env.sender, now)
         except Refused as exc:
-            self._ledger.spend(env.sender, env.id, env.expires_at)
             return self._refuse(env, exc.code, exc.reason)
         if env.kind == "request":
             return self._on_request(env)
@@ -195,10 +215,13 @@ class Requester:
         now = self._clock()
         env = open_envelope(wire, now=now, audience=self.agent, kinds={"decision"})
         _must_expire(env)
-        pending = self._accepts.pop(env.in_reply_to, None)
+        pending = self._accepts.get(env.in_reply_to)
         if pending is None:
             raise Refused("terms", "the decision answers no accept this requester sent")
-        return verify_decision(wire, terms=pending[1], accept_digest=env.in_reply_to, ledger=self._ledger, now=now)
+        # Verified before the accept is closed, so a decision from anyone but the decider cannot use it up.
+        got = verify_decision(wire, terms=pending[1], accept_digest=env.in_reply_to, ledger=self._ledger, now=now)
+        self._accepts.pop(env.in_reply_to, None)
+        return got
 
     def on_offer(self, wire: Mapping[str, Any]) -> Envelope:
         """An offer returns the accept to send; a refuse raises Refused('declined') with the other side's reasons."""

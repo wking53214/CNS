@@ -18,11 +18,12 @@ from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 
 from .envelope import VERSION, Envelope, Refused, open_envelope, seal
 from .identity import Signer
-from .trust import Admission, TrustPolicy
+from .trust import MAX_ENDORSEMENTS, Admission, TrustPolicy
 
 __all__ = ["Capability", "Manifest", "publish", "read_manifest", "NAME"]
 
 NAME = re.compile(r"\A[a-z0-9][a-z0-9._-]{0,63}\Z")
+MAX_CAPABILITIES = 64
 _CAP_KEYS = {"name", "version", "summary", "accepts", "requires", "evidence", "max_ttl_ms"}
 _MAN_KEYS = {"name", "implementation", "protocols", "capabilities", "endorsements"}
 
@@ -114,6 +115,9 @@ def read_manifest(wire: Mapping[str, Any], *, now: Optional[int] = None, trust: 
         raise Refused("version", f"the agent speaks {', '.join(protocols) or 'nothing'}; this reader speaks {VERSION}")
     if not isinstance(body["capabilities"], list) or not isinstance(body["endorsements"], list):
         raise Refused("malformed", "capabilities and endorsements are lists")
+    if len(body["endorsements"]) > MAX_ENDORSEMENTS or len(body["capabilities"]) > MAX_CAPABILITIES:
+        raise Refused("malformed", f"a manifest carries at most {MAX_ENDORSEMENTS} endorsements and "
+                                   f"{MAX_CAPABILITIES} capabilities")
     caps = tuple(Capability.from_body(c) for c in body["capabilities"])
     if len({(c.name, c.version) for c in caps}) != len(caps):
         raise Refused("malformed", "a capability name and version appear twice")

@@ -24,11 +24,22 @@ not published, so it is a claim to be checked, not a score. Each row names the e
 
 The assessment's headline was 2.5 against a row average of 2.4, so the projection is read the same way: about 4.
 
+## Independent review
+
+Before the pull request, a separate reviewer that had not seen the work being written attacked it and proved ten
+findings with scripts: the action guard trusted the decider named in the job it was handed, the guard could open
+twice under concurrent calls, a third party could use up a requester's pending accept, the Node decider took accepts
+for lapsed offers and with extra fields, unknown senders could make the Python decider re-check piles of
+endorsements, hostile JSON could crash the Python reader, ledger entries could be made permanent, the two Ed25519
+paths disagreed on non-canonical and small-order keys, and Node took a non-text evidence kind. Every one is fixed on
+this branch and kept as a test (`cns_interop/tests/test_session.py`, `test_envelope.py`, `test_uai_vectors.py`,
+`interop/node/agent.test.mjs`, and two new rejection vectors).
+
 ## How to check it yourself
 
 ```
 python -m pytest -q cns_interop/tests        # 100+ tests, including both implementations against one answer key
-node --test interop/node/test.mjs            # the Node implementation alone
+node --test interop/node/test.mjs interop/node/agent.test.mjs   # the Node implementation alone
 python interop/demo.py                       # the two-language exchange, both directions, with the attacks
 ```
 

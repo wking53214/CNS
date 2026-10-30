@@ -56,10 +56,35 @@ def test_the_python_reference_passes_its_own_answer_key():
 
 
 def test_the_node_implementation_passes_the_same_answer_key():
-    done = subprocess.run([node(), "--test", str(ROOT / "interop" / "node" / "test.mjs")], capture_output=True,
-                          text=True, timeout=120)
+    tests = [str(ROOT / "interop" / "node" / name) for name in ("test.mjs", "agent.test.mjs")]
+    done = subprocess.run([node(), "--test", *tests], capture_output=True, text=True, timeout=180)
     assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-2000:]
-    assert "# fail 0" in done.stdout and "# pass 8" in done.stdout
+    assert "# fail 0" in done.stdout and "# pass 9" in done.stdout
+
+
+def test_the_node_small_order_list_is_exactly_the_curves_eight_torsion_points():
+    import re
+
+    from cns_interop import ed25519 as e
+
+    torsion = set()
+    for i in range(64):
+        for j in range(64):
+            try:
+                point = e._decompress(bytes([i, j]) * 16)
+                break
+            except ValueError:
+                continue
+        torsion.add(e._compress(e._mul(e._L, point)).hex())
+    js = (ROOT / "interop" / "node" / "uai.mjs").read_text(encoding="utf-8")
+    listed = set(re.findall(r'"([0-9a-f]{64})"', js[js.index("SMALL_ORDER"):js.index("]);", js.index("SMALL_ORDER"))]))
+    assert len(torsion) == 8 and listed == torsion
+
+
+def test_no_small_order_key_verifies_in_the_python_reference():
+    from cns_interop import ed25519 as e
+
+    assert not e.verify(bytes.fromhex("01" + "00" * 31), b"anything", bytes.fromhex("01" + "00" * 63))
 
 
 def test_cns_interop_imports_only_cns_cns_composition_itself_and_the_standard_library():

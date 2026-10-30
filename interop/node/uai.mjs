@@ -161,8 +161,36 @@ export function signerFromSeed(seed) {
   return { agent, sign: (msg) => edSign(null, msg, key) };
 }
 
+// The canonical encodings of the eight points of small order. A key among them can be "signed for" by anyone, so
+// none is accepted as a public key. cns_interop/tests/test_uai_vectors.py recomputes this list from the curve.
+export const SMALL_ORDER = new Set([
+  "0000000000000000000000000000000000000000000000000000000000000000",
+  "0000000000000000000000000000000000000000000000000000000000000080",
+  "0100000000000000000000000000000000000000000000000000000000000000",
+  "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+  "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+  "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+  "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+  "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+]);
+const P25519 = (1n << 255n) - 19n;
+
+// A point encoding is canonical when y < p and the sign bit is clear wherever x is 0 (y = 1 or y = p - 1).
+// OpenSSL accepts some non-canonical encodings; the Python reference does not, so neither does this.
+function canonicalPoint(hex) {
+  const b = Buffer.from(hex, "hex");
+  const sign = b[31] >> 7;
+  const yb = Buffer.from(b); yb[31] &= 0x7f;
+  const y = BigInt("0x" + Buffer.from(yb).reverse().toString("hex"));
+  if (y >= P25519) return false;
+  if (sign && (y === 1n || y === P25519 - 1n)) return false;
+  return true;
+}
+
 export function verifySig(agent, msg, sigHex) {
   if (!isAgentId(agent) || !/^[0-9a-f]{128}$/.test(sigHex)) return false;
+  const pubHex = agent.slice(AGENT_PREFIX.length);
+  if (SMALL_ORDER.has(pubHex) || !canonicalPoint(pubHex) || !canonicalPoint(sigHex.slice(0, 64))) return false;
   try {
     const pub = createPublicKey({ key: Buffer.concat([SPKI, Buffer.from(agent.slice(AGENT_PREFIX.length), "hex")]), format: "der", type: "spki" });
     return edVerify(null, msg, pub, Buffer.from(sigHex, "hex"));
@@ -362,7 +390,7 @@ export function verifyDecision(wire, { terms, acceptDigest, ledger, now = Date.n
   if (!Array.isArray(b.evidence) || !Array.isArray(b.reasons) || !b.reasons.every((r) => typeof r === "string")) throw new Refused("malformed", "evidence and reasons are lists");
   const evidence = Object.create(null);
   for (const it of b.evidence) {
-    if (!isPlainObject(it) || cpSort(Object.keys(it)).join() !== "content,digest,kind" || it.kind in evidence) throw new Refused("malformed", "evidence item");
+    if (!isPlainObject(it) || cpSort(Object.keys(it)).join() !== "content,digest,kind" || typeof it.kind !== "string" || !isPlainObject(it.content) || it.kind in evidence) throw new Refused("malformed", "evidence item");
     if (digest(it.content) !== it.digest) throw new Refused("malformed", `evidence ${it.kind} does not match its digest`);
     evidence[it.kind] = it.content;
   }

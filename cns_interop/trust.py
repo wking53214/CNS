@@ -23,9 +23,11 @@ from typing import Any, FrozenSet, Iterable, Mapping, Optional
 from .envelope import Envelope, Refused, open_envelope, seal
 from .identity import Signer, is_agent_id
 
-__all__ = ["Admission", "TrustPolicy", "endorse", "ANY_DOMAIN"]
+__all__ = ["Admission", "TrustPolicy", "endorse", "ANY_DOMAIN", "MAX_ENDORSEMENTS"]
 
 ANY_DOMAIN = "*"
+#: An agent presents a handful of endorsements, not a pile: each costs the receiver a signature check.
+MAX_ENDORSEMENTS = 8
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,8 @@ class Admission:
     authority: str = ""
     domain: str = ""
     endorsement: str = ""
+    #: When an endorsed admission lapses (the endorsement's expiry); None for a pinned one.
+    expires_at: Optional[int] = None
 
 
 def endorse(authority: Signer, agent: str, domain: str, *, ttl_ms: int, now: Optional[int] = None) -> Envelope:
@@ -74,8 +78,11 @@ class TrustPolicy:
             raise Refused("untrusted", "this receiver has revoked that identity")
         if agent in self.pinned:
             return Admission(agent=agent, via="pinned")
+        presented_all = list(endorsements)
+        if len(presented_all) > MAX_ENDORSEMENTS:
+            raise Refused("untrusted", f"more than {MAX_ENDORSEMENTS} endorsements are not read")
         reasons = []
-        for presented in endorsements:
+        for presented in presented_all:
             wire = presented.to_wire() if isinstance(presented, Envelope) else presented
             try:
                 env = open_envelope(wire, now=now, kinds={"endorsement"})
@@ -87,7 +94,7 @@ class TrustPolicy:
                 reasons.append(why)
                 continue
             return Admission(agent=agent, via="endorsed", authority=env.sender, domain=env.body["domain"],
-                             endorsement=env.id)
+                             endorsement=env.id, expires_at=env.expires_at)
         raise Refused("untrusted", "the identity is not pinned and no endorsement admits it"
                       + (": " + "; ".join(reasons) if reasons else ""))
 

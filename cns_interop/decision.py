@@ -22,15 +22,17 @@ The verdict vocabulary is CNS's own `GateOutcome`: "pass", "retry", "terminal_br
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from cns.gate import GateOutcome, subject_digest
 
 from .envelope import Envelope, Refused, now_ms, open_envelope, seal
-from .identity import Signer
+from .identity import Signer, is_agent_id
 from .ledger import Ledger
 from .negotiate import TERMS_KEYS, terms_digest
+from .trust import TrustPolicy
 
 __all__ = ["VERDICTS", "Verified", "issue", "from_super_gate", "verify_decision", "RemoteDecisionGuard"]
 
@@ -143,38 +145,55 @@ def verify_decision(wire: Mapping[str, Any], *, terms: Mapping[str, Any], accept
 class RemoteDecisionGuard:
     """Closed until a verified, allowed remote decision opens it; then permits one action on that one document.
 
-    `subject_of(artifact)` reads (identity, digest) from whatever the action is about to touch. Like `DecisionGuard`
-    it answers True at most once, never raises, and a refusal does not spend the permission."""
+    The guard's own configuration, never the caller's, says who it acts for (`acting_for`: decisions addressed to
+    anyone else are refused), which deciders it accepts (`trust`: the terms' decider must be admitted), and where it
+    remembers spent decisions (`ledger`). Terms handed to `authorize` can only narrow what is accepted, never widen it.
 
-    def __init__(self, subject_of: Callable[[object], Tuple[str, str]], *, ledger: Ledger,
-                 clock: Callable[[], int] = now_ms) -> None:
+    `subject_of(artifact)` reads (identity, digest) from whatever the action is about to touch. Like `DecisionGuard`
+    it answers True at most once, also under concurrent calls, never raises, and a refusal does not spend the
+    permission."""
+
+    def __init__(self, subject_of: Callable[[object], Tuple[str, str]], *, acting_for: str, trust: TrustPolicy,
+                 ledger: Ledger, clock: Callable[[], int] = now_ms) -> None:
         if not callable(subject_of):
             raise ValueError("subject_of must read (identity, digest) from an artifact")
+        if not is_agent_id(acting_for):
+            raise ValueError("acting_for is the identity this guard acts for")
+        if not isinstance(trust, TrustPolicy):
+            raise ValueError("a guard needs its own trust policy for deciders")
         self._subject_of, self._ledger, self._clock = subject_of, ledger, clock
+        self._acting_for, self._trust = acting_for, trust
+        self._lock = threading.Lock()
         self._approved: Optional[Tuple[str, str]] = None
         self._expires_at: Optional[int] = None
         self._spent = False
 
     def authorize(self, wire: Mapping[str, Any], *, terms: Mapping[str, Any], accept_digest: str) -> Verified:
-        if self._approved is not None:
-            raise ValueError("this guard was already authorized; one guard serves one decision")
-        got = verify_decision(wire, terms=terms, accept_digest=accept_digest, ledger=self._ledger, now=self._clock())
-        if not got.allowed:
-            raise Refused("refused", "the decision is not a pass: " + "; ".join(got.reasons))
-        self._approved = (got.subject["identity"], got.subject["digest"])
-        self._expires_at = got.envelope.expires_at
-        return got
+        with self._lock:
+            if self._approved is not None:
+                raise ValueError("this guard was already authorized; one guard serves one decision")
+            if not isinstance(terms, Mapping) or terms.get("requester") != self._acting_for:
+                raise Refused("audience", "the terms are for a requester this guard does not act for")
+            now = self._clock()
+            self._trust.admit(terms.get("decider", ""), now=now)
+            got = verify_decision(wire, terms=terms, accept_digest=accept_digest, ledger=self._ledger, now=now)
+            if not got.allowed:
+                raise Refused("refused", "the decision is not a pass: " + "; ".join(got.reasons))
+            self._approved = (got.subject["identity"], got.subject["digest"])
+            self._expires_at = got.envelope.expires_at
+            return got
 
     def __call__(self, artifact: object) -> bool:
-        if self._approved is None or self._spent:
-            return False
-        if self._expires_at is not None and self._clock() >= self._expires_at:
-            return False
         try:
             seen = tuple(self._subject_of(artifact))
         except Exception:
             return False
-        if seen != self._approved:
-            return False
-        self._spent = True
-        return True
+        with self._lock:  # check and spend as one step, so concurrent callers cannot all pass the check
+            if self._approved is None or self._spent:
+                return False
+            if self._expires_at is not None and self._clock() >= self._expires_at:
+                return False
+            if seen != self._approved:
+                return False
+            self._spent = True
+            return True

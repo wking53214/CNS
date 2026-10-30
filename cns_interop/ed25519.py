@@ -86,6 +86,7 @@ def _recover_x(y: int, sign: int) -> int:
     return x
 
 
+_IDENTITY: Point = (0, 1, 1, 0)
 _GY = 4 * pow(5, _P - 2, _P) % _P
 _GX = _recover_x(_GY, 0)
 _G: Point = (_GX, _GY, 1, _GX * _GY % _P)
@@ -135,7 +136,11 @@ def sign(seed: bytes, message: bytes) -> bytes:
 
 
 def verify(public: bytes, message: bytes, signature: bytes) -> bool:
-    """Whether `signature` is `public`'s signature over `message`. False, never an exception, for anything malformed."""
+    """Whether `signature` is `public`'s signature over `message`. False, never an exception, for anything malformed.
+
+    Stricter than the bare RFC equation in three ways every UAI-1 implementation shares: a public key or R that is not
+    the canonical encoding of a curve point is refused, a non-canonical s is refused, and a public key of small order
+    is refused (its signatures can be made without any private key)."""
     try:
         if len(public) != PUBLIC_BYTES or len(signature) != SIGNATURE_BYTES:
             return False
@@ -145,6 +150,8 @@ def verify(public: bytes, message: bytes, signature: bytes) -> bool:
     except (ValueError, TypeError):
         return False
     if s >= _L:  # RFC 8032 5.1.7: refuse a non-canonical s, which would make one signature into many
+        return False
+    if _equal(_mul(8, a), _IDENTITY):  # a small-order key (the identity among them) is "signed for" by anyone
         return False
     k = int.from_bytes(_sha512(bytes(signature[:32]) + bytes(public) + message), "little") % _L
     return _equal(_mul(s, _G), _add(big_r, _mul(k, a)))

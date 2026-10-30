@@ -51,6 +51,9 @@ Every message is one JSON object with exactly these fields:
 
 **Signature.** `sig` is Ed25519 (RFC 8032, pure, no prehash) by the key `from` names, over the bytes
 `"uai/1 sig\n"` followed by the ASCII hex subject digest of the envelope **without** `sig` (with `v`).
+Verification is strict, identically in every implementation: the public key and R must be canonical point encodings
+(y below p, and no sign bit where x is 0), s must be below the group order, and a public key of small order (the
+eight 8-torsion points, listed in `interop/node/uai.mjs`) never verifies, since anyone can sign for one.
 
 **Wire.** JSON text, UTF-8, at most 1 MiB, one envelope per line on stream transports. A reader refuses duplicate
 keys, any number with a fraction or exponent, NaN and Infinity, and anything that is not a JSON object. Key order and
@@ -66,8 +69,9 @@ spacing do not matter; the signature is over the canonical digest.
 5. `to` is this receiver, where an audience is expected (`audience`)
 6. this `(from, id)` has not been accepted before, from the receiver's ledger (`replayed`)
 
-Messages in a session (request, offer, accept, refuse, decision) must expire. A receiver keeps each ledger entry
-only until its message would be refused as expired.
+Messages in a session (request, offer, accept, refuse, decision) must expire, and may claim at most 24 hours of
+life. A receiver keeps each ledger entry only until its message would be refused as expired, so a sender cannot
+make a receiver remember it forever. A manifest carries at most 8 endorsements and 64 capabilities.
 
 ## 3. Identity and trust
 
@@ -81,7 +85,9 @@ Whether to **deal** with an identity is the receiver's decision alone. Two ways 
   subject, signed by an authority the receiver recognises **for that domain**, with an `expires_at` (one without
   expiry is refused). Endorsement is one level deep.
 
-A receiver may revoke identities and endorsement ids; revocation beats every yes.
+A receiver may revoke identities and endorsement ids; revocation beats every yes. A receiver admits an endorsed
+sender once, when it reads that sender's manifest, and remembers the admission until the endorsement lapses; a sender
+it does not admit leaves nothing behind.
 
 ## 4. Discovery: the manifest
 
@@ -154,15 +160,18 @@ later than `decision_ttl_ms` after it is issued. Body exactly:
 | `evidence` | list of `{"kind", "content", "digest"}`, `digest` the subject digest of `content`; a pass carries exactly the kinds the terms name, any verdict carries none the terms did not name |
 | `cns_root` | the SuperGate root when a CNS roster made the decision, else `""` |
 
-A verifier refuses a decision not signed by the terms' decider (`untrusted`), answering another accept, under other
-terms, about another document, living too long (`terms`, `subject`), with evidence that does not match its digest
+A verifier refuses a decision not signed by the terms' decider (`untrusted`), and a requester does not close its
+pending accept until a decision from that decider verifies, so a third party cannot use the accept up. It also
+refuses one answering another accept, under other terms, about another document, living too long (`terms`, `subject`), with evidence that does not match its digest
 (`malformed`), or already accepted (`replayed`). A decider whose capability fails issues a signed
 `terminal_breach` saying so.
 
 **Acting on a decision.** Single use is enforced per audience: the decision is addressed to one identity, every
 other receiver refuses it at `audience`, and every process acting for that identity shares one ledger
 (`cns_interop.ledger.FileLedger` on one host). `cns_interop.decision.RemoteDecisionGuard` opens once, for the
-judged document only.
+judged document only, also under concurrent calls. Its configuration is its own and never comes with the job: the
+identity it acts for (terms for anyone else are refused), the deciders it trusts (a decider the terms name but the
+guard does not trust is refused), and its ledger. `interop/act.py` takes all three on its command line.
 
 ## 8. What remains open
 

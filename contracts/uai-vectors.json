@@ -274,6 +274,48 @@
       "now": 1800000000000
     },
     {
+      "name": "small-order-key",
+      "wire": {
+        "v": "uai/1",
+        "kind": "request",
+        "id": "00000000000000000000000000000001",
+        "from": "uai:ed25519:0100000000000000000000000000000000000000000000000000000000000000",
+        "to": "uai:ed25519:d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+        "conversation": "00000000000000000000000000000001",
+        "in_reply_to": "",
+        "issued_at": 1800000000000,
+        "expires_at": 1800000060000,
+        "body": {
+          "capability": "income-screen",
+          "version": 1
+        },
+        "sig": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "code": "signature",
+      "now": 1800000000000
+    },
+    {
+      "name": "non-canonical-key",
+      "wire": {
+        "v": "uai/1",
+        "kind": "request",
+        "id": "00000000000000000000000000000001",
+        "from": "uai:ed25519:eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+        "to": "uai:ed25519:d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+        "conversation": "00000000000000000000000000000001",
+        "in_reply_to": "",
+        "issued_at": 1800000000000,
+        "expires_at": 1800000060000,
+        "body": {
+          "capability": "income-screen",
+          "version": 1
+        },
+        "sig": "da52f9292a8fa578c67c960a6309d3a934f04d3cbefd5dae3f863aff8ce06a5bd4efe8d94a72599c6e913ea3ab3209e085d80b675335a091c376610950d10b05"
+      },
+      "code": "signature",
+      "now": 1800000000000
+    },
+    {
       "name": "expired",
       "wire": {
         "v": "uai/1",

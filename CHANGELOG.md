@@ -31,7 +31,8 @@ not a release.
   `cns_composition`, and `cns` does not import it.
 - An independent Node implementation (`interop/node/`), the shared answer key `contracts/uai-vectors.json`, and
   `interop/demo.py`, which runs Python and Node against each other in both directions, with a third process acting
-  once on the result. `docs/interop/SCORECARD.md` maps it to the 2026-10-30 assessment.
+  once on the result. `docs/interop/SCORECARD.md` maps it to the 2026-10-30 assessment and lists the ten findings
+  of an independent review made before merge, all fixed and kept as tests.
 
 ## [2.3.0] - 2026-10-30 (not yet tagged)
 

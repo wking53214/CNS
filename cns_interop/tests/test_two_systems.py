@@ -39,6 +39,7 @@ def test_a_third_process_acts_once_on_the_one_document(demo):
     assert r["act_first"] == {"permitted": True}
     assert r["act_second"]["refused"]["code"] == "replayed"
     assert r["act_other"] == {"permitted": False}
+    assert r["act_impostor"]["refused"]["code"] == "untrusted"  # the job cannot choose its own decider
 
 
 def test_the_rails_hold_across_the_language_boundary(demo):

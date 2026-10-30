@@ -58,6 +58,10 @@ def loads(text: str) -> Dict[str, Any]:
                            parse_constant=_no_constant)
     except json.JSONDecodeError as exc:
         raise Refused("malformed", f"the message is not JSON ({exc.msg})") from None
+    except RecursionError:
+        raise Refused("malformed", "the message nests too deeply to read") from None
+    except ValueError as exc:  # e.g. an integer too long for the interpreter to convert
+        raise Refused("profile", f"the message holds a value that cannot be read ({exc})") from None
     if not isinstance(value, dict):
         raise Refused("malformed", "the message is not a JSON object")
     return value

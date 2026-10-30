@@ -43,7 +43,7 @@ sys.path.insert(0, str(ROOT))
 from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest  # noqa: E402
 
 from cns_composition.super_gate import Judged, SuperGate  # noqa: E402
-from cns_interop.decision import verify_decision  # noqa: E402
+from cns_interop.decision import issue, verify_decision  # noqa: E402
 from cns_interop.disclosure import commit  # noqa: E402
 from cns_interop.envelope import Refused  # noqa: E402
 from cns_interop.identity import Signer  # noqa: E402
@@ -90,12 +90,14 @@ class NodeAgent:
         self.proc.wait(timeout=10)
 
 
-def act(decision: Dict[str, Any], terms: Dict[str, Any], accept_digest: str, artifact: List[str],
-        ledger: str) -> Dict[str, Any]:
-    job = {"decision": decision, "terms": terms, "accept_digest": accept_digest, "artifact": artifact,
-           "ledger": ledger}
+def act(decision: Dict[str, Any], terms: Dict[str, Any], accept_digest: str, artifact: List[str], *,
+        acting_for: str, trust: str, ledger: str) -> Dict[str, Any]:
+    """Run interop/act.py as its own process. Its configuration (who it acts for, which deciders it trusts, its
+    ledger) is its command line; the job carries only the decision and what it is about."""
+    job = {"decision": decision, "terms": terms, "accept_digest": accept_digest, "artifact": artifact}
     env = dict(os.environ, PYTHONPATH=str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    done = subprocess.run([sys.executable, str(ACT_PY)], input=json.dumps(job), capture_output=True, text=True,
+    done = subprocess.run([sys.executable, str(ACT_PY), "--acting-for", acting_for, "--trust", trust,
+                           "--ledger", ledger], input=json.dumps(job), capture_output=True, text=True,
                           env=env, timeout=60, check=True)
     result: Dict[str, Any] = json.loads(done.stdout)
     return result
@@ -132,15 +134,23 @@ def round_node_decides(log: List[str]) -> Dict[str, Any]:
 
         # Round 2: a separate process, sharing only a ledger file, acts once.
         with tempfile.TemporaryDirectory() as tmp:
-            ledger = str(Path(tmp) / "spent.jsonl")
+            cfg = {"acting_for": py.agent, "trust": node_id, "ledger": str(Path(tmp) / "spent.jsonl")}
             artifact = [doc.identity, doc.digest]
-            first = act(decision_wire, terms, accept.digest, artifact, ledger)
-            second = act(decision_wire, terms, accept.digest, artifact, ledger)
+            first = act(decision_wire, terms, accept.digest, artifact, **cfg)
+            second = act(decision_wire, terms, accept.digest, artifact, **cfg)
             other = act(decision_wire, terms, accept.digest, [doc.identity, "0" * 64],
-                        str(Path(tmp) / "other.jsonl"))
+                        **dict(cfg, ledger=str(Path(tmp) / "other.jsonl")))
+            # A job that names its own decider: a key the attacker made, signing a pass the attacker wrote.
+            mallory = Signer.generate()
+            forged_terms = dict(terms, decider=mallory.agent)
+            forged = issue(mallory, accept, forged_terms, "pass",
+                           evidence={"threshold-check": {"observed_cents": 1}})
+            impostor = act(forged.to_wire(), forged_terms, accept.digest, artifact,
+                           **dict(cfg, ledger=str(Path(tmp) / "fresh.jsonl")))
         log.append(f"act.py (process 3) permitted the action: {first.get('permitted')}; a second act.py process "
                    f"with the same ledger was refused: {second.get('refused', {}).get('code')}; a different "
-                   f"document was permitted: {other.get('permitted')}")
+                   f"document was permitted: {other.get('permitted')}; a job naming its own decider was refused: "
+                   f"{impostor.get('refused', {}).get('code')}")
 
         # Round 4 on this pair: replay, tamper, an unacceptable document.
         replay = agent.send(request)
@@ -170,7 +180,7 @@ def round_node_decides(log: List[str]) -> Dict[str, Any]:
                 "never_sent": sorted(set(doc.values) - set(terms["disclose"])),
                 "accept_disclosed": sorted(accept.body["disclosure"]["disclosed"]),
                 "verdict": verified.verdict, "allowed": verified.allowed, "evidence": dict(verified.evidence),
-                "signer": verified.envelope.sender, "act_first": first, "act_second": second, "act_other": other,
+                "signer": verified.envelope.sender, "act_first": first, "act_second": second, "act_other": other, "act_impostor": impostor,
                 "replay": replay, "tamper": tamper_code, "bad_doc_verdict": v2.verdict, "withheld": withheld_code}
     finally:
         agent.close()

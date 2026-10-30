@@ -25,6 +25,7 @@ CAP = Capability(name="income-screen", version=1, summary="income at or above a 
                  accepts=("doc_type", "monthly_income_cents"), requires=("monthly_income_cents",),
                  evidence=("threshold-check",), max_ttl_ms=300_000)
 THRESHOLD = 400_000
+DEC_ONLY = TrustPolicy(pinned=frozenset({DEC.agent}))
 
 
 def screen(cap, disclosed, subject):
@@ -82,7 +83,7 @@ def test_the_whole_exchange_and_a_guard_that_acts_once_on_the_one_document():
     assert got.allowed and got.evidence["threshold-check"]["observed_cents"] == 512_000
 
     # The same decision, verified independently by a separate guard (the process that acts), with its own ledger.
-    guard = RemoteDecisionGuard(lambda a: a, ledger=MemoryLedger(), clock=clock)
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
     guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
     d = doc()
     assert guard(("loan-app-17", "some-other-digest")) is False
@@ -96,7 +97,7 @@ def test_a_below_threshold_decision_verifies_but_opens_nothing():
     _, offer, accept, decision = run(dec, req, doc(100))
     got = req.on_reply(decision.to_wire())
     assert got.verdict == "retry" and not got.allowed
-    guard = RemoteDecisionGuard(lambda a: a, ledger=MemoryLedger(), clock=clock)
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
     assert code_of(guard.authorize, decision.to_wire(), terms=offer.body["terms"],
                    accept_digest=accept.digest) == "refused"
 
@@ -114,8 +115,8 @@ def test_a_file_ledger_is_shared_by_two_guards_as_if_two_processes(tmp_path):
     dec, req, clock = pair()
     _, offer, accept, decision = run(dec, req)
     path = tmp_path / "spent.jsonl"
-    g1 = RemoteDecisionGuard(lambda a: a, ledger=FileLedger(path), clock=clock)
-    g2 = RemoteDecisionGuard(lambda a: a, ledger=FileLedger(path), clock=clock)
+    g1 = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=FileLedger(path), clock=clock)
+    g2 = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=FileLedger(path), clock=clock)
     g1.authorize(decision.to_wire(), terms=offer.body["terms"], accept_digest=accept.digest)
     assert code_of(g2.authorize, decision.to_wire(), terms=offer.body["terms"],
                    accept_digest=accept.digest) == "replayed"
@@ -315,3 +316,94 @@ def test_an_accept_that_arrives_after_its_offer_lapsed_is_refused():
     with pytest.raises(Refused) as caught:
         dec.handle(accept.to_wire())
     assert caught.value.code == "expired" and "offer" in caught.value.reason  # the offer lapsed, not the accept
+
+
+# Findings of the independent review (2026-10-30), each kept as a test.
+
+def test_a_guard_trusts_its_own_list_of_deciders_not_the_terms_it_is_handed():
+    dec, req, clock = pair()
+    _, offer, accept, _ = run(dec, req)
+    forged_terms = dict(offer.body["terms"], decider=EVE.agent)
+    forged = issue(EVE, accept, forged_terms, "pass", evidence={"threshold-check": {}}, now=T0)
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
+    assert code_of(guard.authorize, forged.to_wire(), terms=forged_terms, accept_digest=accept.digest) == "untrusted"
+
+
+def test_a_guard_acts_only_for_its_own_identity():
+    dec, req, clock = pair()
+    _, offer, accept, decision = run(dec, req)
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=EVE.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
+    assert code_of(guard.authorize, decision.to_wire(), terms=offer.body["terms"],
+                   accept_digest=accept.digest) == "audience"
+
+
+def test_a_guard_opens_once_under_concurrent_calls():
+    import threading
+    import time
+
+    dec, req, clock = pair()
+    _, offer, accept, decision = run(dec, req)
+    digest = offer.body["terms"]["subject"]["digest"]
+
+    def slow(a):
+        time.sleep(0.05)
+        return a
+
+    guard = RemoteDecisionGuard(slow, acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
+    guard.authorize(decision.to_wire(), terms=offer.body["terms"], accept_digest=accept.digest)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(guard(("loan-app-17", digest)))) for _ in range(8)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert sorted(results) == [False] * 7 + [True]
+
+
+def test_a_decision_from_anyone_else_does_not_use_up_the_accept():
+    dec, req, clock = pair()
+    _, offer, accept, decision = run(dec, req)
+    terms = offer.body["terms"]
+    junk = seal(EVE, "decision", {"verdict": "retry", "terms_digest": terms_digest(terms), "subject": terms["subject"],
+                                  "reasons": [], "evidence": [], "cns_root": ""},
+                to=REQ.agent, reply_to=accept, ttl_ms=1000, now=T0)
+    assert code_of(req.on_decision, junk.to_wire()) == "untrusted"
+    assert req.on_decision(decision.to_wire()).allowed  # the genuine decision still lands
+
+
+def test_an_unadmitted_manifest_leaves_nothing_behind_and_endorsement_piles_are_not_read():
+    from cns_interop.manifest import publish
+    from cns_interop.trust import MAX_ENDORSEMENTS, endorse
+
+    dec, req, clock = pair(decider_trusts=TrustPolicy())
+    stranger_manifest = publish(EVE, "x", "x", [], now=T0)
+    assert code_of(dec.handle, stranger_manifest.to_wire()) == "untrusted"
+    assert dec._admitted == {}
+    pile = [endorse(DEC, EVE.agent, "d", ttl_ms=1000, now=T0) for _ in range(MAX_ENDORSEMENTS + 1)]
+    assert code_of(dec.handle, publish(EVE, "x", "x", [], endorsements=pile, now=T0).to_wire()) == "malformed"
+
+
+def test_an_endorsed_requester_is_admitted_once_and_until_the_endorsement_lapses():
+    from cns_interop.trust import endorse
+
+    auth = Signer(bytes([34] * 32))
+    clock = Clock()
+    dec = Decider(DEC, name="screener", implementation="python/test", capabilities=[(CAP, screen)],
+                  trust=TrustPolicy(authorities={auth.agent: frozenset({"lending"})}), clock=clock)
+    req = Requester(REQ, trust=DEC_ONLY, clock=clock)
+    req.discover(dec.manifest().to_wire())
+    card = endorse(auth, REQ.agent, "lending", ttl_ms=30_000, now=T0)
+    assert dec.handle(req.manifest(endorsements=[card]).to_wire()) is None
+    first = req.request(DEC.agent, doc(), "income-screen", 1, offer_fields=["monthly_income_cents"],
+                        max_ttl_ms=600_000)
+    assert dec.handle(first.to_wire()).kind == "offer"
+    clock.t = T0 + 30_000
+    late = req.request(DEC.agent, doc(), "income-screen", 1, offer_fields=["monthly_income_cents"],
+                       max_ttl_ms=600_000)
+    assert dec.handle(late.to_wire()).kind == "refuse"
+
+
+def test_a_session_message_cannot_ask_to_be_remembered_forever():
+    dec, req, clock = pair()
+    forever_ish = seal(REQ, "request", {}, to=DEC.agent, ttl_ms=2 ** 52, now=T0)
+    assert code_of(dec.handle, forever_ish.to_wire()) == "malformed"

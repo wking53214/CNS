@@ -72,6 +72,12 @@ def build() -> Dict[str, Any]:
         bad("unknown-kind", "malformed", lambda w: w.update(kind="gossip")),
         bad("bad-sig-hex", "malformed", lambda w: w.update(sig="zz" * 64)),
         bad("expires-before-issue", "malformed", lambda w: w.update(expires_at=T)),
+        # Keys that must never verify: the identity point (anyone can "sign" for it with R = identity, s = 0), and a
+        # non-canonical encoding (y = p + 1) that some Ed25519 libraries accept and the Python reference does not.
+        bad("small-order-key", "signature", lambda w: w.update({
+            "from": "uai:ed25519:01" + "00" * 31, "sig": "01" + "00" * 63})),
+        bad("non-canonical-key", "signature", lambda w: w.update({
+            "from": "uai:ed25519:ee" + "ff" * 30 + "7f", "sig": w["sig"]})),
         {"name": "expired", "wire": good[0].to_wire(), "code": "expired", "now": T + 60_000},
         {"name": "from-the-future", "wire": good[0].to_wire(), "code": "not_yet_valid", "now": T - 120_001},
     ]

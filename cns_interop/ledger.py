@@ -30,14 +30,17 @@ class Ledger(Protocol):
 
 
 class MemoryLedger:
-    def __init__(self) -> None:
+    def __init__(self, *, keep_ms: int = 120_000) -> None:
         self._seen: Dict[Tuple[str, str], Optional[int]] = {}
         self._lock = threading.Lock()
+        self._keep_ms = keep_ms
 
     def spend(self, sender: str, message_id: str, expires_at: Optional[int]) -> None:
         with self._lock:
             if (sender, message_id) in self._seen:
                 raise Refused("replayed", "this message was already accepted once")
+            cutoff = now_ms() - self._keep_ms  # an entry is kept until its message would be refused as expired
+            self._seen = {k: e for k, e in self._seen.items() if e is None or e > cutoff}
             self._seen[(sender, message_id)] = expires_at
 
 

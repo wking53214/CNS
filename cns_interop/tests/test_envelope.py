@@ -148,3 +148,9 @@ def test_an_external_signer_is_checked_before_its_signature_leaves():
 
 def test_a_signer_never_shows_its_key():
     assert bytes(range(32)).hex() not in repr(A) and "seed" not in repr(A)
+
+
+@pytest.mark.parametrize("text", ["[" * 100_000 + "]" * 100_000, '{"a":' + "9" * 5000 + "}"])
+def test_hostile_json_is_refused_not_a_crash(text):
+    with pytest.raises(Refused):
+        wire.loads(text)

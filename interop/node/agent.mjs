@@ -39,7 +39,7 @@ function judge(seen) {
 }
 
 function decider() {
-  const offers = new Map(); // offer digest -> terms
+  const offers = new Map(); // offer digest -> { terms, expiresAt }
   out(U.publish(me, "node-screener", "node/uai.mjs (OpenSSL Ed25519)", [CAP]));
   const refuse = (env, e) => U.seal(me, "refuse", { code: e.code, reasons: [e.reason] }, { to: env.from, replyTo: env, ttlMs: TTL });
   return (line) => {
@@ -47,6 +47,7 @@ function decider() {
     if (wire.kind === "manifest") { U.readManifest(wire, { trust }); return out({ uai_ok: "manifest read" }); }
     const env = U.openEnvelope(wire, { audience: me.agent, kinds: new Set(["request", "accept"]) });
     if (env.expires_at === null) throw new U.Refused("malformed", "session messages must expire");
+    if (env.expires_at - env.issued_at > 86400000) throw new U.Refused("malformed", "a session message may live at most 24 hours");
     try { trust.admit(env.from); } catch (e) { ledger.spend(env.from, env.id); return out(refuse(env, e)); }
     if (env.kind === "request") {
       if (env.in_reply_to) throw new U.Refused("malformed", "a request answers nothing");
@@ -54,16 +55,21 @@ function decider() {
       let terms;
       try { terms = U.proposeTerms(CAP, env.body, { decider: me.agent, requester: env.from }); } catch (e) { return out(refuse(env, e)); }
       const offer = U.seal(me, "offer", { terms }, { to: env.from, replyTo: env, ttlMs: TTL });
-      offers.set(U.envelopeDigest(offer), terms);
+      const now = Date.now();
+      for (const [k, v] of offers) if (now >= v.expiresAt) offers.delete(k); // forget lapsed offers
+      offers.set(U.envelopeDigest(offer), { terms, expiresAt: offer.expires_at });
       return out(offer);
     }
-    const terms = offers.get(env.in_reply_to);
-    if (!terms) throw new U.Refused("terms", "the accept answers no offer this decider has open");
+    const open = offers.get(env.in_reply_to);
+    if (!open) throw new U.Refused("terms", "the accept answers no offer this decider has open");
+    if (Date.now() >= open.expiresAt) { offers.delete(env.in_reply_to); throw new U.Refused("expired", "the offer this accept answers has lapsed"); }
+    const terms = open.terms;
     if (env.from !== terms.requester) throw new U.Refused("terms", "the accept comes from someone the offer was not made to");
     ledger.spend(env.from, env.id);
     offers.delete(env.in_reply_to);
     let seen;
     try {
+      if (Object.keys(env.body).sort().join() !== "disclosure,terms_digest") throw new U.Refused("terms", "an accept is exactly terms_digest and disclosure");
       if (env.body.terms_digest !== U.termsDigest(terms)) throw new U.Refused("terms", "the accept does not agree to the terms offered");
       seen = U.openDisclosure(terms.subject.digest, env.body.disclosure, terms.disclose);
     } catch (e) { return out(refuse(env, e)); }
