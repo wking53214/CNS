@@ -15,6 +15,45 @@ different code. This file on `main` says what is true now, and so does the GitHu
 text is kept in `docs/releases/`. A heading's date is the day the tag was made; where the tagged commit is older, the
 entry says so.
 
+## [Unreleased]
+
+Merged to `main` after the `v2.2.0` tag (`ce6bd05`) and in no tag yet. The package still says 2.2.0, so `release
+--check` reads this tree as 2.2.0. Proposed as 2.3.0: every addition below is an optional argument or a new file, the
+`cns` package's shapes are unchanged (`tests/public_shape.json` did not move), and the changed behaviours refuse what
+was wrongly allowed. Not tagged; the version and the tag are the owner's decision. Each line names the commit that
+holds it.
+
+### Added
+
+- CCC joins the evidence spine as the fifth hop: `CCC:ccc.transition` is a required seat in
+  `chains/evidence_spine.py`, and `cns_composition.repo_gates` declares CCC's gate end (`902638f`, `b4c56a2`).
+- CCC's write permission is the roster's `DecisionGuard`: after a roster no, a direct ingest is refused and CCC's
+  store stays empty (#57: `18ed1f7`, `90932dd`, `0c13c9b`, `c3540dc`).
+- `SuperGate(..., binding_of=..., strict_binding=...)`: a PASS bound to anything but the candidate it was given is a
+  breach; with neither argument nothing changes (CNS-006, `ae1604e`).
+- A decision carries a nonce and an issue time, and `SuperGate.decide` takes an optional `ttl`; `DecisionGuard`
+  refuses a spent nonce and an expired decision (CNS-007, `c4f1ef7`).
+- `contracts/released-seats.json`, written by `repin` and compared by `seat_pins` (`d47c8cd`, `98fd724`).
+
+### Changed
+
+- `run_chain`: a verdict whose gate name differs from the seated gate's is a breach (CNS-004, `d4076ea`).
+- `SuperGate.decide` reads every `same_subject` seat again after the gates run; a candidate changed meanwhile is a
+  `TERMINAL_BREACH` with no subject recorded (CNS-005, `cfeafee`).
+- `cns.gate.subject_digest`: a mapping key that is not text is a `TypeError` before any lookup (it was a `KeyError`);
+  output for every valid input is unchanged (CNS-008, `ce4e966`).
+- `ResubmissionGuard`: a full table refuses a new subject instead of forgetting the oldest, and the same content is
+  counted across names (`max_same_content`, default 12) (CNS-009, `3b29b38`; one test updated under rule 5).
+- The CCC admission door names CCC's rejected, superseded and unattested answers; each is still a `TERMINAL_BREACH`
+  (CCC-002, `d68d47a`).
+- Building a `LibraryComposer` raises a `DeprecationWarning` that names `SuperGate`; nothing is removed (CNS-011,
+  `47b8e27`).
+- The manifest names five repositories (seven at `v2.2.0`); DRAFTER, BURNISH and WATCHER_MCU are released from the
+  circuit and not installed (Pin22, Stages 3 to 5).
+- `release --check` and `circuit_canary` exit 2 with one line when they cannot be set up (`2960409`).
+- CI: the chains run when the decision core changes, and the repin proposal runs the whole suite before it opens a
+  pull request (CNS-003 `6a8865c`, CNS-002 `7b0226e`).
+
 ## [2.2.0] - 2026-10-29
 
 The decision guard, in `cns_composition` only. The `cns` package is untouched: no shape changed, so `tests/public_shape.json`
