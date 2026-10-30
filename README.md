@@ -117,6 +117,9 @@ refused and an approved decision opens it once, for the one document it judged. 
 a finding or a road sign (`derive`, `infer`, `interpret`, `record_external_finding`, `discover`, `detect_road_sign`
 and `record_road_sign`) stay refused after any decision, because no seat judges those; the spine reads the gated
 doors off CCC and goes red if CCC gates one its reader does not name.
+The spine also builds the kernel with an evidence guard, which takes a record only if TIE produced it from the verified
+export of the document: a forged record, one with another document's text or source, or one of another kind is refused.
+A kernel built without that guard takes any evidence, and the spine records that as its second GAP.
 
 A passing decision records the one document its seats agreed on (`Decision.subject`).
 `cns_composition.decision_guard.DecisionGuard` turns that into a permission for

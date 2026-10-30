@@ -46,6 +46,17 @@ registers a root, and a scenario records that as the one GAP left: the guard pro
 kernels refuse to be built that way unless the builder passes `allow_unguarded_roots=True`, which this script does
 only for that scenario, so the gap is reachable only by saying so.
 
+THE EVIDENCE: A PERMISSION THAT CHECKS WHERE A RECORD CAME FROM
+
+The kernel's registry holds the evidence a root cites, and the root seat checks that a citation exists, so the
+evidence has to be added before the roster can decide. No decision exists yet, so a decision guard cannot be the
+permission here. The kernel is built with `evidence_guard=tie_evidence_guard(...)` instead: it takes a record only if
+TIE produced its id from the verified export of this document, it is a source observation, and it names this source
+and this text's SHA-256. A record TIE never produced, one carrying another document's text or source, or one of
+another kind is refused, and a FACT root citing the forged id is then not admissible. This guard is not spent by a yes,
+because one document gives TIE many records. It checks provenance, not a person's approval. A kernel built without an
+evidence guard takes any evidence, and a scenario records that as the second GAP.
+
 Two other seams are closed in the repositories themselves, and the scenarios check them from here. The kernel refuses a
 root stated as FACT that cites no evidence. A person's sign-off at HERALD reaches TIE on its own path
 (`signoffs_from_herald_export`), naming who confirmed it, why and when, apart from machine readings. HERALD's

@@ -39,6 +39,11 @@ holds it.
   door the reader does not name; two scenarios hold them refused after a roster no and after a roster yes (#61:
   `2d7abe7`, `9f091fc`, `5e57eb8`, docs in `ec99502`; the SEAM HOLDS count in `tests/test_chains.py` went from 22
   to 24 under rule 5).
+- The spine builds its kernel with Conservation_Kernel's new `evidence_guard`: `tie_evidence_guard` takes an evidence
+  record only if TIE produced its id from the verified export of the document, it is a source observation, and it
+  names that source and the SHA-256 of that text. One scenario holds forged, other-document, other-source and
+  other-kind records refused; a second recorded GAP states that a kernel built without the guard takes any evidence
+  (the SEAM HOLDS count in `tests/test_chains.py` went from 24 to 25 and the GAP count from 1 to 2 under rule 5).
 
 ### Changed
 
