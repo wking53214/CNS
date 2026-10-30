@@ -58,9 +58,11 @@ WHAT THIS DOES NOT COVER
 ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need PostgreSQL, Redis and a vendored kernel to
 run). Their seams are not exercised here and nothing below speaks for them.
 
-CCC is covered only as far as its gate goes. The gate judges an attempted `ingest`; CCC's own `ingest` asks no guard and
-no decision, so a caller who runs it directly registers the document whatever the roster said. A scenario records that
-as the second GAP, and it goes red the day CCC grows a guard like the kernel's.
+CCC is covered as far as its gate goes and as far as its write permission goes. The gate judges an attempted `ingest`.
+CCC built with the roster's guard as its `write_permission` asks that guard before `ingest`, `record`, `derive`,
+`infer` and `interpret`, so a direct call after a "no" is refused and an approved decision opens it once, for the one
+document it judged. A CCC built without a permission is not stopped, and nothing here can see that. `decide` and the
+versioning methods are not gated, by CCC's design: a human's action is never held up by a machine's roster.
 
 This is a check, not a demonstration: every scenario states the facts it must produce, and the script exits 1 if any
 differs, naming the scenario and the fact. Run with HERALD (at its root), TIE, Conservation_Kernel and
@@ -531,18 +533,22 @@ def ccc_deciding_registers_nothing() -> Dict[str, object]:
     return facts(decided, evidence, refusal, ccc_artifacts=len(system.store.artifacts))
 
 
-def door_refused_ccc_proceeds() -> Dict[str, object]:
+def door_refused_ccc_holds() -> Dict[str, object]:
     """The gateway refuses the door and the roster says no. Then the same ingest is run on CCC directly.
 
-    CCC's `ingest` asks no guard and no decision, so it registers the document whatever the roster said."""
+    CCC is built with the roster's guard as its write permission. No approved decision opened it, so the direct
+    `ingest` is refused before CCC touches its store."""
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
-    system, attempt_ = CCCSystem(), ccc_ingest(INVOICE, "doc-1")
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, tampered(door(root, "doc-1")), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
     before = len(system.store.artifacts)
-    attempt_.run(system)
-    return facts(decided, evidence, refusal, ccc_artifacts_before=before, ccc_artifacts_after_refusal=len(system.store.artifacts))
+    refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_artifacts_before=before,
+                 ccc_ingest_refused=refused, ccc_artifacts_after_refusal=len(system.store.artifacts))
 
 
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
@@ -626,9 +632,10 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
                          "ccc_reason": "CCC-PROVENANCE-002"}),
     ("SEAM HOLDS: the roster allows the document and CCC's store is still empty, because its gate judges on a scratch copy",
      ccc_deciding_registers_nothing, {**HELD, "ccc_artifacts": 0}),
-    ("GAP: the roster says no, yet CCC's ingest called directly registers the document",
-     door_refused_ccc_proceeds, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"],
-                                 "ccc_artifacts_before": 0, "ccc_artifacts_after_refusal": 1}),
+    ("SEAM HOLDS: the gateway refuses the door and the roster says no; CCC built with the guard refuses a direct ingest",
+     door_refused_ccc_holds, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"],
+                              "guard_opened": False, "ccc_artifacts_before": 0, "ccc_ingest_refused": True,
+                              "ccc_artifacts_after_refusal": 0}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
