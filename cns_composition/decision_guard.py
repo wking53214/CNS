@@ -24,6 +24,16 @@ the spent set lives in this module, so two processes can each spend the same dec
 Anything else is False: nothing authorized, a refused or unbound decision, a second use, another document, a reader
 that raises. A refusal does not spend the permission; only a yes does.
 
+BOUND TO A SEAT'S VERDICT, NOT ONLY TO A DOCUMENT
+
+The document check says which text the decision was about. It does not say which thing is about to happen to it: two
+different artifacts, or two different calls, can carry the same source and the same text. A guard built with `seat`
+and `binding_of` also opens only for the exact object one seat judged. `authorize` finds that seat's PASS verdict in
+the decision and keeps what it is bound to, `(subject, subject_digest)`; the guard then answers True only if
+`binding_of(artifact)` is that pair. `binding_of` should use the digest function the seat's own repository exports
+(the one that repository's gate binds its verdict with), so the permission is for the same object the gate judged,
+every field of it. Without `seat`, the guard checks the document only, as before.
+
 WHAT IT DOES NOT DO
 
 It protects a kernel that was built with it. A caller who builds a kernel without a guard, or who writes to a ledger
@@ -36,7 +46,9 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Callable, Optional, Set
+from typing import Callable, Optional, Set, Tuple
+
+from cns.gate import GateOutcome
 
 from .super_gate import Decision, Judged
 
@@ -51,13 +63,24 @@ _SPENT_LOCK = threading.Lock()
 class DecisionGuard:
     """Closed until authorized by an approved decision; then opens once, for the one document that decision judged."""
 
-    def __init__(self, subject_of: Callable[[object], Judged], *, clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, subject_of: Callable[[object], Judged], *, clock: Callable[[], float] = time.time,
+                 seat: Optional[str] = None,
+                 binding_of: Optional[Callable[[object], Tuple[str, str]]] = None) -> None:
         if not callable(subject_of):
             raise ValueError("subject_of must be a function that reads which document an artifact is")
         if not callable(clock):
             raise ValueError("clock must be a function that returns the time in seconds")
+        if (seat is None) != (binding_of is None):
+            raise ValueError("seat and binding_of go together: a seat to bind to needs a reader of what it judged")
+        if seat is not None and not (isinstance(seat, str) and ":" in seat and all(seat.split(":", 1))):
+            raise ValueError("seat must name a seat of the roster as 'repository:gate'")
+        if binding_of is not None and not callable(binding_of):
+            raise ValueError("binding_of must be a function that reads what an artifact's verdict is bound to")
         self._subject_of = subject_of
         self._clock = clock
+        self._seat = seat
+        self._binding_of = binding_of
+        self._bound_to: Optional[Tuple[str, str]] = None
         self._expires_at: Optional[float] = None
         self._approved: Optional[Judged] = None
         self._spent = False
@@ -87,12 +110,32 @@ class DecisionGuard:
                              "anything")
         if decision.expires_at is not None and self._clock() >= decision.expires_at:
             raise ValueError("the decision has expired, so it cannot authorize anything")
+        bound_to = self._seat_binding(decision)
         with _SPENT_LOCK:
             if decision.nonce in _SPENT:
                 raise ValueError("this decision has already authorized a guard; one decision opens one action")
             _SPENT.add(decision.nonce)
         self._approved = decision.subject
+        self._bound_to = bound_to
         self._expires_at = decision.expires_at
+
+    def _seat_binding(self, decision: Decision) -> Optional[Tuple[str, str]]:
+        """What the bound seat's verdict is bound to, or None when this guard binds no seat. Raises ValueError
+        unless that seat is on the roster and its one verdict is a PASS that records what it judged."""
+        if self._seat is None:
+            return None
+        if self._seat not in decision.seats:
+            raise ValueError(f"the decision's roster has no seat {self._seat}, so it cannot authorize this guard")
+        gate = self._seat.split(":", 1)[1]
+        verdicts = [r for r in decision.run.results if r.gate == gate]
+        if len(verdicts) != 1:
+            raise ValueError(f"the decision holds {len(verdicts)} verdicts named {gate}, so there is no one verdict "
+                             f"to bind to for {self._seat}")
+        verdict = verdicts[0]
+        if verdict.outcome is not GateOutcome.PASS or not verdict.bound():
+            raise ValueError(f"{self._seat} did not pass with a verdict that records what it judged, so there is "
+                             "nothing to bind the permission to")
+        return verdict.subject, verdict.subject_digest
 
     def __call__(self, artifact: object) -> bool:
         if self._approved is None or self._spent:
@@ -105,5 +148,12 @@ class DecisionGuard:
             return False
         if not (isinstance(judged, Judged) and judged == self._approved):
             return False
+        if self._binding_of is not None:
+            try:
+                bound = self._binding_of(artifact)
+            except Exception:  # a reader that cannot say what this is never permits
+                return False
+            if not (isinstance(bound, tuple) and len(bound) == 2 and bound == self._bound_to):
+                return False
         self._spent = True
         return True
