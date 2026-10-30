@@ -152,7 +152,22 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 1
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 22
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 24
+
+
+def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
+    """The write reader's two lists are policy, pinned here so changing them is a change made in review. The script
+    also compares them with the doors CCC really gates, so a new gated door cannot stay unnamed unnoticed."""
+    tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
+    policy = {t.id: ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
+              for t in n.targets if isinstance(t, ast.Name) and t.id in ("WRITES_A_DOCUMENT", "WRITES_NO_DOCUMENT")}
+    assert set(policy) == {"WRITES_A_DOCUMENT", "WRITES_NO_DOCUMENT"}
+    assert policy["WRITES_A_DOCUMENT"] == ("ingest", "record")
+    assert set(policy["WRITES_NO_DOCUMENT"]) == {"derive", "infer", "interpret", "record_external_finding", "discover",
+                                                 "detect_road_sign", "record_road_sign"}
+    assert not set(policy["WRITES_A_DOCUMENT"]) & set(policy["WRITES_NO_DOCUMENT"])
+    text = EVIDENCE.read_text(encoding="utf-8")
+    assert "ccc_doors_all_named()" in text and "def ccc_gated_doors" in text and "__wrapped__" in text
 
 
 def _chain_imports():

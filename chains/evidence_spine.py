@@ -60,9 +60,14 @@ run). Their seams are not exercised here and nothing below speaks for them.
 
 CCC is covered as far as its gate goes and as far as its write permission goes. The gate judges an attempted `ingest`.
 CCC built with the roster's guard as its `write_permission` asks that guard before `ingest`, `record`, `derive`,
-`infer` and `interpret`, so a direct call after a "no" is refused and an approved decision opens it once, for the one
-document it judged. A CCC built without a permission is not stopped, and nothing here can see that. `decide` and the
-versioning methods are not gated, by CCC's design: a human's action is never held up by a machine's roster.
+`infer`, `interpret`, `record_external_finding`, `discover`, `detect_road_sign` and `record_road_sign`, so a direct call
+after a "no" is refused. An approved decision opens `ingest` and `record` once, for the one document it judged. The
+other seven carry a conclusion, a finding or an observation, which no seat judges, so they stay refused after any
+decision. The doors CCC gates are read off CCC itself and compared with the reader's two lists, so a door CCC starts
+gating later turns this script red until the reader names it. A CCC built without a permission is not stopped, and
+nothing here can see that. `decide` and the versioning methods are not gated, by CCC's design: a human's action is
+never held up by a machine's roster. CCC also leaves open, on purpose, the methods that change a record that already
+exists and `detect_conflict`, `ask`, `attach_evidence` and `relate`; nothing here speaks for them.
 
 This is a check, not a demonstration: every scenario states the facts it must produce, and the script exits 1 if any
 differs, naming the scenario and the fact. Run with HERALD (at its root), TIE, Conservation_Kernel and
@@ -82,7 +87,7 @@ from ccc.cns_connector import attempt as ccc_attempt
 from ccc.errors import WritePermissionRefused
 from ccc.models import Actor as CccActor
 from ccc.models import EpistemicStatus as CccStatus
-from ccc.models import ProvenanceStatus
+from ccc.models import ProvenanceStatus, RoadSignCategory
 from ccc.permission import WriteRequest
 from ccc.system import CCCSystem
 from cns.gate import GateOutcome
@@ -227,15 +232,55 @@ def reads_attempt(att: Attempt) -> Judged:
     return Judged(att.kwargs["metadata"]["source_id"], sha256(att.args[0]))
 
 
+#: The direct writes to CCC that carry a document the roster judged. Policy, like READERS.
+WRITES_A_DOCUMENT = ("ingest", "record")
+
+#: The direct writes to CCC that carry something no seat of the roster judges: a conclusion (`derive`, `infer`,
+#: `interpret`), a finding (`record_external_finding`, `discover`) or an observation (`detect_road_sign`,
+#: `record_road_sign`). None carries the text the roster compared, only a claim about it, so no decision opens them.
+#: Policy, like READERS: reviewed with it, and held by `ccc_doors_all_named` against the doors CCC really gates.
+WRITES_NO_DOCUMENT = ("derive", "infer", "interpret", "record_external_finding", "discover", "detect_road_sign",
+                      "record_road_sign")
+
+
 def reads_write(request: WriteRequest) -> Judged:
     """The document a direct write to CCC is about, for a CCC built with the roster's permission.
 
     `ingest` and `record` carry one: the source CCC is asked to record the text under, and the digest of that text,
-    read as `reads_attempt` reads it. `derive`, `infer` and `interpret` carry a conclusion, and no seat of the roster
-    judges a conclusion, so they name no document and stay refused after any decision. Policy, like READERS."""
-    if request.operation not in ("ingest", "record"):
-        raise ValueError(f"{request.operation} names no document the roster judged")
-    return Judged(request.kwargs["metadata"]["source_id"], sha256(request.args[0]))
+    read as `reads_attempt` reads it. The doors in `WRITES_NO_DOCUMENT` carry a conclusion, a finding or an
+    observation, which no seat of the roster judges, so they name no document and stay refused after any decision. A
+    door that is in neither list is refused too: an unknown door stays shut."""
+    if request.operation in WRITES_A_DOCUMENT:
+        return Judged(request.kwargs["metadata"]["source_id"], sha256(request.args[0]))
+    if request.operation in WRITES_NO_DOCUMENT:
+        raise ValueError(f"{request.operation} names no document the roster judged: it carries a conclusion, a "
+                         "finding or an observation, and no seat judges those")
+    raise ValueError(f"{request.operation} is a door the roster has no reading for, so it stays shut")
+
+
+def ccc_gated_doors() -> Tuple[str, ...]:
+    """Every public method of CCC that asks its write permission, found on CCC itself, sorted.
+
+    CCC wraps each of them so that it asks first, and the wrapper keeps the method's own name and a pointer to the
+    method it wraps. That is how they are found here, so the list is CCC's own and is not copied into this script."""
+    return tuple(sorted(name for name in dir(CCCSystem)
+                        if callable(getattr(CCCSystem, name))
+                        and hasattr(getattr(CCCSystem, name), "__wrapped__")
+                        and getattr(CCCSystem, name).__qualname__ == f"CCCSystem.{name}"))
+
+
+def ccc_doors_all_named() -> str:
+    """Empty if `reads_write` has a reading for exactly the doors CCC gates, else what differs.
+
+    A door CCC starts gating that the reader does not name goes red here, instead of staying shut unnoticed; a door
+    named that CCC no longer gates goes red too, so the policy cannot drift away from the repository it describes."""
+    named, gated = set(WRITES_A_DOCUMENT) | set(WRITES_NO_DOCUMENT), set(ccc_gated_doors())
+    parts = []
+    if gated - named:
+        parts.append("CCC gates doors the reader does not name: " + ", ".join(sorted(gated - named)))
+    if named - gated:
+        parts.append("the reader names doors CCC does not gate: " + ", ".join(sorted(named - gated)))
+    return "; ".join(parts)
 
 
 def reads_claim(claim) -> Judged:
@@ -266,6 +311,49 @@ def refused_by_permission(call: Callable[[], object]) -> bool:
         return False
     except WritePermissionRefused:
         return True
+
+
+@dataclasses.dataclass(frozen=True)
+class CccFinding:
+    """A finding shaped the way `record_external_finding` reads one. Its contract is structural, so a plain stand-in
+    is all it needs; no finding-producing repository is imported here."""
+
+    conclusion: str
+    method: str
+    source_material: Tuple[str, ...]
+    confidence: Optional[float]
+    verified: bool
+    evidence: Tuple[Tuple[str, str], ...] = ()
+
+
+def direct_finding_writes(system: CCCSystem) -> List[bool]:
+    """Try, directly on `system`, the four doors that create findings and road signs, in this order:
+    `record_external_finding`, `discover`, `detect_road_sign`, `record_road_sign`. For each, True if CCC's
+    permission refused it, False if it went through."""
+    model = CccActor.model("herald")
+    finding = CccFinding(conclusion="the payment line repeats the invoice amount", method="evidence-spine",
+                         source_material=("doc-1",), confidence=0.6, verified=True)
+    sign = {"observation": "the payment line repeats the invoice amount",
+            "category": RoadSignCategory.UNEXPECTED_CONNECTION, "actor": model}
+
+    def refused(call: Callable[[], object]) -> bool:
+        # A door that fails for some other reason (CCC with no permission may stop on its own checks) was not
+        # refused by the permission, so this says False and the scenario fails by its facts, not by a crash.
+        try:
+            return refused_by_permission(call)
+        except Exception:  # noqa: BLE001
+            return False
+
+    return [refused(lambda: system.record_external_finding(finding, actor=model)),
+            refused(lambda: system.discover(source_material=("doc-1",), method="evidence-spine",
+                                            conclusion=finding.conclusion, confidence=0.6, actor=model)),
+            refused(lambda: system.detect_road_sign(**sign)),
+            refused(lambda: system.record_road_sign(**sign))]
+
+
+def findings_written(system: CCCSystem) -> int:
+    """How many findings and road signs `system` holds."""
+    return len(system.store.discoveries) + len(system.store.road_signs)
 
 
 def register(kernel: ConservationKernel, root: RootArtifact) -> Tuple[bool, bool]:
@@ -624,6 +712,45 @@ def approval_does_not_open_ccc_conclusions() -> Dict[str, object]:
                  ccc_artifacts_after_ingest=len(system.store.artifacts))
 
 
+def door_refused_ccc_finding_doors_hold() -> Dict[str, object]:
+    """The gateway refuses the door and the roster says no. Then the four doors that create findings and road signs
+    are tried on CCC directly.
+
+    CCC is built with the roster's guard as its write permission. No approved decision opened it, so each door is
+    refused before CCC touches its store, its rules or its audit trail."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, tampered(door(root, "doc-1")), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
+    refused = direct_finding_writes(system)
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_finding_doors_refused=refused,
+                 ccc_findings_written=findings_written(system), ccc_audit_events=len(system.audit_trail.all()))
+
+
+def approval_does_not_open_ccc_finding_doors() -> Dict[str, object]:
+    """The roster allows the document. No seat judges a finding or an observation, so the four doors that create
+    findings and road signs stay refused.
+
+    Their refusals do not spend the approval: the document's own ingest still goes in afterwards."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
+    refused = direct_finding_writes(system)
+    written, audited = findings_written(system), len(system.audit_trail.all())
+    ingest_refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_finding_doors_refused=refused,
+                 ccc_findings_written=written, ccc_audit_events=audited, ccc_ingest_refused=ingest_refused,
+                 ccc_artifacts_after_ingest=len(system.store.artifacts),
+                 ccc_findings_after_ingest=findings_written(system))
+
+
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
     """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
@@ -724,6 +851,15 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      approval_does_not_open_ccc_conclusions,
      {**HELD, "guard_opened": True, "ccc_conclusions_refused": [True, True, True],
       "ccc_artifacts_after_conclusions": 0, "ccc_ingest_refused": False, "ccc_artifacts_after_ingest": 1}),
+    ("SEAM HOLDS: the gateway refuses the door and the roster says no; CCC built with the guard refuses a finding or a road sign written directly, at all four doors",
+     door_refused_ccc_finding_doors_hold,
+     {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "guard_opened": False,
+      "ccc_finding_doors_refused": [True, True, True, True], "ccc_findings_written": 0, "ccc_audit_events": 0}),
+    ("SEAM HOLDS: an approved decision names a document, not a finding or an observation, so CCC's four finding and road sign doors stay refused and the approval is not spent",
+     approval_does_not_open_ccc_finding_doors,
+     {**HELD, "guard_opened": True, "ccc_finding_doors_refused": [True, True, True, True], "ccc_findings_written": 0,
+      "ccc_audit_events": 0, "ccc_ingest_refused": False, "ccc_artifacts_after_ingest": 1,
+      "ccc_findings_after_ingest": 0}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
@@ -747,6 +883,10 @@ def main() -> int:
         print(f"{'ok  ' if not refused else 'FAIL'} {what}: refused at construction")
         if refused:
             wrong.append(f"{what}: {refused}")
+    unnamed = ccc_doors_all_named()
+    print(f"{'ok  ' if not unnamed else 'FAIL'} every door CCC gates is named by the roster's write reader, and none named is gone")
+    if unnamed:
+        wrong.append(f"CCC's doors: {unnamed}")
     for line in wrong:
         print(f"chain: {line}", file=sys.stderr)
     return 1 if wrong else 0
