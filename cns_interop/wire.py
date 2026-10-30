@@ -32,7 +32,7 @@ def _no_float(text: str) -> Any:
 
 
 def _no_constant(text: str) -> Any:
-    raise Refused("profile", f"{text} is not a JSON value")
+    raise Refused("malformed", f"{text} is not a JSON value")
 
 
 def dumps(envelope: Envelope) -> str:

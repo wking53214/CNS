@@ -118,7 +118,7 @@ def test_deep_nesting_is_refused():
 
 
 @pytest.mark.parametrize("text,code", [
-    ('{"a":1,"a":2}', "malformed"), ('{"a":1.0}', "profile"), ('{"a":1e3}', "profile"), ('{"a":NaN}', "profile"),
+    ('{"a":1,"a":2}', "malformed"), ('{"a":1.0}', "profile"), ('{"a":1e3}', "profile"), ('{"a":NaN}', "malformed"),
     ("[1]", "malformed"), ("not json", "malformed"), (b"\xff", "malformed"),
 ])
 def test_the_wire_reader_is_strict(text, code):

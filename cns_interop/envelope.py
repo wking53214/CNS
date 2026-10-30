@@ -50,7 +50,7 @@ from cns.gate import subject_digest
 from . import ed25519
 from .identity import Signer, is_agent_id, public_of
 
-__all__ = ["VERSION", "KINDS", "FIELDS", "Envelope", "Refused", "seal", "open_envelope", "now_ms",
+__all__ = ["VERSION", "KINDS", "FIELDS", "Envelope", "Refused", "seal", "sign_envelope", "open_envelope", "now_ms",
            "check_profile", "MAX_INT", "MAX_DEPTH"]
 
 VERSION = "uai/1"
@@ -185,6 +185,16 @@ def seal(signer: Signer, kind: str, body: Mapping[str, Any], *, to: str = "", re
                    issued_at=issued, expires_at=issued + ttl_ms if ttl_ms is not None else None, body=body)
     sig = signer.sign(_signing_input(env.unsigned()))
     return Envelope(**{**env.__dict__, "sig": sig.hex()})
+
+
+def sign_envelope(signer: Signer, env: Envelope) -> Envelope:
+    """Sign an envelope whose every field is already chosen. For reproducible vectors and for other front ends;
+    `seal` is the ordinary way to make a message, and draws a fresh id itself."""
+    if env.sender != signer.agent:
+        raise ValueError("the envelope names a different sender than the signer")
+    check_profile(env.body)
+    sig = signer.sign(_signing_input(env.unsigned()))
+    return Envelope(**{**env.__dict__, "body": _plain(env.body), "sig": sig.hex()})
 
 
 def _need(cond: bool, reason: str) -> None:
