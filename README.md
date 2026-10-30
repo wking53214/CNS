@@ -7,6 +7,59 @@ Where the five-repository circuit stands today (what was checked, what it found 
 still open): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
 remains to be done: [docs/RELEASED_SEATS.md](docs/RELEASED_SEATS.md).
 
+## What CNS is for
+
+The library is many repositories, and many of them decide something: whether a change may merge, whether a document
+may be stored, whether a claim may be used. CNS exists so that they decide in one shared vocabulary. It holds the
+shapes of a decision (a gate that runs before an action, a gate that judges its result, and the three answers PASS,
+RETRY and TERMINAL_BREACH), so one repository can read and check another's verdict without the two inventing a
+protocol between them.
+
+Three aims follow from that. Each is measured rather than claimed:
+
+- **One rule, carried by a type.** The library's governing constraint is a gate with two ends: an origin condition
+  checked before anything runs (ALPHA) and an outcome condition checked on the result (OMEGA), with a failing check
+  aborting rather than repairing. Measured on 2026-09-12, no repository implemented both ends; the ordering had lived
+  only as a convention and drifted. `cns.gate` makes the end a gate runs at a declared property, because a convention
+  cannot carry an invariant across twenty repositories and a type can. The full argument is in `cns/gate.py`.
+- **One copy of each shared shape.** A class two repositories share lives here once and is imported, not copied. The
+  copies that remain are counted (ghost-buster's `kernel_shadow` and `drifted_contract`; the baseline was 84 sites
+  across six of ten repositories on 2026-09-11), and the aim is zero. `docs/ROADMAP.md` tracks it.
+- **Proof across repositories, not only within them.** Each repository's own suite proves that repository. CNS adds
+  the checks no single repository can make about itself: the governance circuit (Warden and its seats, joined by
+  `cns.stack`, below) checks a code change against pinned checkouts, and the evidence spine checks that a document
+  stays the same document as it passes from one repository to the next.
+
+How far this has got is in `docs/STATUS.md` and in "What works" and "What does not work, or is not proven" below.
+
+### The evidence spine
+
+`chains/evidence_spine.py` runs one document through five repositories, in order:
+
+| hop | what it does with the document |
+|---|---|
+| HERALD | reads it and extracts claims, judging the document first and then each claim |
+| TIE | records HERALD's signed export as evidence, and refuses an export that was changed |
+| Conservation_Kernel | judges a root artifact built from that evidence before it becomes ancestry |
+| Governance_Gateway | judges the artifact at its admission door |
+| CCC | judges the attempt to ingest the document into its store |
+
+Each of the five is tested alone and binds its own verdict to what it judged. What no single suite can see is the
+seams: whether the document that reaches the last door is the one HERALD read, and whether a verdict at one hop says
+anything about the next. The spine holds the five gates in one roster (`SuperGate`), refuses a decision unless every
+seat judged the same document (`same_subject`), and turns an approved decision into a one-use permission
+(`DecisionGuard`) that the kernel needs to register a root and CCC needs to write. A refused decision, or one written
+by hand, opens nothing.
+
+The script then breaks the run at each seam (a document relabelled, an inflated invoice, an export edited after it was
+signed, a decision copied by hand, a direct write after a "no") and states what must happen. A seam that holds is a
+scenario that must keep holding. A seam that nothing checks is stated as a GAP, an assertion and not a skip, so the day
+a repository starts checking it the script goes red and the fact is updated on purpose. Two GAPs are recorded: a
+kernel built without its root guard and called directly registers a root the roster refused, and a kernel built
+without its evidence guard takes evidence TIE never produced. The `chains` workflow runs the spine every day and on pull requests that
+touch the decision core; "Where the six spine repositories stand" below gives its latest result. The spine does not
+cover ZTS, sentinel_os or GSA-815, and it speaks for CCC only as far as CCC's gate and write permission go.
+
 ## The rule
 
 `cns` carries **row shapes and interfaces**: dataclasses, enums,
@@ -251,9 +304,9 @@ perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.5.1` (an oddity: it points at a commit older than `v1.5.0` whose
 package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and recorded so, see `CHANGELOG.md`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`), `v2.2.0` (the decision guard: `DecisionGuard`, `same_subject`, `Decision.subject` and the issuance proof; see `CHANGELOG.md`). A raw commit SHA still
-works, but a tag says which contract you are joining on. This tree declares 2.2.0, tagged `v2.2.0`, the release a consumer pins
-(the work merged after the tag, listed under "Unreleased" in `CHANGELOG.md`, is in no tag yet):
-what 2.2.0 adds is in `CHANGELOG.md`, and `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
+works, but a tag says which contract you are joining on. This tree declares 2.3.0, not yet tagged, so `v2.2.0` stays
+the release a consumer pins until the owner tags: what 2.3.0 adds is in `CHANGELOG.md`, and
+`docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
 
 ## Versioning
 
@@ -327,7 +380,7 @@ second with the `cns` extra installed.
 
 | Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
 |---|---|---|---|---|---|
-| CNS | 2.2.0 | Tags `v0.1.0` to `v2.2.0`. Releases: `v1.5.1` published, `v2.2.0` a draft not yet published. The text for every tag is in `docs/releases/`. | green (6 jobs) | 1294 | not applicable |
+| CNS | 2.3.0, not yet tagged | Tags `v0.1.0` to `v2.2.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`. | green (6 jobs) | 1294 | not applicable |
 | HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.2.0` |
 | TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.2.0` |
 | Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.2.0` |
@@ -337,13 +390,15 @@ second with the `cns` extra installed.
 What this means, plainly:
 
 - Every repository that can use CNS pins the same tag, so the pins agree. The tag is older than `main`: `main` carries
-  work merged after it (see Unreleased in `CHANGELOG.md`), including a change in `cns/gate.py` (CNS-008), so the five
+  work merged after it (2.3.0 in `CHANGELOG.md`, not yet tagged), including a change in `cns/gate.py` (CNS-008), so the five
   consumers run the tag's behaviour, not `main`'s, until a new tag is made and they move to it. Tagging and the
   version are the owner's decision.
 - Only this repository has tags and releases. The other five have a version in their package and nothing tagged.
 - The evidence spine (`chains/evidence_spine.py`) runs HERALD, TIE, Conservation_Kernel, Governance_Gateway and CCC
   end to end with every repository at `main`: 30 results, all ok, exactly one recorded GAP (a kernel built without
-  its guard and called directly), which is an assertion and not a skip.
+  its guard and called directly), which is an assertion and not a skip. That run was before #64, which added a second
+  recorded GAP (a kernel built without its evidence guard takes any evidence); the spine has not been re-run here
+  since.
 - Where a repository writes records, who may call each door is its own README's business. CCC gates nine
   record-creating doors with a caller's permission. Conservation_Kernel guards its roots and lists the doors that are
   not yet protected. HERALD, TIE and Governance_Gateway create no governed record.
