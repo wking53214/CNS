@@ -82,7 +82,7 @@ from ccc.cns_connector import attempt as ccc_attempt
 from ccc.errors import WritePermissionRefused
 from ccc.models import Actor as CccActor
 from ccc.models import EpistemicStatus as CccStatus
-from ccc.models import ProvenanceStatus
+from ccc.models import ProvenanceStatus, RoadSignCategory
 from ccc.permission import WriteRequest
 from ccc.system import CCCSystem
 from cns.gate import GateOutcome
@@ -306,6 +306,49 @@ def refused_by_permission(call: Callable[[], object]) -> bool:
         return False
     except WritePermissionRefused:
         return True
+
+
+@dataclasses.dataclass(frozen=True)
+class CccFinding:
+    """A finding shaped the way `record_external_finding` reads one. Its contract is structural, so a plain stand-in
+    is all it needs; no finding-producing repository is imported here."""
+
+    conclusion: str
+    method: str
+    source_material: Tuple[str, ...]
+    confidence: Optional[float]
+    verified: bool
+    evidence: Tuple[Tuple[str, str], ...] = ()
+
+
+def direct_finding_writes(system: CCCSystem) -> List[bool]:
+    """Try, directly on `system`, the four doors that create findings and road signs, in this order:
+    `record_external_finding`, `discover`, `detect_road_sign`, `record_road_sign`. For each, True if CCC's
+    permission refused it, False if it went through."""
+    model = CccActor.model("herald")
+    finding = CccFinding(conclusion="the payment line repeats the invoice amount", method="evidence-spine",
+                         source_material=("doc-1",), confidence=0.6, verified=True)
+    sign = {"observation": "the payment line repeats the invoice amount",
+            "category": RoadSignCategory.UNEXPECTED_CONNECTION, "actor": model}
+
+    def refused(call: Callable[[], object]) -> bool:
+        # A door that fails for some other reason (CCC with no permission may stop on its own checks) was not
+        # refused by the permission, so this says False and the scenario fails by its facts, not by a crash.
+        try:
+            return refused_by_permission(call)
+        except Exception:  # noqa: BLE001
+            return False
+
+    return [refused(lambda: system.record_external_finding(finding, actor=model)),
+            refused(lambda: system.discover(source_material=("doc-1",), method="evidence-spine",
+                                            conclusion=finding.conclusion, confidence=0.6, actor=model)),
+            refused(lambda: system.detect_road_sign(**sign)),
+            refused(lambda: system.record_road_sign(**sign))]
+
+
+def findings_written(system: CCCSystem) -> int:
+    """How many findings and road signs `system` holds."""
+    return len(system.store.discoveries) + len(system.store.road_signs)
 
 
 def register(kernel: ConservationKernel, root: RootArtifact) -> Tuple[bool, bool]:
@@ -664,6 +707,24 @@ def approval_does_not_open_ccc_conclusions() -> Dict[str, object]:
                  ccc_artifacts_after_ingest=len(system.store.artifacts))
 
 
+def door_refused_ccc_finding_doors_hold() -> Dict[str, object]:
+    """The gateway refuses the door and the roster says no. Then the four doors that create findings and road signs
+    are tried on CCC directly.
+
+    CCC is built with the roster's guard as its write permission. No approved decision opened it, so each door is
+    refused before CCC touches its store, its rules or its audit trail."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, tampered(door(root, "doc-1")), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
+    refused = direct_finding_writes(system)
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_finding_doors_refused=refused,
+                 ccc_findings_written=findings_written(system), ccc_audit_events=len(system.audit_trail.all()))
+
+
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
     """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
@@ -764,6 +825,10 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      approval_does_not_open_ccc_conclusions,
      {**HELD, "guard_opened": True, "ccc_conclusions_refused": [True, True, True],
       "ccc_artifacts_after_conclusions": 0, "ccc_ingest_refused": False, "ccc_artifacts_after_ingest": 1}),
+    ("SEAM HOLDS: the gateway refuses the door and the roster says no; CCC built with the guard refuses a finding or a road sign written directly, at all four doors",
+     door_refused_ccc_finding_doors_hold,
+     {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "guard_opened": False,
+      "ccc_finding_doors_refused": [True, True, True, True], "ccc_findings_written": 0, "ccc_audit_events": 0}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
