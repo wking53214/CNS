@@ -54,6 +54,9 @@ not a release.
   expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.
 - `RemoteDecisionGuard` checked trust only in `authorize`, so it still opened after its decider was revoked. Calling
   the guard now returns False once the decider is in the guard's `trust.revoked`.
+- `interop/act.py` read its job with `json.loads`, which keeps the last of a repeated key and accepts floats and NaN.
+  It now uses `cns_interop.wire.loads`, so those are refused (`malformed`, `profile`) before anything is verified, and
+  a job that is not JSON is refused instead of crashing the process.
 
 ## [2.3.0] - 2026-10-30 (not yet tagged)
 

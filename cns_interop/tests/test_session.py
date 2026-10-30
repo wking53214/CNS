@@ -5,13 +5,18 @@ The cross-process, cross-language version of the happy path is test_two_systems.
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
 
 from cns_composition.super_gate import Judged, SuperGate
 from cns_interop.decision import RemoteDecisionGuard, issue, verify_decision
 from cns_interop.disclosure import commit
-from cns_interop.envelope import Refused, seal
+from cns_interop.envelope import Refused, now_ms, seal
 from cns_interop.identity import Signer
 from cns_interop.ledger import FileLedger, MemoryLedger
 from cns_interop.manifest import Capability
@@ -533,3 +538,51 @@ def test_a_revocation_of_someone_else_leaves_an_authorized_guard_open():
     guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
     object.__setattr__(trust, "revoked", frozenset({EVE.agent}))
     assert guard(("loan-app-17", terms["subject"]["digest"])) is True
+
+
+# Audit 2026-10-30: interop/act.py reads its job as strictly as UAI-1 reads an envelope.
+
+ACT_PY = Path(__file__).resolve().parents[2] / "interop" / "act.py"
+
+
+def act_job():
+    """A real, current decision as the job interop/act.py would be handed. Real clock: act.py has no other."""
+    dec, req, _ = pair(clock=now_ms)
+    _, offer, accept, decision = run(dec, req)
+    terms = offer.body["terms"]
+    return {"decision": decision.to_wire(), "terms": terms, "accept_digest": accept.digest,
+            "artifact": ["loan-app-17", terms["subject"]["digest"]]}
+
+
+def run_act(stdin, ledger, *, capability="income-screen", version=1):
+    root = str(ACT_PY.parents[1])
+    env = {"PYTHONPATH": root, "PATH": "/usr/bin:/bin"}
+    done = subprocess.run([sys.executable, str(ACT_PY), "--acting-for", REQ.agent, "--capability", capability,
+                           "--capability-version", str(version), "--trust", DEC.agent, "--ledger", str(ledger)],
+                          input=stdin, capture_output=True, text=True, env=env, timeout=60)
+    assert done.returncode == 0, done.stderr  # a refusal is an answer, not a crash
+    return json.loads(done.stdout)
+
+
+def test_act_py_permits_one_action_on_a_real_job_and_only_for_its_own_capability(tmp_path):
+    job = json.dumps(act_job())
+    assert run_act(job, tmp_path / "other.jsonl", capability="ingest")["refused"]["code"] == "terms"
+    assert run_act(job, tmp_path / "other.jsonl", version=2)["refused"]["code"] == "terms"
+    assert run_act(job, tmp_path / "spent.jsonl") == {"permitted": True}
+    assert run_act(job, tmp_path / "spent.jsonl")["refused"]["code"] == "replayed"
+
+
+@pytest.mark.parametrize("bad, code", [
+    (lambda text: text[:-1] + ', "artifact": ["loan-app-17", "some-other-digest"]}', "malformed"),  # a key twice
+    (lambda text: text[:-1] + ', "note": 1.5}', "profile"),  # a float, even where nothing reads it
+    (lambda text: text[:-1] + ', "note": NaN}', "malformed"),
+    (lambda text: text[:-1] + ', "note": Infinity}', "malformed"),
+    (lambda text: "not json at all", "malformed"),
+    (lambda text: "[1, 2]", "malformed"),
+], ids=["duplicate-key", "float", "nan", "infinity", "not-json", "not-an-object"])
+def test_act_py_refuses_a_job_that_is_not_read_strictly_and_spends_nothing(tmp_path, bad, code):
+    job = json.dumps(act_job())
+    ledger = tmp_path / "spent.jsonl"
+    assert run_act(bad(job), ledger)["refused"]["code"] == code
+    assert ledger.read_text() == ""  # nothing was verified, so nothing was spent
+    assert run_act(job, ledger) == {"permitted": True}  # and the genuine job still lands
