@@ -34,6 +34,11 @@ holds it.
 - A decision carries a nonce and an issue time, and `SuperGate.decide` takes an optional `ttl`; `DecisionGuard`
   refuses a spent nonce and an expired decision (CNS-007, `c4f1ef7`).
 - `contracts/released-seats.json`, written by `repin` and compared by `seat_pins` (`d47c8cd`, `98fd724`).
+- The roster's write reader names CCC's four finding and road sign doors (`record_external_finding`, `discover`,
+  `detect_road_sign`, `record_road_sign`), none of which any decision opens, and the spine goes red if CCC gates a
+  door the reader does not name; two scenarios hold them refused after a roster no and after a roster yes (#61:
+  `2d7abe7`, `9f091fc`, `5e57eb8`, docs in `ec99502`; the SEAM HOLDS count in `tests/test_chains.py` went from 22
+  to 24 under rule 5).
 
 ### Changed
 

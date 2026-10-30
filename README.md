@@ -316,6 +316,35 @@ ships inside the built wheel. Every action in every workflow is pinned to a full
 comment (`tests/test_workflow_pins.py`). The marker is what tells a consumer's type
 checker to trust these annotations, so it is asserted rather than assumed.
 
+## Where the six spine repositories stand
+
+HERALD, TIE, Conservation_Kernel, Governance_Gateway, CCC and this repository, read at their `main` heads on 2026-10-30.
+The numbers are measured, not carried over: the first count is the repository's own suite with CNS absent, the
+second with the `cns` extra installed.
+
+| Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
+|---|---|---|---|---|---|
+| CNS | 2.2.0 | Tags `v0.1.0` to `v2.2.0`. Releases: `v1.5.1` published, `v2.2.0` a draft not yet published. The text for every tag is in `docs/releases/`. | green (6 jobs) | 1294 | not applicable |
+| HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.2.0` |
+| TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.2.0` |
+| Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.2.0` |
+| Governance_Gateway | 0.1.0 | none | green | 230 and 1 skipped / 417 | the tag `v2.2.0` |
+| CCC | 0.1.0 | none | green | 409, 1 skipped and 1 xfailed / 924 and 1 xfailed | the tag `v2.2.0`; its `cccb` library is pinned to a commit |
+
+What this means, plainly:
+
+- Every repository that can use CNS pins the same tag, so the pins agree. The tag is older than `main`: `main` carries
+  work merged after it (see Unreleased in `CHANGELOG.md`), including a change in `cns/gate.py` (CNS-008), so the five
+  consumers run the tag's behaviour, not `main`'s, until a new tag is made and they move to it. Tagging and the
+  version are the owner's decision.
+- Only this repository has tags and releases. The other five have a version in their package and nothing tagged.
+- The evidence spine (`chains/evidence_spine.py`) runs HERALD, TIE, Conservation_Kernel, Governance_Gateway and CCC
+  end to end with every repository at `main`: 30 results, all ok, exactly one recorded GAP (a kernel built without
+  its guard and called directly), which is an assertion and not a skip.
+- Where a repository writes records, who may call each door is its own README's business. CCC gates nine
+  record-creating doors with a caller's permission. Conservation_Kernel guards its roots and lists the doors that are
+  not yet protected. HERALD, TIE and Governance_Gateway create no governed record.
+
 ## What works
 
 Each line names the test or workflow job that holds it. A claim without one is not made.
