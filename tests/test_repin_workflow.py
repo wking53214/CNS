@@ -277,3 +277,9 @@ def test_the_recheck_refuses_a_released_file_that_is_anything_but_a_commit_move(
     assert recheck(tmp_path, MANIFEST, moved(MANIFEST), moved_released).returncode == 0
     done = recheck(tmp_path, MANIFEST, moved(MANIFEST), edit(moved_released))
     assert done.returncode != 0 and why in done.stderr
+
+
+def test_the_proposing_job_runs_the_whole_suite_before_it_opens_the_pull_request():
+    block = job("propose")
+    assert "run: python -m pytest -q\n" in block
+    assert block.index("run: python -m pytest -q\n") < block.index("git add contracts/")

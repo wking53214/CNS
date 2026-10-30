@@ -28,7 +28,8 @@
 # the pull request by hand.
 #
 # KNOWN LIMIT. A pull request opened with the workflow's own token does not start other workflows, so ci.yml
-# does not run on it. The change is one JSON file and the canary has already run the circuit on it.
+# does not run on it. The canary has already run the circuit on it, and the propose job runs the whole suite on the
+# proposed pins before it opens the pull request.
 #
 # ADDING A REPOSITORY. List it in the manifest and add a checkout step below. tests/test_repin_workflow.py fails
 # until both are done. A repository named in contracts/released-seats.json is not part of the circuit: the manifest
@@ -263,6 +264,10 @@ jobs:
           pip install -e ".[dev]"
           python -m cns_composition.install_stack --check
           python -m pytest tests/test_stack.py tests/test_install_stack.py cns_composition/tests/test_install_rendering.py -q
+      - name: The whole suite passes on the proposed pins
+        # The pull request below is opened with the workflow's own token, so ci.yml never runs on it. Without this step
+        # the first full run of the suite on a re-pin was on main after the merge (PR #35 turned main red that way).
+        run: python -m pytest -q
       - name: Open or update the pull request
         env:
           GH_TOKEN: ${{ github.token }}
