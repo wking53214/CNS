@@ -153,7 +153,13 @@ class Decider:
         try:
             if set(body) != {"terms_digest", "disclosure"} or body["terms_digest"] != terms_digest(terms):
                 raise Refused("terms", "the accept does not agree to the terms offered")
-            disclosed = open_disclosure(terms["subject"]["digest"], body["disclosure"], terms["disclose"])
+            if terms["disclose"]:
+                disclosed = open_disclosure(terms["subject"]["digest"], body["disclosure"], terms["disclose"])
+            elif body["disclosure"] is not None:
+                # Nothing was agreed, so nothing may arrive: the decider judges the document from what it holds.
+                raise Refused("disclosure", "the terms disclose nothing, so the accept's disclosure must be null")
+            else:
+                disclosed = {}
         except Refused as exc:
             return self._refuse(env, exc.code, exc.reason)
         try:
@@ -175,7 +181,7 @@ class Requester:
         self.signer = signer
         self._trust, self._ledger, self._clock, self._ttl = trust, ledger or MemoryLedger(), clock, message_ttl_ms
         self._deciders: Dict[str, Manifest] = {}
-        self._requests: Dict[str, Tuple[str, Dict[str, Any], Committed]] = {}
+        self._requests: Dict[str, Tuple[str, Dict[str, Any], Optional[Committed]]] = {}
         self._accepts: Dict[str, Tuple[str, Dict[str, Any]]] = {}
 
     @property
@@ -203,6 +209,21 @@ class Requester:
                             offer_fields=offer_fields, require_evidence=require_evidence, max_ttl_ms=max_ttl_ms)
         env = seal(self.signer, "request", body, to=decider, ttl_ms=self._ttl, now=self._clock())
         self._requests[env.digest] = (decider, body, document)
+        return env
+
+    def request_judgment(self, decider: str, identity: str, digest: str, capability: str, version: int, *,
+                         require_evidence: Iterable[str] = (), max_ttl_ms: int) -> Envelope:
+        """Ask for a judgment of a document the decider already holds, disclosing nothing (UAI-1 section 6).
+
+        The decider judges `identity` and `digest` from its own copy; the decision is bound to them as given. This
+        is how a party that acts on a decision (a kernel, a store) asks the roster that judged the document."""
+        if decider not in self._deciders:
+            raise Refused("untrusted", "this requester has not read and admitted that decider's manifest")
+        self._deciders[decider].capability(capability, version)
+        body = request_body(capability, version, identity=identity, digest=digest, offer_fields=(),
+                            require_evidence=require_evidence, max_ttl_ms=max_ttl_ms)
+        env = seal(self.signer, "request", body, to=decider, ttl_ms=self._ttl, now=self._clock())
+        self._requests[env.digest] = (decider, body, None)
         return env
 
     def on_reply(self, wire: Mapping[str, Any]) -> Union[Envelope, Verified]:
@@ -244,8 +265,10 @@ class Requester:
         if set(env.body) != {"terms"}:
             raise Refused("malformed", "an offer carries exactly its terms")
         terms = check_terms(env.body["terms"], body, decider=decider, requester=self.agent)
-        accept = seal(self.signer, "accept", {"terms_digest": terms_digest(terms),
-                                              "disclosure": document.reveal(terms["disclose"])},
+        if terms["disclose"] and document is None:
+            raise Refused("terms", "the terms ask to see fields of a document this requester never offered")
+        disclosure = document.reveal(terms["disclose"]) if terms["disclose"] and document is not None else None
+        accept = seal(self.signer, "accept", {"terms_digest": terms_digest(terms), "disclosure": disclosure},
                       to=decider, reply_to=env, ttl_ms=self._ttl, now=self._clock())
         self._accepts[accept.digest] = (decider, terms)
         return accept

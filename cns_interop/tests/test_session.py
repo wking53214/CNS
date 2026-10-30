@@ -407,3 +407,41 @@ def test_a_session_message_cannot_ask_to_be_remembered_forever():
     dec, req, clock = pair()
     forever_ish = seal(REQ, "request", {}, to=DEC.agent, ttl_ms=2 ** 52, now=T0)
     assert code_of(dec.handle, forever_ish.to_wire()) == "malformed"
+
+
+# Judging a document the decider already holds: nothing is disclosed (UAI-1 section 6).
+
+HELD_CAP = Capability(name="held-document", version=1, summary="judges a document the decider already holds",
+                      accepts=(), requires=(), evidence=(), max_ttl_ms=60_000)
+
+
+def held_pair(judge):
+    clock = Clock()
+    dec = Decider(DEC, name="roster", implementation="python/test", capabilities=[(HELD_CAP, judge)],
+                  trust=TrustPolicy(pinned=frozenset({REQ.agent})), clock=clock)
+    req = Requester(REQ, trust=DEC_ONLY, clock=clock)
+    req.discover(dec.manifest().to_wire())
+    return dec, req, clock
+
+
+def test_a_judgment_of_a_held_document_discloses_nothing_and_binds_the_document_named():
+    seen = []
+    dec, req, clock = held_pair(lambda c, d, s: seen.append((d, s)) or Judgment("pass"))
+    request = req.request_judgment(DEC.agent, "doc-1", "ab" * 32, "held-document", 1, max_ttl_ms=60_000)
+    offer = dec.handle(request.to_wire())
+    accept = req.on_offer(offer.to_wire())
+    assert offer.body["terms"]["disclose"] == [] and accept.body["disclosure"] is None
+    got = req.on_decision(dec.handle(accept.to_wire()).to_wire())
+    assert got.allowed and got.subject == {"identity": "doc-1", "digest": "ab" * 32}
+    assert seen == [({}, {"identity": "doc-1", "digest": "ab" * 32})]
+
+
+def test_when_nothing_was_agreed_nothing_may_arrive():
+    dec, req, clock = held_pair(lambda c, d, s: Judgment("pass"))
+    request = req.request_judgment(DEC.agent, "doc-1", "ab" * 32, "held-document", 1, max_ttl_ms=60_000)
+    offer = dec.handle(request.to_wire())
+    terms = offer.body["terms"]
+    leaky = seal(REQ, "accept", {"terms_digest": terms_digest(terms), "disclosure": doc().reveal(["ssn"])},
+                 to=DEC.agent, reply_to=offer, ttl_ms=1000, now=T0)
+    reply = dec.handle(leaky.to_wire())
+    assert reply.kind == "refuse" and reply.body["code"] == "disclosure"

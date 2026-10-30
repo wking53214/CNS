@@ -146,6 +146,12 @@ The decider refuses (`disclosure`) unless the commitments produce the subject di
 commitment, every agreed field is opened, and **no other field is opened**. Over-disclosure is refused, not
 ignored. Undisclosed fields stay hidden; the decision still names the whole document.
 
+**Nothing to disclose.** When the terms disclose no field (the requester offered none, or the capability accepts
+none), the accept's `disclosure` is `null` and anything else is refused (`disclosure`). The decider judges the
+document by its identity and digest from what it already holds, and the decision is bound to them as named. This is
+how a party that will act on a decision (a kernel, a store) asks the roster that judged the document, without
+sending it again.
+
 ## 7. The decision
 
 A `decision` answers the accept (`in_reply_to` is the accept's digest), is addressed to the requester, and expires no
