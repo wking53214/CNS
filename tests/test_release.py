@@ -134,8 +134,8 @@ def test_record_refuses_a_missing_tag_a_wrong_tag_text_and_a_tag_at_another_vers
 def test_a_tag_that_exists_but_is_not_recorded_is_a_problem_not_a_note(repo):
     git(repo, "tag", "-a", "-m", "release", "v2.0.0")
     problems, notes = R.check(repo)
-    assert any("the tag v2.0.0 exists" in p and "--record v2.0.0" in p for p in problems)
-    assert not any("unreleased" in n for n in notes)
+    assert problems == []
+    assert any("this tree is the tag v2.0.0 itself" in n and "--record v2.0.0" in n for n in notes)
 
 
 def test_a_recorded_row_whose_commit_declares_another_version_is_a_problem(repo):
@@ -175,3 +175,28 @@ def test_a_tag_that_peels_to_another_commit_than_the_table_says_shows_both_commi
     mismatch = [p for p in problems if "peels to" in p]
     assert len(mismatch) == 1
     assert head in mismatch[0] and other in mismatch[0]
+
+
+# ------------------------------------------------------------------------------------------ CNS-010
+
+def test_a_later_commit_with_the_tag_still_unrecorded_is_a_problem(repo):
+    """Only the tag's own tree is excused: one commit later the row could have been written, so it must be."""
+    git(repo, "tag", "-a", "-m", "release", "v2.0.0")
+    write(repo, "notes.txt", "after the tag\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "after the tag")
+    problems, _ = R.check(repo)
+    assert any("the tag v2.0.0 exists" in p and "--record v2.0.0" in p for p in problems)
+
+
+def test_the_tags_own_tree_passes_the_command_with_a_note(repo, capsys):
+    git(repo, "tag", "-a", "-m", "release", "v2.0.0")
+    assert R.main(["--root", str(repo)]) == 0
+    assert "this tree is the tag v2.0.0 itself" in capsys.readouterr().out
+
+
+def test_the_tags_own_tree_still_fails_on_any_real_disagreement(repo):
+    git(repo, "tag", "-a", "-m", "release", "v2.0.0")
+    write(repo, "cns/__init__.py", '__version__ = "2.0.1"\n')
+    problems, _ = R.check(repo)
+    assert any("cns/__init__.py says 2.0.1" in p for p in problems)

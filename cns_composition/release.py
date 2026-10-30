@@ -179,7 +179,14 @@ def check(root: Path = ROOT) -> Tuple[List[str], List[str]]:
             notes.append(f"the tag {tag} is not visible in this checkout (a shallow clone has no tags), so the "
                          "table's row for it was not checked against it")
     else:
-        if row is None:
+        # A tree cannot hold the commit it is itself, so the tag's own tree can never carry its row: the row lands in
+        # the next commit. Checked here, that is a note; checked anywhere after the tag, it is still a problem.
+        own_tree = _git(root, "rev-parse", "HEAD") == commit
+        if row is None and own_tree:
+            notes.append(f"{package} is unreleased as far as this tree's table knows: this tree is the tag {tag} "
+                         "itself, and a tree cannot record its own commit; the row lands in the next commit "
+                         f"(python -m cns_composition.release --record {tag})")
+        elif row is None:
             problems.append(f"the tag {tag} exists at {commit} but the table has no row for it: run "
                             f"python -m cns_composition.release --record {tag}")
         elif row.commit != commit:
