@@ -58,9 +58,11 @@ WHAT THIS DOES NOT COVER
 ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need PostgreSQL, Redis and a vendored kernel to
 run). Their seams are not exercised here and nothing below speaks for them.
 
-CCC is covered only as far as its gate goes. The gate judges an attempted `ingest`; CCC's own `ingest` asks no guard and
-no decision, so a caller who runs it directly registers the document whatever the roster said. A scenario records that
-as the second GAP, and it goes red the day CCC grows a guard like the kernel's.
+CCC is covered as far as its gate goes and as far as its write permission goes. The gate judges an attempted `ingest`.
+CCC built with the roster's guard as its `write_permission` asks that guard before `ingest`, `record`, `derive`,
+`infer` and `interpret`, so a direct call after a "no" is refused and an approved decision opens it once, for the one
+document it judged. A CCC built without a permission is not stopped, and nothing here can see that. `decide` and the
+versioning methods are not gated, by CCC's design: a human's action is never held up by a machine's roster.
 
 This is a check, not a demonstration: every scenario states the facts it must produce, and the script exits 1 if any
 differs, naming the scenario and the fact. Run with HERALD (at its root), TIE, Conservation_Kernel and
@@ -77,9 +79,11 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ccc.cns_connector import Attempt, CccGate
 from ccc.cns_connector import attempt as ccc_attempt
+from ccc.errors import WritePermissionRefused
 from ccc.models import Actor as CccActor
 from ccc.models import EpistemicStatus as CccStatus
 from ccc.models import ProvenanceStatus
+from ccc.permission import WriteRequest
 from ccc.system import CCCSystem
 from cns.gate import GateOutcome
 from cns_composition.decision_guard import DecisionGuard
@@ -223,6 +227,17 @@ def reads_attempt(att: Attempt) -> Judged:
     return Judged(att.kwargs["metadata"]["source_id"], sha256(att.args[0]))
 
 
+def reads_write(request: WriteRequest) -> Judged:
+    """The document a direct write to CCC is about, for a CCC built with the roster's permission.
+
+    `ingest` and `record` carry one: the source CCC is asked to record the text under, and the digest of that text,
+    read as `reads_attempt` reads it. `derive`, `infer` and `interpret` carry a conclusion, and no seat of the roster
+    judges a conclusion, so they name no document and stay refused after any decision. Policy, like READERS."""
+    if request.operation not in ("ingest", "record"):
+        raise ValueError(f"{request.operation} names no document the roster judged")
+    return Judged(request.kwargs["metadata"]["source_id"], sha256(request.args[0]))
+
+
 def reads_claim(claim) -> Judged:
     return Judged(claim.source_id, claim.source_hash or "")
 
@@ -236,6 +251,21 @@ READERS = {"HERALD:herald_source": reads_document, "Conservation_Kernel:root_adm
 def fresh_guard() -> DecisionGuard:
     """A closed guard that will open, once, for the root the roster's decision judged. Policy, like READERS."""
     return DecisionGuard(reads_root)
+
+
+def fresh_ccc_guard() -> DecisionGuard:
+    """A closed guard to give CCC as its `write_permission`: it opens, once, for the document the roster's decision
+    judged. Policy, like READERS."""
+    return DecisionGuard(reads_write)
+
+
+def refused_by_permission(call: Callable[[], object]) -> bool:
+    """Run a direct write on CCC: True if CCC's permission refused it, False if it went through."""
+    try:
+        call()
+        return False
+    except WritePermissionRefused:
+        return True
 
 
 def register(kernel: ConservationKernel, root: RootArtifact) -> Tuple[bool, bool]:
@@ -503,18 +533,95 @@ def ccc_deciding_registers_nothing() -> Dict[str, object]:
     return facts(decided, evidence, refusal, ccc_artifacts=len(system.store.artifacts))
 
 
-def door_refused_ccc_proceeds() -> Dict[str, object]:
+def door_refused_ccc_holds() -> Dict[str, object]:
     """The gateway refuses the door and the roster says no. Then the same ingest is run on CCC directly.
 
-    CCC's `ingest` asks no guard and no decision, so it registers the document whatever the roster said."""
+    CCC is built with the roster's guard as its write permission. No approved decision opened it, so the direct
+    `ingest` is refused before CCC touches its store."""
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
-    system, attempt_ = CCCSystem(), ccc_ingest(INVOICE, "doc-1")
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, tampered(door(root, "doc-1")), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
     before = len(system.store.artifacts)
-    attempt_.run(system)
-    return facts(decided, evidence, refusal, ccc_artifacts_before=before, ccc_artifacts_after_refusal=len(system.store.artifacts))
+    refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_artifacts_before=before,
+                 ccc_ingest_refused=refused, ccc_artifacts_after_refusal=len(system.store.artifacts))
+
+
+def approved_ccc_ingest() -> Dict[str, object]:
+    """The roster allows the document. The guard opens CCC's ingest for it, once: the same ingest again is refused."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
+    first_refused = refused_by_permission(lambda: attempt_.run(system))
+    after_first = len(system.store.artifacts)
+    second_refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_first_ingest_refused=first_refused,
+                 ccc_artifacts_after_first=after_first, ccc_second_ingest_refused=second_refused,
+                 ccc_artifacts_after_second=len(system.store.artifacts))
+
+
+def handmade_ccc_decision() -> Dict[str, object]:
+    """The roster allows the document. A caller copies that decision field by field and offers it to CCC's guard."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    real = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)[0]
+    copy = Decision(run=real.run, seats=real.seats, root=real.root, subject=real.subject)
+    opened = authorize(guard, copy)
+    refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts((real, 0), evidence, refusal, copy_looks_allowed=copy.allowed, copy_issued=copy.issued,
+                 guard_opened=opened, ccc_ingest_refused=refused, ccc_artifacts=len(system.store.artifacts))
+
+
+def approval_used_for_another_ccc_document() -> Dict[str, object]:
+    """The roster allows the true invoice. The approval is then used to ingest the inflated one.
+
+    That is refused. A refusal does not spend the approval, so the true invoice still goes in afterwards."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, true_attempt = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), ccc=true_attempt, system=system)
+    opened = authorize(guard, decided[0])
+    inflated_refused = refused_by_permission(lambda: ccc_ingest(INFLATED, "doc-1").run(system))
+    after_inflated = len(system.store.artifacts)
+    true_refused = refused_by_permission(lambda: true_attempt.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_inflated_ingest_refused=inflated_refused,
+                 ccc_artifacts_after_inflated=after_inflated, ccc_true_ingest_refused=true_refused,
+                 ccc_artifacts_after_true=len(system.store.artifacts))
+
+
+def approval_does_not_open_ccc_conclusions() -> Dict[str, object]:
+    """The roster allows the document. No seat judges a conclusion, so `derive`, `infer` and `interpret` stay refused.
+
+    Their refusals do not spend the approval: the document's own ingest still goes in afterwards."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_ccc_guard()
+    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
+    model = CccActor.model("herald")
+    refused = [refused_by_permission(lambda: system.derive(INVOICE, actor=model)),
+               refused_by_permission(lambda: system.infer(INVOICE, actor=model)),
+               refused_by_permission(lambda: system.interpret(INVOICE, actor=model))]
+    after_conclusions = len(system.store.artifacts)
+    ingest_refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, ccc_conclusions_refused=refused,
+                 ccc_artifacts_after_conclusions=after_conclusions, ccc_ingest_refused=ingest_refused,
+                 ccc_artifacts_after_ingest=len(system.store.artifacts))
 
 
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
@@ -598,9 +705,25 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
                          "ccc_reason": "CCC-PROVENANCE-002"}),
     ("SEAM HOLDS: the roster allows the document and CCC's store is still empty, because its gate judges on a scratch copy",
      ccc_deciding_registers_nothing, {**HELD, "ccc_artifacts": 0}),
-    ("GAP: the roster says no, yet CCC's ingest called directly registers the document",
-     door_refused_ccc_proceeds, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"],
-                                 "ccc_artifacts_before": 0, "ccc_artifacts_after_refusal": 1}),
+    ("SEAM HOLDS: the gateway refuses the door and the roster says no; CCC built with the guard refuses a direct ingest",
+     door_refused_ccc_holds, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"],
+                              "guard_opened": False, "ccc_artifacts_before": 0, "ccc_ingest_refused": True,
+                              "ccc_artifacts_after_refusal": 0}),
+    ("SEAM HOLDS: an approved decision opens CCC's ingest for the document it judged, once; the same ingest again is refused",
+     approved_ccc_ingest, {**HELD, "guard_opened": True, "ccc_first_ingest_refused": False,
+                           "ccc_artifacts_after_first": 1, "ccc_second_ingest_refused": True,
+                           "ccc_artifacts_after_second": 1}),
+    ("SEAM HOLDS: a decision copied field by field, never issued by the roster, cannot open CCC's ingest",
+     handmade_ccc_decision, {**HELD, "copy_looks_allowed": True, "copy_issued": False, "guard_opened": False,
+                             "ccc_ingest_refused": True, "ccc_artifacts": 0}),
+    ("SEAM HOLDS: the approval for the true invoice cannot ingest the inflated one into CCC, and the refusal does not spend it",
+     approval_used_for_another_ccc_document,
+     {**HELD, "guard_opened": True, "ccc_inflated_ingest_refused": True, "ccc_artifacts_after_inflated": 0,
+      "ccc_true_ingest_refused": False, "ccc_artifacts_after_true": 1}),
+    ("SEAM HOLDS: an approved decision names a document, not a conclusion, so CCC's derive, infer and interpret stay refused",
+     approval_does_not_open_ccc_conclusions,
+     {**HELD, "guard_opened": True, "ccc_conclusions_refused": [True, True, True],
+      "ccc_artifacts_after_conclusions": 0, "ccc_ingest_refused": False, "ccc_artifacts_after_ingest": 1}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,

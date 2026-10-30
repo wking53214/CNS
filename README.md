@@ -112,6 +112,8 @@ A seat that cannot be read is a refusal, not a skipped comparison. Put
 The readers are policy: write them beside the required roster. The check
 compares what the readers say, so it is only as honest as they are.
 `chains/evidence_spine.py` uses it across HERALD, the kernel, the gateway and CCC.
+The spine also builds CCC with a guard as its `write_permission`, so a direct `ingest` after a roster "no" is
+refused and an approved decision opens it once, for the one document it judged.
 
 A passing decision records the one document its seats agreed on (`Decision.subject`).
 `cns_composition.decision_guard.DecisionGuard` turns that into a permission for
