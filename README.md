@@ -142,6 +142,26 @@ Every class is extracted by syntax tree from its canonical source and
 verified structurally identical at extraction; the module docstrings
 name the source and the agreement.
 
+### Talking to systems outside CNS: UAI-1
+
+`cns_interop` is a third sibling package: the universal AI interface layer. Everything above works inside one
+process. UAI-1 is how a system that does not import CNS, in any language, exchanges a request, agrees terms,
+discloses only the agreed fields, and receives a decision it can verify on its own, without either side giving up its
+own identity, rules or authority. Decisions are Ed25519-signed envelopes over the CNS subject digest, so a SuperGate
+decision can leave the process with its root and be checked anywhere.
+
+| piece | where |
+|---|---|
+| the specification | `docs/interop/UAI-1.md` |
+| the Python reference | `cns_interop`: `envelope`, `identity`, `trust`, `manifest`, `negotiate`, `disclosure`, `decision`, `ledger`, `session` |
+| an independent Node implementation | `interop/node/uai.mjs` (OpenSSL Ed25519, no shared code) and `agent.mjs` |
+| the shared answer key | `contracts/uai-vectors.json` (`python -m cns_interop.vectors` keeps it current) |
+| the two-language demonstration | `python interop/demo.py`; `interop/act.py` is a separate process that acts once on a remote decision |
+| what moved and what did not | `docs/interop/SCORECARD.md` |
+
+`cns` never imports it, and it imports only `cns`, `cns_composition` and the standard library. Node 20 or later is
+needed to run the second implementation's tests; without it they fail and say so.
+
 ## Required gate rosters
 
 The behavior layer in cns_composition.SuperGate requires callers to pass a

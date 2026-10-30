@@ -15,6 +15,25 @@ different code. This file on `main` says what is true now, and so does the GitHu
 one; the text for every tag is kept in `docs/releases/`. A heading's date is the day the tag was made; where the tagged commit is older, the
 entry says so.
 
+## [Unreleased]
+
+Work after the `v2.3.0` tag (`41592fb`). It adds a package and changes no existing behaviour; which version it
+ships in is the owner's decision, so `pyproject.toml` still says 2.3.0 and `release --check` reads this heading as
+not a release.
+
+### Added
+
+- `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
+  subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
+  endorsements, revocation), capability manifests, terms negotiation, salted selective disclosure, portable decisions
+  (`decision.from_super_gate` exports a SuperGate decision with its root), receiver ledgers including a `FileLedger`
+  shared by processes, and `RemoteDecisionGuard`. Standard library only; it ships in the wheel beside `cns` and
+  `cns_composition`, and `cns` does not import it.
+- An independent Node implementation (`interop/node/`), the shared answer key `contracts/uai-vectors.json`, and
+  `interop/demo.py`, which runs Python and Node against each other in both directions, with a third process acting
+  once on the result. `docs/interop/SCORECARD.md` maps it to the 2026-10-30 assessment and lists the ten findings
+  of an independent review made before merge, all fixed and kept as tests.
+
 ## [2.3.0] - 2026-10-30 (not yet tagged)
 
 The work merged to `main` after the `v2.2.0` tag (`ce6bd05`). A minor version, by the owner's decision of 2026-10-30:
