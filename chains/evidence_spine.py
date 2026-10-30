@@ -77,9 +77,11 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ccc.cns_connector import Attempt, CccGate
 from ccc.cns_connector import attempt as ccc_attempt
+from ccc.errors import WritePermissionRefused
 from ccc.models import Actor as CccActor
 from ccc.models import EpistemicStatus as CccStatus
 from ccc.models import ProvenanceStatus
+from ccc.permission import WriteRequest
 from ccc.system import CCCSystem
 from cns.gate import GateOutcome
 from cns_composition.decision_guard import DecisionGuard
@@ -223,6 +225,17 @@ def reads_attempt(att: Attempt) -> Judged:
     return Judged(att.kwargs["metadata"]["source_id"], sha256(att.args[0]))
 
 
+def reads_write(request: WriteRequest) -> Judged:
+    """The document a direct write to CCC is about, for a CCC built with the roster's permission.
+
+    `ingest` and `record` carry one: the source CCC is asked to record the text under, and the digest of that text,
+    read as `reads_attempt` reads it. `derive`, `infer` and `interpret` carry a conclusion, and no seat of the roster
+    judges a conclusion, so they name no document and stay refused after any decision. Policy, like READERS."""
+    if request.operation not in ("ingest", "record"):
+        raise ValueError(f"{request.operation} names no document the roster judged")
+    return Judged(request.kwargs["metadata"]["source_id"], sha256(request.args[0]))
+
+
 def reads_claim(claim) -> Judged:
     return Judged(claim.source_id, claim.source_hash or "")
 
@@ -236,6 +249,21 @@ READERS = {"HERALD:herald_source": reads_document, "Conservation_Kernel:root_adm
 def fresh_guard() -> DecisionGuard:
     """A closed guard that will open, once, for the root the roster's decision judged. Policy, like READERS."""
     return DecisionGuard(reads_root)
+
+
+def fresh_ccc_guard() -> DecisionGuard:
+    """A closed guard to give CCC as its `write_permission`: it opens, once, for the document the roster's decision
+    judged. Policy, like READERS."""
+    return DecisionGuard(reads_write)
+
+
+def refused_by_permission(call: Callable[[], object]) -> bool:
+    """Run a direct write on CCC: True if CCC's permission refused it, False if it went through."""
+    try:
+        call()
+        return False
+    except WritePermissionRefused:
+        return True
 
 
 def register(kernel: ConservationKernel, root: RootArtifact) -> Tuple[bool, bool]:
