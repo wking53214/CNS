@@ -39,6 +39,25 @@ not a release.
   single use holds per shared ledger. `Requester.request_judgment` asks for a judgment of a document the decider
   already holds, disclosing nothing.
 
+### Changed
+
+- Contract change in `cns_interop`: `RemoteDecisionGuard` takes a required keyword `capability=(name, version)` and
+  `authorize` raises `Refused("terms")` when the terms name a different capability or version. Before, a decision
+  negotiated for one capability (`ingest`, say) opened a guard protecting any other action on the same document. A
+  caller that built a guard without the keyword now gets a `TypeError`. `interop/act.py` takes `--capability` and
+  `--capability-version`, and `chains/evidence_spine.py` and `interop/demo.py` pass them. UAI-1 section 7.
+
+### Fixed
+
+- `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)
+  lost earlier entries and a spent decision was accepted again. It now appends one line and fsyncs, and when it drops
+  expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.
+- `RemoteDecisionGuard` checked trust only in `authorize`, so it still opened after its decider was revoked. Calling
+  the guard now returns False once the decider is in the guard's `trust.revoked`.
+- `interop/act.py` read its job with `json.loads`, which keeps the last of a repeated key and accepts floats and NaN.
+  It now uses `cns_interop.wire.loads`, so those are refused (`malformed`, `profile`) before anything is verified, and
+  a job that is not JSON is refused instead of crashing the process.
+
 ## [2.3.0] - 2026-10-30 (not yet tagged)
 
 The work merged to `main` after the `v2.2.0` tag (`ce6bd05`). A minor version, by the owner's decision of 2026-10-30:

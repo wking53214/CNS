@@ -5,13 +5,18 @@ The cross-process, cross-language version of the happy path is test_two_systems.
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
 
 from cns_composition.super_gate import Judged, SuperGate
 from cns_interop.decision import RemoteDecisionGuard, issue, verify_decision
 from cns_interop.disclosure import commit
-from cns_interop.envelope import Refused, seal
+from cns_interop.envelope import Refused, now_ms, seal
 from cns_interop.identity import Signer
 from cns_interop.ledger import FileLedger, MemoryLedger
 from cns_interop.manifest import Capability
@@ -26,6 +31,7 @@ CAP = Capability(name="income-screen", version=1, summary="income at or above a 
                  evidence=("threshold-check",), max_ttl_ms=300_000)
 THRESHOLD = 400_000
 DEC_ONLY = TrustPolicy(pinned=frozenset({DEC.agent}))
+GUARD_CAP = (CAP.name, CAP.version)  # what the guards below protect: actions the income screen permits
 
 
 def screen(cap, disclosed, subject):
@@ -83,7 +89,7 @@ def test_the_whole_exchange_and_a_guard_that_acts_once_on_the_one_document():
     assert got.allowed and got.evidence["threshold-check"]["observed_cents"] == 512_000
 
     # The same decision, verified independently by a separate guard (the process that acts), with its own ledger.
-    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
     guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
     d = doc()
     assert guard(("loan-app-17", "some-other-digest")) is False
@@ -97,7 +103,7 @@ def test_a_below_threshold_decision_verifies_but_opens_nothing():
     _, offer, accept, decision = run(dec, req, doc(100))
     got = req.on_reply(decision.to_wire())
     assert got.verdict == "retry" and not got.allowed
-    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
     assert code_of(guard.authorize, decision.to_wire(), terms=offer.body["terms"],
                    accept_digest=accept.digest) == "refused"
 
@@ -115,8 +121,8 @@ def test_a_file_ledger_is_shared_by_two_guards_as_if_two_processes(tmp_path):
     dec, req, clock = pair()
     _, offer, accept, decision = run(dec, req)
     path = tmp_path / "spent.jsonl"
-    g1 = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=FileLedger(path), clock=clock)
-    g2 = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=FileLedger(path), clock=clock)
+    g1 = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=DEC_ONLY, ledger=FileLedger(path), clock=clock)
+    g2 = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=DEC_ONLY, ledger=FileLedger(path), clock=clock)
     g1.authorize(decision.to_wire(), terms=offer.body["terms"], accept_digest=accept.digest)
     assert code_of(g2.authorize, decision.to_wire(), terms=offer.body["terms"],
                    accept_digest=accept.digest) == "replayed"
@@ -325,14 +331,14 @@ def test_a_guard_trusts_its_own_list_of_deciders_not_the_terms_it_is_handed():
     _, offer, accept, _ = run(dec, req)
     forged_terms = dict(offer.body["terms"], decider=EVE.agent)
     forged = issue(EVE, accept, forged_terms, "pass", evidence={"threshold-check": {}}, now=T0)
-    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
     assert code_of(guard.authorize, forged.to_wire(), terms=forged_terms, accept_digest=accept.digest) == "untrusted"
 
 
 def test_a_guard_acts_only_for_its_own_identity():
     dec, req, clock = pair()
     _, offer, accept, decision = run(dec, req)
-    guard = RemoteDecisionGuard(lambda a: a, acting_for=EVE.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=EVE.agent, capability=GUARD_CAP, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
     assert code_of(guard.authorize, decision.to_wire(), terms=offer.body["terms"],
                    accept_digest=accept.digest) == "audience"
 
@@ -349,7 +355,7 @@ def test_a_guard_opens_once_under_concurrent_calls():
         time.sleep(0.05)
         return a
 
-    guard = RemoteDecisionGuard(slow, acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
+    guard = RemoteDecisionGuard(slow, acting_for=REQ.agent, capability=GUARD_CAP, trust=DEC_ONLY, ledger=MemoryLedger(), clock=clock)
     guard.authorize(decision.to_wire(), terms=offer.body["terms"], accept_digest=accept.digest)
     results = []
     threads = [threading.Thread(target=lambda: results.append(guard(("loan-app-17", digest)))) for _ in range(8)]
@@ -445,3 +451,138 @@ def test_when_nothing_was_agreed_nothing_may_arrive():
                  to=DEC.agent, reply_to=offer, ttl_ms=1000, now=T0)
     reply = dec.handle(leaky.to_wire())
     assert reply.kind == "refuse" and reply.body["code"] == "disclosure"
+
+
+# Audit 2026-10-30: a guard knows which capability it protects.
+
+INGEST = Capability(name="ingest", version=1, summary="take the document in", accepts=("doc_type",), requires=(),
+                    evidence=(), max_ttl_ms=300_000)
+
+
+def ingest_exchange():
+    """One decider offering the income screen and `ingest`; the requester asks for `ingest` of a document."""
+    clock = Clock()
+    dec = Decider(DEC, name="screener", implementation="python/test",
+                  capabilities=[(CAP, screen), (INGEST, lambda cap, disclosed, subject: Judgment("pass", ("taken in",)))],
+                  trust=TrustPolicy(pinned=frozenset({REQ.agent})), clock=clock)
+    req = Requester(REQ, trust=TrustPolicy(pinned=frozenset({DEC.agent})), clock=clock)
+    req.discover(dec.manifest().to_wire())
+    request = req.request(DEC.agent, doc(), "ingest", 1, offer_fields=["doc_type"], require_evidence=[],
+                          max_ttl_ms=100_000)
+    offer = dec.handle(request.to_wire())
+    accept = req.on_reply(offer.to_wire())
+    return offer, accept, dec.handle(accept.to_wire()), clock
+
+
+def test_a_decision_negotiated_for_one_capability_does_not_open_a_guard_for_another():
+    offer, accept, decision, clock = ingest_exchange()
+    terms = offer.body["terms"]
+    assert terms["capability"] == "ingest"
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=DEC_ONLY,
+                                ledger=MemoryLedger(), clock=clock)
+    assert code_of(guard.authorize, decision.to_wire(), terms=terms, accept_digest=accept.digest) == "terms"
+    assert guard(("loan-app-17", terms["subject"]["digest"])) is False
+
+
+def test_a_decision_for_another_version_of_the_capability_is_refused():
+    offer, accept, decision, clock = ingest_exchange()
+    terms = offer.body["terms"]
+    newer = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=("ingest", 2), trust=DEC_ONLY,
+                                ledger=MemoryLedger(), clock=clock)
+    assert code_of(newer.authorize, decision.to_wire(), terms=terms, accept_digest=accept.digest) == "terms"
+
+
+def test_a_capability_refusal_spends_nothing_and_the_matching_guard_still_opens():
+    offer, accept, decision, clock = ingest_exchange()
+    terms, ledger = offer.body["terms"], MemoryLedger()
+    wrong = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=DEC_ONLY,
+                                ledger=ledger, clock=clock)
+    assert code_of(wrong.authorize, decision.to_wire(), terms=terms, accept_digest=accept.digest) == "terms"
+    right = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=("ingest", 1), trust=DEC_ONLY,
+                                ledger=ledger, clock=clock)
+    right.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
+    assert right(("loan-app-17", terms["subject"]["digest"])) is True
+
+
+def test_a_guard_must_be_told_its_capability_and_it_must_be_a_name_and_a_version():
+    kw = dict(acting_for=REQ.agent, trust=DEC_ONLY, ledger=MemoryLedger())
+    with pytest.raises(TypeError):
+        RemoteDecisionGuard(lambda a: a, **kw)  # type: ignore[call-arg]
+    for bad in ("income-screen", ("income-screen",), ("", 1), ("Income Screen", 1), ("income-screen", 0),
+                ("income-screen", True), ("income-screen", "1"), (None, 1), ["income-screen", 1, 2]):
+        with pytest.raises(ValueError):
+            RemoteDecisionGuard(lambda a: a, capability=bad, **kw)  # type: ignore[arg-type]
+    RemoteDecisionGuard(lambda a: a, capability=["income-screen", 1], **kw)  # a list reads the same as a tuple
+
+
+def test_a_guard_closes_when_its_decider_is_revoked_after_it_was_authorized():
+    dec, req, clock = pair()
+    _, offer, accept, decision = run(dec, req)
+    terms = offer.body["terms"]
+    trust = TrustPolicy(pinned=frozenset({DEC.agent}))  # this guard's own policy, so the revocation touches no other
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=trust,
+                                ledger=MemoryLedger(), clock=clock)
+    guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
+    # The receiver revokes the decider. The policy is frozen, so it is updated the way TrustPolicy itself does it.
+    object.__setattr__(trust, "revoked", frozenset({DEC.agent}))
+    assert guard(("loan-app-17", terms["subject"]["digest"])) is False
+
+
+def test_a_revocation_of_someone_else_leaves_an_authorized_guard_open():
+    dec, req, clock = pair()
+    _, offer, accept, decision = run(dec, req)
+    terms = offer.body["terms"]
+    trust = TrustPolicy(pinned=frozenset({DEC.agent}))
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=trust,
+                                ledger=MemoryLedger(), clock=clock)
+    guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
+    object.__setattr__(trust, "revoked", frozenset({EVE.agent}))
+    assert guard(("loan-app-17", terms["subject"]["digest"])) is True
+
+
+# Audit 2026-10-30: interop/act.py reads its job as strictly as UAI-1 reads an envelope.
+
+ACT_PY = Path(__file__).resolve().parents[2] / "interop" / "act.py"
+
+
+def act_job():
+    """A real, current decision as the job interop/act.py would be handed. Real clock: act.py has no other."""
+    dec, req, _ = pair(clock=now_ms)
+    _, offer, accept, decision = run(dec, req)
+    terms = offer.body["terms"]
+    return {"decision": decision.to_wire(), "terms": terms, "accept_digest": accept.digest,
+            "artifact": ["loan-app-17", terms["subject"]["digest"]]}
+
+
+def run_act(stdin, ledger, *, capability="income-screen", version=1):
+    root = str(ACT_PY.parents[1])
+    env = {"PYTHONPATH": root, "PATH": "/usr/bin:/bin"}
+    done = subprocess.run([sys.executable, str(ACT_PY), "--acting-for", REQ.agent, "--capability", capability,
+                           "--capability-version", str(version), "--trust", DEC.agent, "--ledger", str(ledger)],
+                          input=stdin, capture_output=True, text=True, env=env, timeout=60)
+    assert done.returncode == 0, done.stderr  # a refusal is an answer, not a crash
+    return json.loads(done.stdout)
+
+
+def test_act_py_permits_one_action_on_a_real_job_and_only_for_its_own_capability(tmp_path):
+    job = json.dumps(act_job())
+    assert run_act(job, tmp_path / "other.jsonl", capability="ingest")["refused"]["code"] == "terms"
+    assert run_act(job, tmp_path / "other.jsonl", version=2)["refused"]["code"] == "terms"
+    assert run_act(job, tmp_path / "spent.jsonl") == {"permitted": True}
+    assert run_act(job, tmp_path / "spent.jsonl")["refused"]["code"] == "replayed"
+
+
+@pytest.mark.parametrize("bad, code", [
+    (lambda text: text[:-1] + ', "artifact": ["loan-app-17", "some-other-digest"]}', "malformed"),  # a key twice
+    (lambda text: text[:-1] + ', "note": 1.5}', "profile"),  # a float, even where nothing reads it
+    (lambda text: text[:-1] + ', "note": NaN}', "malformed"),
+    (lambda text: text[:-1] + ', "note": Infinity}', "malformed"),
+    (lambda text: "not json at all", "malformed"),
+    (lambda text: "[1, 2]", "malformed"),
+], ids=["duplicate-key", "float", "nan", "infinity", "not-json", "not-an-object"])
+def test_act_py_refuses_a_job_that_is_not_read_strictly_and_spends_nothing(tmp_path, bad, code):
+    job = json.dumps(act_job())
+    ledger = tmp_path / "spent.jsonl"
+    assert run_act(bad(job), ledger)["refused"]["code"] == code
+    assert ledger.read_text() == ""  # nothing was verified, so nothing was spent
+    assert run_act(job, ledger) == {"permitted": True}  # and the genuine job still lands

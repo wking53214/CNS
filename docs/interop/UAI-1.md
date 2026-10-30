@@ -176,8 +176,12 @@ refuses one answering another accept, under other terms, about another document,
 other receiver refuses it at `audience`, and every process acting for that identity shares one ledger
 (`cns_interop.ledger.FileLedger` on one host). `cns_interop.decision.RemoteDecisionGuard` opens once, for the
 judged document only, also under concurrent calls. Its configuration is its own and never comes with the job: the
-identity it acts for (terms for anyone else are refused), the deciders it trusts (a decider the terms name but the
-guard does not trust is refused), and its ledger. `interop/act.py` takes all three on its command line.
+identity it acts for (terms for anyone else are refused), the capability it protects as a `(name, version)` pair
+(a decision negotiated for another capability or version is refused as `terms`, so an approval to `ingest` a
+document cannot open an action guarded for something else), the deciders it trusts (a decider the terms name but the
+guard does not trust is refused), and its ledger. `interop/act.py` takes all four on its command line
+(`--acting-for`, `--capability`, `--capability-version`, `--trust`, `--ledger`). `capability` is a required keyword
+of `RemoteDecisionGuard`; code written before it was added must pass it.
 
 ## 8. What remains open
 
