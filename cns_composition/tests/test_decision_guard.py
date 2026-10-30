@@ -1,5 +1,7 @@
 """decision_guard: a one-use permission tied to an approved decision and the document it judged."""
 
+import threading
+
 import pytest
 from cns.gate import GateOutcome, GatePosition
 
@@ -150,3 +152,133 @@ def test_swapping_a_verdict_inside_an_issued_decision_voids_it():
     real = decision()
     swapped = dataclasses.replace(real.run, results=(real.run.results[0],) + real.run.results[:1] + real.run.results[2:])
     assert not dataclasses.replace(real, run=swapped).issued
+
+
+# ------------------------------------------------------------ one decision, one action, in time
+
+class Clock:
+    def __init__(self, now):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+def timed_decision(clock, ttl=None, door=GateOutcome.PASS):
+    gate, judge = FakeGate("door", A, door), FakeGate("judge", OM)
+    seats = [("Governance_Gateway", gate), ("DIT", judge)]
+    given = {DOOR: ("doc-1", "abc"), JUDGE: ("doc-1", "abc")}
+    return SuperGate(seats, required=(DOOR, JUDGE, "CNS:same_subject"), same_subject={DOOR: reads, JUDGE: reads},
+                     clock=clock).decide(given, ttl=ttl)
+
+
+def test_one_approval_opens_exactly_one_of_five_fresh_guards():
+    approval = decision()
+    opened = []
+    for _ in range(5):
+        g = guard()
+        try:
+            g.authorize(approval)
+            opened.append(g)
+        except ValueError as refused:
+            assert "already authorized a guard" in str(refused)
+            assert not g.authorized and g(("doc-1", "abc")) is False
+    assert len(opened) == 1 and opened[0](("doc-1", "abc")) is True
+
+
+def test_guards_racing_for_one_decision_cannot_both_win():
+    approval = decision()
+    won, barrier = [], threading.Barrier(16)
+
+    def race():
+        g = guard()
+        barrier.wait()
+        try:
+            g.authorize(approval)
+            won.append(g)
+        except ValueError:
+            pass
+
+    threads = [threading.Thread(target=race) for _ in range(16)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(won) == 1
+
+
+def test_every_decision_has_its_own_nonce_and_a_new_decision_opens_a_new_guard():
+    first, second = decision(), decision()
+    assert first.nonce and second.nonce and first.nonce != second.nonce
+    guard().authorize(first)
+    guard().authorize(second)
+
+
+def test_the_decision_records_when_it_was_issued_and_when_it_stops_counting():
+    clock = Clock(1000.0)
+    assert (timed_decision(clock).issued_at, timed_decision(clock).expires_at) == (1000.0, None)
+    assert timed_decision(clock, ttl=60).expires_at == 1060.0
+
+
+def test_an_expired_decision_cannot_authorize_anything():
+    clock = Clock(1000.0)
+    approval = timed_decision(clock, ttl=60)
+    clock.now = 1060.0
+    g = DecisionGuard(lambda artifact: Judged(*artifact), clock=clock)
+    with pytest.raises(ValueError, match="expired"):
+        g.authorize(approval)
+    assert not g.authorized
+
+
+def test_a_decision_one_second_before_it_expires_still_authorizes():
+    clock = Clock(1000.0)
+    approval = timed_decision(clock, ttl=60)
+    clock.now = 1059.0
+    g = DecisionGuard(lambda artifact: Judged(*artifact), clock=clock)
+    g.authorize(approval)
+    assert g(("doc-1", "abc")) is True
+
+
+def test_a_permission_that_expires_after_authorize_is_refused_and_not_spent():
+    clock = Clock(1000.0)
+    g = DecisionGuard(lambda artifact: Judged(*artifact), clock=clock)
+    g.authorize(timed_decision(clock, ttl=60))
+    clock.now = 1061.0
+    assert g(("doc-1", "abc")) is False and not g.spent
+
+
+def test_a_decision_with_no_ttl_does_not_expire():
+    clock = Clock(1000.0)
+    g = DecisionGuard(lambda artifact: Judged(*artifact), clock=clock)
+    g.authorize(timed_decision(clock))
+    clock.now = 1e12
+    assert g(("doc-1", "abc")) is True
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: dataclasses.replace(d, nonce="0" * 32),
+    lambda d: dataclasses.replace(d, issued_at=d.issued_at + 1),
+    lambda d: dataclasses.replace(d, expires_at=9e12),
+    lambda d: dataclasses.replace(d, expires_at=None),
+])
+def test_editing_the_nonce_or_the_times_after_issue_voids_the_proof(edit):
+    clock = Clock(1000.0)
+    original = timed_decision(clock, ttl=60)
+    assert original.issued and not edit(original).issued
+
+
+@pytest.mark.parametrize("ttl", [0, -1, True, "60", float("nan")])
+def test_a_ttl_that_is_not_a_positive_number_is_refused_before_any_gate_runs(ttl):
+    gate = FakeGate("door", A)
+    seats = [("Governance_Gateway", gate), ("DIT", FakeGate("judge", OM))]
+    with pytest.raises(ValueError, match="ttl"):
+        SuperGate(seats, required=(DOOR, JUDGE)).decide({DOOR: "a", JUDGE: "b"}, ttl=ttl)
+    assert gate.seen == []
+
+
+def test_a_clock_must_be_a_function():
+    with pytest.raises(ValueError, match="clock"):
+        DecisionGuard(lambda a: Judged(*a), clock=5)
+    with pytest.raises(ValueError, match="clock"):
+        SuperGate([("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM))],
+                  required=(DOOR, JUDGE), clock="now")

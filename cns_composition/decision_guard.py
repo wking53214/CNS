@@ -13,8 +13,13 @@ recomputed from its own verdicts. A decision written by hand, or copied field by
 complete it looks: the proof of issue is a process-local key, so it settles where a decision came from only inside
 this process. When the kernel then asks about an artifact, the guard answers True only if:
 
-  - it was authorized, and has not already said yes (one use: the permission is spent by the first yes), and
+  - it was authorized, and has not already said yes (one use: the permission is spent by the first yes),
+  - the decision has not expired, and
   - the artifact reads, through `subject_of`, as exactly the identity and content digest the decision approved.
+
+One decision opens one action: every decision carries a nonce, and the first guard authorized with it spends the nonce
+for the whole process. A second guard handed the same decision, however fresh, is refused. That is in-process only:
+the spent set lives in this module, so two processes can each spend the same decision.
 
 Anything else is False: nothing authorized, a refused or unbound decision, a second use, another document, a reader
 that raises. A refusal does not spend the permission; only a yes does.
@@ -29,20 +34,31 @@ It imports no repository.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+import threading
+import time
+from typing import Callable, Optional, Set
 
 from .super_gate import Decision, Judged
 
 __all__ = ["DecisionGuard"]
 
+#: Nonces of decisions some guard in this process was authorized with, taken under the lock so two guards racing for
+#: one decision cannot both win. Kept for the life of the process.
+_SPENT: Set[str] = set()
+_SPENT_LOCK = threading.Lock()
+
 
 class DecisionGuard:
     """Closed until authorized by an approved decision; then opens once, for the one document that decision judged."""
 
-    def __init__(self, subject_of: Callable[[object], Judged]) -> None:
+    def __init__(self, subject_of: Callable[[object], Judged], *, clock: Callable[[], float] = time.time) -> None:
         if not callable(subject_of):
             raise ValueError("subject_of must be a function that reads which document an artifact is")
+        if not callable(clock):
+            raise ValueError("clock must be a function that returns the time in seconds")
         self._subject_of = subject_of
+        self._clock = clock
+        self._expires_at: Optional[float] = None
         self._approved: Optional[Judged] = None
         self._spent = False
 
@@ -56,8 +72,8 @@ class DecisionGuard:
 
     def authorize(self, decision: Decision) -> None:
         """Open the guard for the document `decision` approved. Raises ValueError, leaving the guard closed, unless
-        the decision was issued by a SuperGate, is allowed, carries a subject, binds its own root, and this guard
-        has not been authorized."""
+        the decision was issued by a SuperGate, is allowed, carries a subject, binds its own root, has not expired,
+        has not already authorized a guard, and this guard has not been authorized."""
         if self._approved is not None:
             raise ValueError("this guard was already authorized; one guard serves one decision")
         if not decision.allowed:
@@ -69,10 +85,19 @@ class DecisionGuard:
         if not decision.issued:
             raise ValueError("this decision was not issued by a SuperGate in this process, so it cannot authorize "
                              "anything")
+        if decision.expires_at is not None and self._clock() >= decision.expires_at:
+            raise ValueError("the decision has expired, so it cannot authorize anything")
+        with _SPENT_LOCK:
+            if decision.nonce in _SPENT:
+                raise ValueError("this decision has already authorized a guard; one decision opens one action")
+            _SPENT.add(decision.nonce)
         self._approved = decision.subject
+        self._expires_at = decision.expires_at
 
     def __call__(self, artifact: object) -> bool:
         if self._approved is None or self._spent:
+            return False
+        if self._expires_at is not None and self._clock() >= self._expires_at:
             return False
         try:
             judged = self._subject_of(artifact)

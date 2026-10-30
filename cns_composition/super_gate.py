@@ -40,6 +40,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import time
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable, Mapping, Optional, Tuple, cast
 
@@ -48,7 +49,7 @@ from cns.gate import Gate, GateOutcome, GatePosition, GateResult, subject_digest
 from .gate_chain import ChainRun, Lazy
 from .repo_gates import ends_of, run_repo_chain
 
-__all__ = ["Decision", "Judged", "MissingCandidate", "SubjectAgreement", "SuperGate"]
+__all__ = ["BindingOf", "Decision", "Judged", "MissingCandidate", "SubjectAgreement", "SuperGate"]
 
 #: Process-local key. Only `SuperGate.decide` uses it, to prove it issued a Decision. It is never exported, written
 #: or logged. Like HERALD's issuer key it proves origin only inside this process: a proof means nothing to another
@@ -73,6 +74,9 @@ class Judged:
 
 #: How to read what a seat's candidate is about.
 SubjectOf = Callable[[object], Judged]
+
+#: How to read what a seat's verdict must be bound to for this candidate: the (subject, digest) a PASS must carry.
+BindingOf = Callable[[object], Tuple[str, str]]
 
 #: The seat the super gate adds when `same_subject` is given.
 SUBJECT_REPO, SUBJECT_GATE = "CNS", "same_subject"
@@ -135,6 +139,33 @@ class _Once:
         return self._value
 
 
+class _Bound:
+    """A seated gate whose PASS must be bound to what its reader says this candidate is, not to anything at all."""
+
+    def __init__(self, gate: Gate, binding_of: BindingOf) -> None:
+        self.name = getattr(gate, "name", "") or type(gate).__name__
+        self.position = gate.position
+        self._gate, self._binding_of = gate, binding_of
+
+    def check(self, candidate: object) -> GateResult:
+        result = self._gate.check(candidate)
+        if not isinstance(result, GateResult) or result.outcome is not GateOutcome.PASS:
+            return result  # not a pass: nothing to lift, and the chain refuses a wrong answer type itself
+        try:
+            subject, digest = self._binding_of(candidate)
+            matches = result.binds(subject, digest)
+        except Exception as exc:  # a reader that cannot say what this is leaves the pass unproven
+            return self._breach(result, f"what this candidate is could not be read ({type(exc).__name__})")
+        if not matches:
+            return self._breach(result, "its verdict is bound to something other than this candidate")
+        return result
+
+    def _breach(self, result: GateResult, why: str) -> GateResult:
+        return GateResult(gate=result.gate, position=result.position, outcome=GateOutcome.TERMINAL_BREACH,
+                          reason=f"{self.name} passed but {why}; a pass for other content is never read as a pass "
+                                 "for this")
+
+
 def _key(repo: str, gate: Gate) -> str:
     return f"{repo}:{getattr(gate, 'name', '') or type(gate).__name__}"
 
@@ -160,6 +191,12 @@ class Decision:
     #: Proof that `SuperGate.decide` issued this decision, over everything `allowed` and the guard rely on. Empty
     #: for a decision built any other way. See `issued`.
     proof: str = ""
+    #: A random number `decide` draws for this decision alone. A guard spends it, so one decision opens one action.
+    nonce: str = ""
+    #: When `decide` issued it, and when it stops counting (None: it does not expire). Seconds, from the roster's
+    #: clock. The proof covers both, so neither can be edited after issue.
+    issued_at: float = 0.0
+    expires_at: Optional[float] = None
 
     @property
     def issued(self) -> bool:
@@ -167,7 +204,8 @@ class Decision:
         copied field by field, or edited after issue is not. `allowed` does not ask this; anything that acts on a
         decision (the `DecisionGuard`) should."""
         return (bool(self.proof) and self.binds(self.root)
-                and hmac.compare_digest(self.proof, _proof(self.run, self.root, self.subject)))
+                and hmac.compare_digest(self.proof, _proof(self.run, self.root, self.subject, self.nonce,
+                                                           self.issued_at, self.expires_at)))
 
     @property
     def outcome(self) -> GateOutcome:
@@ -192,12 +230,15 @@ class Decision:
         return root == self.root == _root(self.seats, self.run.results)
 
 
-def _proof(run: ChainRun, root: str, subject: Optional[Judged]) -> str:
+def _proof(run: ChainRun, root: str, subject: Optional[Judged], nonce: str = "", issued_at: float = 0.0,
+           expires_at: Optional[float] = None) -> str:
     """HMAC over what a decision's `allowed` turns on: the root (roster and every verdict), the run's own
-    outcome and flags, and the agreed subject."""
+    outcome and flags, the agreed subject, and the nonce and times that make it one decision for one moment."""
     body = subject_digest({"root": root, "outcome": run.outcome.value, "omega_ran": run.omega_ran,
                            "complete": run.complete,
-                           "subject": [subject.identity, subject.digest] if subject is not None else None})
+                           "subject": [subject.identity, subject.digest] if subject is not None else None,
+                           "nonce": nonce, "issued_at": repr(issued_at),
+                           "expires_at": repr(expires_at) if expires_at is not None else None})
     return hmac.new(_ISSUER_KEY, body.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
@@ -223,12 +264,21 @@ class SuperGate:
     is refused unless they all agree. Add `CNS:same_subject` to `required` so dropping `same_subject` is refused
     too. A candidate for a named seat that is `Lazy` is built when the comparison runs, once.
 
+    `binding_of` maps seats to a reader of what that seat's verdict must be bound to for the candidate it was given,
+    as (subject, digest). A PASS bound to anything else is a breach, so a gate that ignores its input cannot pass it
+    with an unrelated fingerprint. With `strict_binding=True` every seat must have a reader.
+
     Raises ValueError for invalid or incomplete rosters and KeyError for a
     repository with no row in repo_gates.
     """
 
     def __init__(self, seats: Iterable[Seat], *, required: Iterable[str],
-                 require_complete: bool = True, same_subject: Optional[Mapping[str, SubjectOf]] = None) -> None:
+                 require_complete: bool = True, same_subject: Optional[Mapping[str, SubjectOf]] = None,
+                 binding_of: Optional[Mapping[str, BindingOf]] = None, strict_binding: bool = False,
+                 clock: Callable[[], float] = time.time) -> None:
+        if not callable(clock):
+            raise ValueError("clock must be a function that returns the time in seconds")
+        self._clock = clock
         self._seats: Tuple[Seat, ...] = tuple(seats)
         self._require_complete = require_complete
         if not self._seats:
@@ -269,6 +319,19 @@ class SuperGate:
             self._seats = ((SUBJECT_REPO, SubjectAgreement()),) + self._seats
             keys = [SUBJECT_SEAT] + keys
         self._keys = tuple(keys)
+        self._binding_of = dict(binding_of) if binding_of is not None else {}
+        if any(not callable(of) for of in self._binding_of.values()):
+            raise ValueError("binding_of must map each seat to a function that reads what its verdict must bind")
+        off = sorted(set(self._binding_of) - set(keys) - {SUBJECT_SEAT})
+        if off or SUBJECT_SEAT in self._binding_of:
+            raise ValueError("binding_of names seat(s) not on the roster or added by the super gate: "
+                             + ", ".join(off or [SUBJECT_SEAT]))
+        self._strict_binding = strict_binding
+        if strict_binding:
+            unread = sorted(set(keys) - {SUBJECT_SEAT} - set(self._binding_of))
+            if unread:
+                raise ValueError("strict_binding needs a binding reader for every seat; none for: "
+                                 + ", ".join(unread))
         missing = sorted(set(required_keys) - set(keys))
         if missing:
             raise ValueError("the roster lacks required seat(s), refusing to decide without them: "
@@ -298,12 +361,18 @@ class SuperGate:
             views[key] = seen
         return views
 
-    def decide(self, candidates: Mapping[str, object]) -> Decision:
+    def decide(self, candidates: Mapping[str, object], *, ttl: Optional[float] = None) -> Decision:
         """Decide on the whole roster. `candidates` maps each seat (`repository:gate`) to what it judges.
+
+        The decision carries a fresh nonce and the time it was issued. `ttl`, in seconds, makes it stop counting
+        that long after issue (a guard refuses it); None means it does not expire. A ttl that is not a positive
+        number is a ValueError, before any gate runs.
 
         A candidate may be `Lazy`. A seat with no entry is a TERMINAL_BREACH. An entry for no seat is a
         ValueError, before any gate runs.
         """
+        if ttl is not None and not (isinstance(ttl, (int, float)) and not isinstance(ttl, bool) and ttl > 0):
+            raise ValueError("ttl must be a positive number of seconds, or None for no expiry")
         unknown = sorted(set(candidates) - set(self._keys))
         if unknown:
             raise ValueError("candidates for seats that are not on the roster: " + ", ".join(unknown))
@@ -317,7 +386,8 @@ class SuperGate:
                     given[key] = Lazy(_Once(seat.build))
             views = _Once(lambda: self._read_subjects(given))
             given[SUBJECT_SEAT] = Lazy(views)
-        steps = [(repo, gate, given[key] if key in given else _no_candidate(key))
+        steps = [(repo, _Bound(gate, self._binding_of[key]) if key in self._binding_of else gate,
+                  given[key] if key in given else _no_candidate(key))
                  for (repo, gate), key in zip(self._seats, self._keys)]
         run = run_repo_chain(steps, require_complete=self._require_complete)
         subject: Optional[Judged] = None
@@ -338,4 +408,9 @@ class SuperGate:
                 run = replace(run, results=run.results + (changed,), outcome=GateOutcome.TERMINAL_BREACH)
                 subject = None
         root = _root(self._keys, run.results)
-        return Decision(run=run, seats=self._keys, root=root, subject=subject, proof=_proof(run, root, subject))
+        nonce = secrets.token_hex(16)
+        issued_at = float(self._clock())
+        expires_at = issued_at + ttl if ttl is not None else None
+        return Decision(run=run, seats=self._keys, root=root, subject=subject,
+                        proof=_proof(run, root, subject, nonce, issued_at, expires_at),
+                        nonce=nonce, issued_at=issued_at, expires_at=expires_at)
