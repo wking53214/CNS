@@ -218,8 +218,9 @@ python3 -m venv .venv
 Then `from cns.graph import Node, Edge, Graph` and delete the vendored
 copy. Your own tests are the check that can fail.
 
-To install the whole circuit (CNS and the seven repositories, each at the commit
-`contracts/warden-stack.json` names, plus watcher-mcu) from a checkout of this repository:
+To install the whole circuit (CNS and the five circuit repositories, each at the commit
+`contracts/warden-stack.json` names; DRAFTER, BURNISH and WATCHER_MCU are released from it and not installed) from a
+checkout of this repository:
 
 ```
 python3 -m venv .venv

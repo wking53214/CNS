@@ -1,8 +1,9 @@
 # Decision record: three repositories released from the circuit
 
 Date: 2026-10-29. Owner ruling by William King (wking53214). Branch `claude/horsemen-production-status-5wsndb`.
-This record states a decision and the evidence it rests on. It changes no pin, no contract file, no version and no
-release table; those move in the later steps listed at the end.
+This record states a decision and the evidence it rests on. When it was written (2026-10-29) it changed no pin, no
+contract file, no version and no release table; those moved in the later steps listed at the end, and the section
+"What the manifest says now" below says where each stands as of 2026-10-30.
 
 ## The ruling, and what "release" means
 
@@ -55,8 +56,40 @@ Warden 0.15.0 is the target version of the WARDEN repository for this wave and i
 - A stack without `burnish` runs with no finisher.
 - The run record lists `released_seats`, and the claim row and `participants` list only seats that were seated.
 
-Until the pins move, the circuit still installs all three repositories. Nothing in this repository changed behaviour as
-a result of this record.
+When this record was written the circuit still installed all three repositories and nothing in this repository changed
+behaviour as a result of it. That is no longer true: see the next section.
+
+## What the manifest says now (2026-10-30)
+
+`contracts/warden-stack.json` names five repositories, ghost_tools, SWIZZLE, ASSAY, JUDGE and WARDEN; it no longer
+names DRAFTER or BURNISH. `contracts/install-stack.txt` is its rendering and installs CNS at `v2.2.0` and those five, and
+no longer installs drafter, burnish or watcher-mcu. The three released repositories are listed in
+`contracts/released-seats.json` (schema `released-seats/1`), each at the commit its CNS pin is read at. That file is
+CNS's own; the `warden-stack/1` schema Warden reads did not change.
+
+They are still consumers of CNS, and are still checked as such: the link ledger lists them (DRAFTER and BURNISH cite the
+released-seats file as their `from_cns` proof, WATCHER_MCU keeps `cns_composition/watcher_oath.py`), and the `stack` and
+`repin` workflows check them out at those commits into a folder of their own and pass it to `seat_pins` and
+`cns_versions` as `--consumers`, so their CNS pin and their Warden pin must still agree with the circuit's, and each must
+be read. They are never in Warden's stack folder: Warden refuses a stack folder that holds a seat the manifest omits, and
+the circuit checks that it does (`circuit_refusals`, case `unnamed_burnish`).
+
+The repin tooling cannot put them back. `repin` refuses a manifest that names a repository listed beside it in
+`released-seats.json`, and its workflow's canary and pins jobs check out only the five (and, for the pins check, the
+released ones in their own folder). A person can still edit both files by hand; the tests
+(`tests/test_install_stack.py`, `tests/test_repin_workflow.py`, `cns_composition/tests/test_released_seats.py`) fail
+until they agree again.
+
+The canary no longer ends ACCEPT with a Drafter fixer. It runs on Warden's claim seat: one ordinary, non-protected
+code change committed on a side branch of a throwaway repository, handed over with `--claim-commit`, in a stack that has
+no Drafter and no Burnish. `circuit_refusals` hands every case the same claim, adds `missing_seat` and `unnamed_burnish`
+(Warden's roster rule, nothing else) and refuses twelve of twelve at Warden 0.16.1.
+
+One gap in Warden's sentence was found by that work and is reported here, not fixed here: Warden's README and the
+docstring of `warden/cli.py` say a folder holding a releasable seat the manifest does not name is refused. For BURNISH
+that is true. For DRAFTER with the claim seat proposing, Warden 0.16.1 ended ACCEPT: the claim seat holds the option a
+Drafter folder would fill, so the folder is not used and is not refused. Nothing runs from it, so this is a gap in the
+sentence, not a way to run unpinned code, but it is the owner's call whether the sentence or the rule should change.
 
 ## ASSAY stays
 
@@ -67,11 +100,13 @@ instrument and no README may say or imply that it is released.
 
 ## Sequence still to run
 
-1. The owner tags CNS v2.1.0. This record does not tag anything.
-2. The pin cascade moves every cross-repository pin and the CNS pin from `v2.0.0` to `v2.1.0`, as a separate wave.
-3. A manifest edit that omits the three: `contracts/warden-stack.json` stops naming DRAFTER and BURNISH, the matching
-   lines leave `contracts/install-stack.txt`, and WATCHER_MCU's install line and link-ledger row are decided in the same
-   edit. The stack workflow checks that the files agree with each other, so they change together.
-4. A re-run of the circuit on the edited manifest, with a proposer for the claim, and a read of the result.
-
-Steps 2 to 4 are not done by this record.
+1. The owner tags CNS v2.1.0. Done by the owner on 2026-10-29. (The owner tagged `v2.2.0` the same day; it equals
+   2.1.0 in the `cns` package.)
+2. The pin cascade moves every cross-repository pin and the CNS pin, as a separate wave. Done for `v2.1.0` on
+   2026-10-29 and for `v2.2.0` on 2026-10-30.
+3. A manifest edit that omits the three: done on 2026-10-30 (Pin22 step 4b). `contracts/warden-stack.json` stops naming
+   DRAFTER and BURNISH, the matching lines and watcher-mcu's leave `contracts/install-stack.txt`, and the ledger rows
+   stay and cite `contracts/released-seats.json` (WATCHER_MCU's row is unchanged).
+4. A re-run of the circuit on the edited manifest, with a proposer for the claim: done by the canary and the refusals
+   on the claim seat (Pin22 step 4c), on a throwaway repository, not on a repository of the circuit. Re-running the
+   self-hosting runs of 2026-10-22 and 2026-10-23 on the new manifest has not been done.
