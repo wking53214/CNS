@@ -174,6 +174,12 @@ The spine also builds the kernel with an evidence guard, which takes a record on
 export of the document: a forged record, one with another document's text or source, or one of another kind is refused.
 A kernel built without that guard takes any evidence, and the spine records that as its second GAP. The roster's kernel
 seat is built with `require_evidence_guard=True` as well, so a kernel like that gets no approval.
+Asking whether a guard exists is satisfied by a function that says yes to everything, so the seat also hands the
+guard to a predicate (`accept_guard`, `accept_evidence_guard`; CCC's `require_permission`, `accept_permission`) that
+accepts only the guards the spine builds. The kernel's `registry` and `ledger` are read-only, so replacing them after
+approval is refused. The spine's decisions expire after five minutes. A direct call that is not stopped here is still
+not stopped: a private name can be written, and a kernel or CCC built without a guard and called directly is the
+recorded GAP.
 
 A passing decision records the one document its seats agreed on (`Decision.subject`).
 `cns_composition.decision_guard.DecisionGuard` turns that into a permission for

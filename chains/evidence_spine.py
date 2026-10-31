@@ -34,6 +34,15 @@ unless all five agree. The readers are written here with the other caller steps,
 steps; what changed is that a hop which drifts from the document HERALD read is now caught, where before every
 verdict was bound, PASS, and about a different thing.
 
+WHAT THE ROSTER ASKS OF THE GUARDS THEMSELVES
+
+A guard that exists is not a guard that works: a function that says yes to everything satisfies "has a guard". So the
+roster's kernel seat hands the kernel's guards to predicates (`accept_guard`, `accept_evidence_guard`) that accept only
+the kinds this script builds, and its CCC seat requires a write permission and accepts only that kind. The kernel's
+parts are read-only, so the guards cannot be swapped through its public interface after approval. All of this is a
+check on honest wiring and on careless or lazy substitution. Code in the same process that writes a private name can
+still replace a guard, and that is a limit of checks inside one process, not something this script can close.
+
 THE LAST HOP: A PERMISSION, NOT A HOPE
 
 The roster decides, but registering the root is an action in another repository, and the kernel imports no CNS. So

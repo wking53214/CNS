@@ -32,11 +32,29 @@ tagged: `contracts/cns-releases.json` keeps `current` at `v2.2.0` and the floor 
   permissions this way and checks every seat's verdict against what it was given (`strict_binding`), with four new
   scenarios, each shown failing against the unbound guards first. Pre-existing test edited, by this step:
   `tests/test_chains.py::test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact`, the count of
-  SEAM HOLDS scenarios, 26 to 31 (30 for the permissions step, 31 for the evidence step), and nothing else about it.
+  SEAM HOLDS scenarios, 26 to 39 over the whole of this work (each step that adds scenarios adds to it; its commit message
+  says by how many), and nothing else about it.
 - The spine's evidence guard compares the whole record with what TIE's translation gives for that id (`kernel_evidence`),
   not only its id, kind, source and text hash. Before, a record under a real TIE id with a human provider claiming
   independence, an inactive flag or an extra note was accepted, and the honest record was then refused as a duplicate.
   Only `created_at` is left out. One scenario, shown failing against the old guard first; a structural test pins it.
+- A permission can be given back when the write it allowed failed before changing anything: `DecisionGuard.commit()` and
+  `abort()`, called by the Kernel's ledger and by CCC on a guard that offers them. CCC calls `abort()` only if the store
+  is exactly as it was (record counts in every section) and `commit()` if anything was written, so a retry never lands
+  on a partial write. A guard with neither method behaves as before. One scenario: an approved ingest whose source
+  vanishes fails, the approval comes back, and the same ingest goes in once the source returns.
+- The roster can tell which guard a kernel or a CCC holds, not only that one exists: the Kernel's
+  `CnsRootAdmissionGate(accept_guard=, accept_evidence_guard=)` and CCC's `CccGate(require_permission=, accept_permission=)`
+  hand the guard to a predicate the roster supplies, and `kernel.root_guard`, `kernel.evidence_guard` and
+  `CCCSystem.write_permission` read them. The Kernel's `registry` and `ledger` are read-only, so reassigning them after
+  approval no longer removes the guards. The spine accepts only its own guard kinds and requires a CCC permission.
+- The Kernel refuses a root's fact or observation that cites evidence recorded for another proposition, and, when asked
+  (`refuse_inactive_root_evidence=True`, off by default, never applied on restore), one that cites inactive evidence.
+  The spine asks. Behaviour change in the Kernel: a snapshot holding a root whose fact cites evidence about another
+  proposition no longer restores.
+- The spine's decisions expire after `SPINE_TTL` (300 seconds), and the evidence guard requires `created_at` to be a time
+  with an offset that is not in the future. A record that claims to be older than it is cannot be told from an honest
+  one, and the guard does not try.
 - CCC joins the evidence spine as the fifth hop: `CCC:ccc.transition` is a required seat in
   `chains/evidence_spine.py`, and `cns_composition.repo_gates` declares CCC's gate end (`902638f`, `b4c56a2`).
 - CCC's write permission is the roster's `DecisionGuard`: after a roster no, a direct ingest is refused and CCC's
