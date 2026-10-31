@@ -586,3 +586,46 @@ def test_act_py_refuses_a_job_that_is_not_read_strictly_and_spends_nothing(tmp_p
     assert run_act(bad(job), ledger)["refused"]["code"] == code
     assert ledger.read_text() == ""  # nothing was verified, so nothing was spent
     assert run_act(job, ledger) == {"permitted": True}  # and the genuine job still lands
+
+
+# Follow-up to the 2026-10-30 audit: a live guard can be told to stop trusting a decider.
+
+def authorized_guard(trust=None):
+    dec, req, clock = pair()
+    _, offer, accept, decision = run(dec, req)
+    terms = offer.body["terms"]
+    trust = trust or TrustPolicy(pinned=frozenset({DEC.agent}))
+    guard = RemoteDecisionGuard(lambda a: a, acting_for=REQ.agent, capability=GUARD_CAP, trust=trust,
+                                ledger=MemoryLedger(), clock=clock)
+    return guard, decision, terms, accept, ("loan-app-17", terms["subject"]["digest"])
+
+
+def test_revoke_closes_an_authorized_guard_without_touching_the_policy_it_was_given():
+    trust = TrustPolicy(pinned=frozenset({DEC.agent}))
+    guard, decision, terms, accept, artifact = authorized_guard(trust)
+    guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
+    guard.revoke(DEC.agent)
+    assert guard(artifact) is False
+    assert trust.revoked == frozenset()  # the caller's policy is theirs; the guard keeps its own
+
+
+def test_revoke_before_authorize_makes_authorize_refuse_the_decider():
+    guard, decision, terms, accept, artifact = authorized_guard()
+    guard.revoke(DEC.agent)
+    assert code_of(guard.authorize, decision.to_wire(), terms=terms, accept_digest=accept.digest) == "untrusted"
+    assert guard(artifact) is False
+
+
+def test_revoking_someone_else_changes_nothing_and_revoking_twice_is_harmless():
+    guard, decision, terms, accept, artifact = authorized_guard()
+    guard.authorize(decision.to_wire(), terms=terms, accept_digest=accept.digest)
+    guard.revoke(EVE.agent)
+    guard.revoke(EVE.agent)
+    assert guard(artifact) is True
+
+
+def test_revoke_takes_an_agent_identity():
+    guard, *_ = authorized_guard()
+    for bad in ("", "not-an-identity", None, 7):
+        with pytest.raises(ValueError):
+            guard.revoke(bad)  # type: ignore[arg-type]

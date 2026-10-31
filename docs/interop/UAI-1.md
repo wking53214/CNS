@@ -182,6 +182,8 @@ document cannot open an action guarded for something else), the deciders it trus
 guard does not trust is refused), and its ledger. `interop/act.py` takes all four on its command line
 (`--acting-for`, `--capability`, `--capability-version`, `--trust`, `--ledger`). `capability` is a required keyword
 of `RemoteDecisionGuard`; code written before it was added must pass it.
+A running guard stops trusting a decider with `guard.revoke(agent)`: a decider revoked before `authorize` is refused as
+`untrusted`, and one revoked after it closes the guard, so the next call answers False.
 
 ## 8. What remains open
 

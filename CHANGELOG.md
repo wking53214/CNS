@@ -38,6 +38,9 @@ not a release.
   `RemoteDecisionGuard`, with `interop/act.py` as a second process sharing the ledger, and a third GAP records that
   single use holds per shared ledger. `Requester.request_judgment` asks for a judgment of a document the decider
   already holds, disclosing nothing.
+- `RemoteDecisionGuard.revoke(agent)`: a running guard can be told to stop trusting a decider. Before, revocation only
+  reached a guard if its frozen `TrustPolicy` was altered in place. A decider revoked before `authorize` is refused
+  (`untrusted`), one revoked after closes the guard, and the policy the guard was built with is not changed.
 
 ### Changed
 
