@@ -52,7 +52,7 @@ sender it does not admit. Endorsements are still Python only, and a peer admitte
 ## Found by the interoperability campaign (S7) and fixed
 
 The independent answer key `contracts/uai-interop-vectors.json` (generator `interop/vectors/make_interop_vectors.py`,
-signatures from the OpenSSL command line, 135 hand-reasoned cases) was run through both implementations. It found:
+signatures from the OpenSSL command line, 137 hand-reasoned cases) was run through both implementations. It found:
 
 | finding | implementation | fix |
 |---|---|---|
