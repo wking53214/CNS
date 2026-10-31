@@ -331,9 +331,9 @@ Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.5.1` (an oddity: it points at a commit older than `v1.5.0` whose
-package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and recorded so, see `CHANGELOG.md`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`), `v2.2.0` (the decision guard: `DecisionGuard`, `same_subject`, `Decision.subject` and the issuance proof; see `CHANGELOG.md`). A raw commit SHA still
-works, but a tag says which contract you are joining on. This tree declares 2.3.0, not yet tagged, so `v2.2.0` stays
-the release a consumer pins until the owner tags: what 2.3.0 adds is in `CHANGELOG.md`, and
+package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and recorded so, see `CHANGELOG.md`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`), `v2.2.0` (the decision guard: `DecisionGuard`, `same_subject`, `Decision.subject` and the issuance proof; see `CHANGELOG.md`). `v2.3.0` (the evidence spine's fifth hop, CCC's write permission and the evidence guard, `SuperGate` binding and decision expiry; see `CHANGELOG.md`). A raw commit SHA still
+works, but a tag says which contract you are joining on. The newest tag, `v2.3.0`, is the release a consumer pins; `main` has moved on
+since (see Unreleased in `CHANGELOG.md`), and what 2.3.0 adds is in `CHANGELOG.md`, and
 `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
 
 ## Versioning
@@ -408,7 +408,7 @@ second with the `cns` extra installed.
 
 | Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
 |---|---|---|---|---|---|
-| CNS | 2.3.0, not yet tagged | Tags `v0.1.0` to `v2.2.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`. | green (6 jobs) | 1294 | not applicable |
+| CNS | 2.3.0, tagged; `main` is ahead of the tag | Tags `v0.1.0` to `v2.3.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`; `v2.3.0` has its text there and no Release yet. | green (6 jobs) | 1294 | not applicable |
 | HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.2.0` |
 | TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.2.0` |
 | Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.2.0` |
