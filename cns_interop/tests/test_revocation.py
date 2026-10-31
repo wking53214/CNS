@@ -181,8 +181,9 @@ def test_a_revoked_requester_is_refused_by_a_decider_using_the_same_store(tmp_pa
     request = req2.request(DEC.agent, __import__("test_session").doc(), "income-screen", 1,
                            offer_fields=["monthly_income_cents"], require_evidence=["threshold-check"],
                            max_ttl_ms=600_000)
-    reply = dec2.handle(request.to_wire())
-    assert reply.kind == "refuse" and reply.body["code"] == "untrusted"
+    with pytest.raises(Refused) as dropped:  # T2-1: a revoked sender is dropped, with no signature check and no signed reply
+        dec2.handle(request.to_wire())
+    assert dropped.value.code == "untrusted" and dec2.dropped == 1
 
 
 def test_an_unreadable_store_is_unavailable_not_empty(tmp_path):

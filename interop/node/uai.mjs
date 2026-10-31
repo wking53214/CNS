@@ -232,7 +232,24 @@ export function seal(signer, kind, body, { to = "", replyTo = null, ttlMs = null
   });
 }
 
-export function openEnvelope(wire, { now = Date.now(), skewMs = 120000, audience = null, kinds = null } = {}) {
+// Count the values without recursion and stop past `limit`: the work is at most `limit` steps however big the message is,
+// so a receiver can bound what an unauthenticated message makes it do before the signature is touched.
+export function boundedNodes(value, limit) {
+  const tooMany = () => new Refused("profile", `the message holds more than ${limit} values, which this receiver does not read`);
+  let seen = 1; const stack = [value];
+  if (seen > limit) throw tooMany();
+  while (stack.length) {
+    const v = stack.pop();
+    if (Array.isArray(v)) { seen += v.length; if (seen > limit) throw tooMany(); for (const x of v) stack.push(x); }
+    else if (v !== null && typeof v === "object") {
+      const keys = Object.keys(v); seen += 2 * keys.length; if (seen > limit) throw tooMany();
+      for (const k of keys) { stack.push(k); stack.push(v[k]); }
+    }
+  }
+  return seen;
+}
+
+export function openEnvelope(wire, { now = Date.now(), skewMs = 120000, audience = null, kinds = null, maxNodes = null } = {}) {
   const need = (ok, why) => { if (!ok) throw new Refused("malformed", why); };
   need(isPlainObject(wire), "an envelope is a mapping");
   const keys = cpSort(Object.keys(wire));
@@ -249,6 +266,7 @@ export function openEnvelope(wire, { now = Date.now(), skewMs = 120000, audience
   need(wire.expires_at === null || (Number.isSafeInteger(wire.expires_at) && wire.expires_at > wire.issued_at), "expires_at is not after issued_at");
   need(isPlainObject(wire.body), "body is not a mapping");
   need(typeof wire.sig === "string" && /^[0-9a-f]{128}$/.test(wire.sig), "sig is not 128 hex digits");
+  if (maxNodes !== null) boundedNodes(wire.body, maxNodes);
   checkProfile(wire.body);
   if (!verifySig(wire.from, signingInput(unsignedOf(wire)), wire.sig)) throw new Refused("signature", "the signature does not verify as the sender");
   if (wire.issued_at > now + skewMs) throw new Refused("not_yet_valid", "dated in the future beyond the allowed skew");

@@ -50,19 +50,19 @@ def dumps(envelope: Envelope) -> str:
     return json.dumps(envelope.to_wire(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def loads(text: "str | bytes | bytearray") -> Dict[str, Any]:
+def loads(text: "str | bytes | bytearray", *, max_bytes: int = MAX_BYTES) -> Dict[str, Any]:
     """Parse one envelope's JSON. The result still has to pass `open_envelope` before anything trusts it."""
     if isinstance(text, (bytes, bytearray)):
-        if len(text) > MAX_BYTES:
-            raise Refused("malformed", "the message is larger than 1 MiB")
+        if len(text) > min(max_bytes, MAX_BYTES):
+            raise Refused("malformed", f"the message is larger than {min(max_bytes, MAX_BYTES)} bytes")
         try:
             text = bytes(text).decode("utf-8")
         except UnicodeDecodeError:
             raise Refused("malformed", "the message is not UTF-8") from None
     if not isinstance(text, str):
         raise Refused("malformed", "the message is not text")
-    if len(text.encode("utf-8", "surrogatepass")) > MAX_BYTES:
-        raise Refused("malformed", "the message is larger than 1 MiB")
+    if len(text.encode("utf-8", "surrogatepass")) > min(max_bytes, MAX_BYTES):
+        raise Refused("malformed", f"the message is larger than {min(max_bytes, MAX_BYTES)} bytes")
     try:
         value = json.loads(text, object_pairs_hook=_no_duplicates, parse_float=_no_float, parse_int=_bounded_int,
                            parse_constant=_no_constant)

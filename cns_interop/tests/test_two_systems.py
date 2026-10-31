@@ -49,7 +49,7 @@ def test_the_rails_hold_across_the_language_boundary(demo):
     assert r["bad_doc_verdict"] == "retry"
     assert r["withheld"].startswith("declined")
     p = demo["python_decides"]
-    assert p["stranger_reply"] == "refuse" and "not pinned" in p["stranger_reason"]
+    assert p["stranger_reply"] == "dropped" and "not one this receiver deals with" in p["stranger_reason"]  # T2-1
 
 
 def test_node_requests_a_cns_super_gate_decides_and_node_verifies(demo):

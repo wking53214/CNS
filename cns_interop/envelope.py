@@ -51,7 +51,7 @@ from . import crypto_backend
 from .identity import Signer, is_agent_id, public_of
 
 __all__ = ["VERSION", "KINDS", "FIELDS", "Envelope", "Refused", "seal", "sign_envelope", "open_envelope", "now_ms",
-           "check_profile", "MAX_INT", "MAX_DEPTH"]
+           "check_profile", "MAX_INT", "MAX_DEPTH", "bounded_nodes"]
 
 VERSION = "uai/1"
 KINDS: FrozenSet[str] = frozenset({
@@ -118,6 +118,33 @@ def check_profile(value: Any, *, where: str = "body", depth: int = 0) -> None:
             check_profile(v, where=f"{where}[{i}]", depth=depth + 1)
         return
     raise Refused("profile", f"{where} holds a {type(value).__name__}, which UAI-1 does not carry")
+
+
+def bounded_nodes(value: Any, limit: int) -> int:
+    """Count the values in `value` without recursion, and refuse (Refused('profile')) as soon as the count would pass
+    `limit`. Children are counted from their container's LENGTH before any of them is visited, so the work done is at most
+    `limit` steps however large one list or mapping is: a 2-million-element list costs the same to refuse as a small one."""
+    seen, stack = 1, [value]
+    if seen > limit:
+        raise Refused("profile", f"the message holds more than {limit} values, which this receiver does not read")
+    while stack:
+        v = stack.pop()
+        if isinstance(v, Mapping):
+            seen += 2 * len(v)
+            children: Any = None
+        elif isinstance(v, (list, tuple)):
+            seen += len(v)
+            children = v
+        else:
+            continue
+        if seen > limit:
+            raise Refused("profile", f"the message holds more than {limit} values, which this receiver does not read")
+        if isinstance(v, Mapping):
+            stack.extend(v.keys())
+            stack.extend(v.values())
+        else:
+            stack.extend(children)
+    return seen
 
 
 def _plain(value: Any) -> Any:
@@ -208,7 +235,8 @@ def _is_int(v: Any) -> bool:
 
 
 def open_envelope(wire: Mapping[str, Any], *, now: Optional[int] = None, skew_ms: int = 120_000,
-                  audience: Optional[str] = None, kinds: Optional[Iterable[str]] = None) -> Envelope:
+                  audience: Optional[str] = None, kinds: Optional[Iterable[str]] = None,
+                  max_nodes: Optional[int] = None) -> Envelope:
     """Check a received envelope completely and return it, or raise Refused saying why.
 
     Checked: exactly the UAI-1 fields and no others, the version, the kind (and that it is one of `kinds`, if given),
@@ -237,6 +265,8 @@ def open_envelope(wire: Mapping[str, Any], *, now: Optional[int] = None, skew_ms
                                          <= MAX_INT), "expires_at is not a time after issued_at")
     _need(isinstance(wire["body"], Mapping), "body is not a mapping")
     _need(isinstance(wire["sig"], str) and _HEX128.match(wire["sig"]) is not None, "sig is not 128 hex digits")
+    if max_nodes is not None:
+        bounded_nodes(wire["body"], max_nodes)  # a receiver's own bound, applied before any per-value or signature work
     check_profile(wire["body"])
     env = Envelope(kind=wire["kind"], id=wire["id"], sender=wire["from"], to=wire["to"],
                    conversation=wire["conversation"], in_reply_to=wire["in_reply_to"], issued_at=wire["issued_at"],

@@ -262,12 +262,13 @@ def round_python_decides(log: List[str]) -> Dict[str, Any]:
         cold.discover(decider.manifest().to_wire())
         r = cold.request(decider.agent, document("x", 500_000), "income-screen", 1,
                          offer_fields=["monthly_income_cents", "doc_type"], max_ttl_ms=600_000)
-        reply = decider.handle(r.to_wire())
-        assert reply is not None
-        log.append(f"Rails: a requester the Python decider does not trust -> {reply.kind} "
-                   f"({reply.body['reasons'][0]})")
-        return {"result": result, "decider": dec_signer.agent, "stranger_reply": reply.kind,
-                "stranger_reason": reply.body["reasons"][0]}
+        try:
+            reply = decider.handle(r.to_wire())
+            seen = (reply.kind if reply is not None else "none", reply.body["reasons"][0] if reply is not None else "")
+        except Refused as exc:  # revision 3: a sender the decider has not admitted gets nothing signed and costs it no signature check
+            seen = ("dropped", exc.reason)
+        log.append(f"Rails: a requester the Python decider does not trust -> {seen[0]} ({seen[1]})")
+        return {"result": result, "decider": dec_signer.agent, "stranger_reply": seen[0], "stranger_reason": seen[1]}
     finally:
         agent.close()
 

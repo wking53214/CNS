@@ -45,7 +45,10 @@ function decider() {
   return (line) => {
     const wire = U.strictParseBytes(line);
     if (wire.kind === "manifest") { U.readManifest(wire, { trust }); return out({ uai_ok: "manifest read" }); }
-    const env = U.openEnvelope(wire, { audience: me.agent, kinds: new Set(["request", "accept"]) });
+    // The cheap gate comes FIRST: a sender this agent has not pinned costs it no signature check and gets nothing signed
+    // (anyone can mint a key; a signed answer for every one of them would be a free amplifier). An unsigned error line only.
+    if (typeof wire.from === "string" && !trust.pinned.has(wire.from)) throw new U.Refused("untrusted", "the sender is not one this agent deals with");
+    const env = U.openEnvelope(wire, { audience: me.agent, kinds: new Set(["request", "accept"]), maxNodes: 20000 });
     if (env.expires_at === null) throw new U.Refused("malformed", "session messages must expire");
     if (env.expires_at - env.issued_at > 86400000) throw new U.Refused("malformed", "a session message may live at most 24 hours");
     try { trust.admit(env.from); } catch (e) { return out(refuse(env, e)); } // no ledger entry for a sender that is not admitted: anyone can mint keys

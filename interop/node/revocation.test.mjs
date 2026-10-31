@@ -160,3 +160,17 @@ test("a ledger that throws anything but a refusal is unavailable, never an escap
   assert.equal(code(() => mkGuard(ex, { ledger: broken }).authorize(ex.decision, { terms: ex.terms, acceptDigest: ex.acceptDigest })), "unavailable");
   assert.equal(code(() => mkGuard(ex, { ledger: broken }).authorize(ex.decision, { terms: ex.terms, acceptDigest: ex.acceptDigest, leaseMs: 5000 })), "unavailable");
 });
+
+test("boundedNodes refuses by length before walking, with the same count as the Python reference", () => {
+  assert.equal(U.boundedNodes({ a: [1, 2, { b: null }] }, 100), 8);                   // python: bounded_nodes({"a": [1, 2, {"b": None}]}, 100) == 8
+  assert.equal(U.boundedNodes({ a: new Array(300).fill(1) }, 1_000_000), 303);
+  assert.equal(code(() => U.boundedNodes({ a: new Array(300).fill(1) }, 302)), "profile");
+  const huge = { a: new Array(2_000_000).fill(1) };
+  const t = process.hrtime.bigint();
+  assert.equal(code(() => U.boundedNodes(huge, 1000)), "profile");
+  assert.ok(Number(process.hrtime.bigint() - t) / 1e6 < 50, "the refusal must not walk the list");
+  const wire = { ...U.seal(S(1), "request", { a: 1 }, { to: S(2).agent, ttlMs: 60000 }) };
+  const big = U.seal(S(1), "request", { a: new Array(500).fill(1) }, { to: S(2).agent, ttlMs: 60000 });
+  assert.equal(code(() => U.openEnvelope(big, { maxNodes: 100 })), "profile");        // refused before the signature check
+  assert.ok(U.openEnvelope(wire, { maxNodes: 100 }));
+});

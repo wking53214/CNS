@@ -50,10 +50,10 @@ class Clock:
         return self.t
 
 
-def pair(judge=screen, *, decider_trusts=None, clock=None):
+def pair(judge=screen, *, decider_trusts=None, clock=None, **decider_kw):
     clock = clock or Clock()
     dec = Decider(DEC, name="screener", implementation="python/test", capabilities=[(CAP, judge)],
-                  trust=decider_trusts or TrustPolicy(pinned=frozenset({REQ.agent})), clock=clock)
+                  trust=decider_trusts or TrustPolicy(pinned=frozenset({REQ.agent})), clock=clock, **decider_kw)
     req = Requester(REQ, trust=TrustPolicy(pinned=frozenset({DEC.agent})), clock=clock)
     req.discover(dec.manifest().to_wire())
     return dec, req, clock
@@ -182,7 +182,7 @@ def test_evidence_must_match_its_digest_even_from_the_real_decider():
 
 
 def test_an_unadmitted_requester_is_told_no_and_learns_why():
-    dec, req, clock = pair(decider_trusts=TrustPolicy())
+    dec, req, clock = pair(decider_trusts=TrustPolicy(), unknown_sender="refuse")  # the signed refusal is now opt-in (T2-1)
     request = req.request(DEC.agent, doc(), "income-screen", 1, offer_fields=["monthly_income_cents"],
                           max_ttl_ms=600_000)
     refuse = dec.handle(request.to_wire())
@@ -406,7 +406,9 @@ def test_an_endorsed_requester_is_admitted_once_and_until_the_endorsement_lapses
     clock.t = T0 + 30_000
     late = req.request(DEC.agent, doc(), "income-screen", 1, offer_fields=["monthly_income_cents"],
                        max_ttl_ms=600_000)
-    assert dec.handle(late.to_wire()).kind == "refuse"
+    with pytest.raises(Refused) as lapsed:  # T2-1: a sender no longer admitted is dropped, with no signed reply
+        dec.handle(late.to_wire())
+    assert lapsed.value.code == "untrusted" and dec.dropped == 1
 
 
 def test_a_session_message_cannot_ask_to_be_remembered_forever():

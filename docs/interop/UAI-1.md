@@ -224,6 +224,15 @@ document, with an expiry; an approver is never the decider or the requester. Eve
 audit record. Delegation is not implemented: a grant is for the requester it names. A manifest remains an advertisement;
 nothing a sender signs adds to a grant. The Node implementation does not yet have grants (planned, Tier 3).
 
+## 7b. What a receiver spends before it knows the sender (receiver-side)
+
+Verification is never weakened; whether to spend it is the receiver's call. `Decider` drops a message from a sender it has not
+admitted before checking its signature and signs nothing for it (`unknown_sender="drop"`, default; `"refuse"` restores the signed
+refusal), refuses a message with more than `Limits.max_nodes` values before the signature (default 20000), and can be given a
+`RateLimiter` (a global bucket that holds against rotating claimed identities, and a per-sender bucket) that is consulted
+before anything else. `wire.loads(max_bytes=)` lets a receiver read less than the 1 MiB ceiling. Measurements and method:
+`docs/interop/bench/preauth-2026-10-31.json`.
+
 ## 8. What remains open
 
 UAI-1 is a foundation, not the whole interface. Not specified or implemented here:
