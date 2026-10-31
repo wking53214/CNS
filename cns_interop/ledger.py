@@ -62,8 +62,7 @@ class FileLedger:
     def spend(self, sender: str, message_id: str, expires_at: Optional[int]) -> None:
         with self._locked() as fh:
             fd = fh.fileno()
-            lines = [ln for ln in fh.read().decode("utf-8").splitlines() if ln.strip()]
-            entries = [json.loads(ln) for ln in lines]
+            entries = self._read(fd, fh.read())
             if any(e["sender"] == sender and e["id"] == message_id for e in entries):
                 raise Refused("replayed", "this message was already accepted once")
             cutoff = now_ms() - self._keep_ms
@@ -73,6 +72,37 @@ class FileLedger:
                 self._append(fd, _line(new))
             else:
                 self._compact([*live, new])
+
+    @staticmethod
+    def _read(fd: int, raw: bytes) -> List[Dict[str, Any]]:
+        """The entries in the file, or Refused('unavailable') when the file cannot be trusted to be complete.
+
+        A final line with no newline is a write a killed process never finished. `spend` returns only after the line
+        and its newline are durable, so that fragment was never acknowledged to anyone and is cut off. Any other line
+        that does not read as an entry means the file was damaged some other way, and a ledger that cannot be read
+        cannot say a message is new: it refuses and spends nothing, rather than guess."""
+        torn = bool(raw) and not raw.endswith(b"\n")
+        lines = raw.split(b"\n")
+        tail = lines.pop() if torn else None
+        entries: List[Dict[str, Any]] = []
+        for number, ln in enumerate(lines, 1):
+            if not ln.strip():
+                continue
+            try:
+                e = json.loads(ln.decode("utf-8"))
+                if (not isinstance(e, dict) or set(e) != {"sender", "id", "expires_at"}
+                        or not isinstance(e["sender"], str) or not isinstance(e["id"], str)
+                        or not (e["expires_at"] is None or (isinstance(e["expires_at"], int)
+                                                            and not isinstance(e["expires_at"], bool)))):
+                    raise ValueError("not a ledger entry")
+            except (ValueError, UnicodeDecodeError):
+                raise Refused("unavailable", f"the ledger file is damaged at line {number}; no message can be "
+                                             "judged new until it is repaired") from None
+            entries.append(e)
+        if tail is not None:
+            os.ftruncate(fd, len(raw) - len(tail))
+            os.fsync(fd)
+        return entries
 
     @contextmanager
     def _locked(self) -> Iterator[BinaryIO]:

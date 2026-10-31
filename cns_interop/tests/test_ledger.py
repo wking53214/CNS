@@ -125,3 +125,37 @@ def test_many_writers_compacting_at_once_spend_each_message_exactly_once(tmp_pat
     assert len(refused) == 6 * 6 - 6
     assert replays(FileLedger(path), [f"m-{i}" for i in range(6)] + ["seed"]) == []
     assert os.listdir(tmp_path) == ["spent.jsonl"]
+
+
+def test_a_torn_final_line_is_cut_off_and_nothing_acknowledged_is_lost(tmp_path):
+    """A process killed mid-append leaves a fragment that was never acknowledged. It must not wedge the ledger."""
+    path = tmp_path / "spent.jsonl"
+    ledger = FileLedger(path)
+    ledger.spend(SENDER, "kept", now_ms() + 60_000)
+    with open(path, "ab") as fh:
+        fh.write(b'{"sender": "agent:test-sender", "id": "frag", "expi')
+    ledger.spend(SENDER, "after", now_ms() + 60_000)  # was JSONDecodeError before the fix
+    assert replays(ledger, ["kept", "after"]) == []
+    assert path.read_bytes().endswith(b"\n")
+
+
+@pytest.mark.parametrize("damage", [b"not json\n", b'{"sender": "a"}\n', b"[1]\n", b"\xff\xfe\n"],
+                         ids=["garbage", "wrong-keys", "wrong-type", "bad-utf8"])
+def test_damage_before_the_last_line_refuses_and_spends_nothing(tmp_path, damage):
+    path = tmp_path / "spent.jsonl"
+    ledger = FileLedger(path)
+    ledger.spend(SENDER, "kept", now_ms() + 60_000)
+    good = path.read_bytes()
+    path.write_bytes(damage + good)
+    with pytest.raises(Refused) as exc:
+        ledger.spend(SENDER, "new", now_ms() + 60_000)
+    assert exc.value.code == "unavailable"
+    assert path.read_bytes() == damage + good  # nothing was written, truncated or compacted
+
+
+def test_a_complete_last_line_without_a_newline_is_still_refused_as_torn_not_trusted(tmp_path):
+    """A parseable fragment is cut too: only a line with its newline was ever acknowledged."""
+    path = tmp_path / "spent.jsonl"
+    ledger = FileLedger(path)
+    path.write_bytes(b'{"sender": "agent:test-sender", "id": "unacked", "expires_at": null}')
+    ledger.spend(SENDER, "unacked", now_ms() + 60_000)  # it was never acknowledged, so it is new
