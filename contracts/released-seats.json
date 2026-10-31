@@ -1,8 +1,8 @@
 {
   "schema": "released-seats/1",
   "repos": {
-    "DRAFTER": "f9bac31d361d101c6b5689ac05419109901fb242",
-    "BURNISH": "297d3337758e0ea7a9289788dad7a8faee78a232",
-    "WATCHER_MCU": "905651364ad883d300857191f84508967e0871f7"
+    "DRAFTER": "335503d71c2f4742632bf0e27bc9dbf9e9f97af3",
+    "BURNISH": "37e012a52898f67d6b04a4b29cffbcbd48c410c6",
+    "WATCHER_MCU": "89e25ac3dfdd1807c8a884b50366be6c30160790"
   }
 }
