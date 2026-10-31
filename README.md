@@ -7,6 +7,113 @@ Where the five-repository circuit stands today (what was checked, what it found 
 still open): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
 remains to be done: [docs/RELEASED_SEATS.md](docs/RELEASED_SEATS.md).
 
+## The interoperability foundation (read this first)
+
+CNS is meant to be the common ground that independent systems can stand on to exchange structured, checkable objects
+without becoming the same system. It is **the interoperability foundation, not the intelligence, the decision-maker
+or the authority of the systems it connects.** Everything below is split into what exists today and what is only an
+ambition, because the two are easy to confuse.
+
+### The problem
+
+Systems that were never designed to work together (different languages, vendors, AI models, databases, policies,
+owners) still have to hand each other things: a request, a document, evidence, a recommendation, a verdict. Today
+each pair invents its own format, its own idea of identity, and its own way of knowing whether a message was altered.
+The usual fix is to put everything inside one platform, which asks every participant to give up its identity, its data
+model, its rules and its accountability. CNS takes the other path: agree on a small set of contracts and let each
+system stay itself.
+
+### How it works, and where authority stays
+
+```
+  Independent system A                                            Independent system B
+  (its own identity, data model,                                  (its own identity, data model,
+   policies, decisions, authority)                                 policies, decisions, authority)
+          |                                                                 ^
+          v                                                                 |
+   adapter / contract                                               adapter / contract
+   (A's native form  ->  CNS shape)                                 (CNS shape  ->  B's native form)
+          |                                                                 ^
+          +------------>   CNS interoperability foundation   ---------------+
+                           - structure: is the object well formed?
+                           - identity: who made it, is it the same object?
+                           - integrity and provenance: was it altered, where from?
+                           - transport of the object between authorized endpoints
+                           It stores no verdicts of its own and grants no permission.
+
+  Four different things travel, and CNS never merges them:
+
+    COMMUNICATION  ->  RECOMMENDATION  ->  DECISION  ->  PERMISSION
+    CNS moves the     a system or a      the responsible   the RECEIVING system's own
+    object            model proposes     system or person  policy says whether the action
+                                         chooses           may happen
+```
+
+A model's recommendation is not a decision. A signed decision is not permission. A valid signature proves who made an
+object and that it was not changed; it does not prove the content is true or that anyone may act on it. The receiver
+keeps authority: in the reference receiver (`interop/act.py`, `interop/node/act.mjs`) an action happens only if the
+receiver's **own** grant allows it, and a person's approval is bound to one decision, one action and one document.
+
+### What CNS validates, and what it deliberately does not decide
+
+| CNS checks (explicit, contracted) | CNS never decides |
+|---|---|
+| The object has exactly the declared shape and value profile | Whether the contents are true |
+| Who signed it, and that it is unchanged (canonical digest, Ed25519) | Whether a recommendation is right |
+| That a reply answers exactly this object (digest binding) | Whether an action should happen |
+| That a message is fresh and not replayed (receiver's own ledger) | Who is permitted to act (the receiver's grants do that) |
+| That terms, disclosures and evidence match what was agreed | Anything on behalf of a participant's own policy |
+| That native and CNS-added information stay distinguishable | Truth, fairness or safety of what is exchanged |
+
+Validation is not judgment. Integrity is not truth. Identity is not permission. Interoperability is not authority.
+
+### How it relates to UAI-1, and how AI providers and agents connect
+
+`cns` holds the shared shapes. **UAI-1** (`docs/interop/UAI-1.md`) is the signed-message protocol built on those
+shapes so a system outside the process, in any language, can exchange requests, terms, selective disclosures and
+decisions. AI models and independent agents connect through **adapters**: an adapter turns a provider's answer into a
+`recommendation`, read by a strict parser that refuses anything beyond verdict, reasons, evidence and an escalation flag.
+The decider's own policy may lower the recommendation, a grant decides whether anything may be done, and a person may
+have to approve. Provider clients exist for Anthropic, Google Gemini, OpenAI (ChatGPT models) and Copilot (through GitHub
+Models or Azure OpenAI). **No live provider has ever been called in this repository** (no keys); every client is tested
+against local servers that speak the provider's wire format, and the live runner prints `NOT EXECUTED` without a key.
+
+### Where it sits in STACK
+
+STACK is a library of many repositories, many of which decide something. CNS gives them one vocabulary so one can read
+and check another's verdict. It is not a governance engine: governance components (HERALD, TIE, Conservation_Kernel,
+Governance_Gateway, CCC and the Warden circuit) make their own decisions in their own repositories, and CNS holds only the
+shapes they share. The evidence spine, below, shows one document crossing five of them.
+
+### Implemented today, and what is not
+
+| Implemented and tested here | Experimental, partial or absent |
+|---|---|
+| UAI-1 envelope, strict wire reading, canonical digest, Ed25519 (pure Python, or OpenSSL with a frozen production profile) | No second, independently written implementation by another team has been run against the suite |
+| Python and Node implementations that agree on shared vectors and on a conformance suite | Node has no PostgreSQL support: multi-host receivers are Python only |
+| Receiver-owned grants, approvals, single-use permits, hash-chained audit in Python **and** Node (differentially tested) | Delegation is deliberately not built |
+| Replay protection in the real action path: file, SQLite or PostgreSQL ledgers, leases and fencing tokens | No HSM or OS keystore support (an external signer hook exists; nothing hardware-backed was tested) |
+| Receiver policy and audit shared across hosts through PostgreSQL | Not distributed consensus: one PostgreSQL primary, as available as that node; asynchronous standbys can lose a write |
+| Transport profiles, with TLS 1.3 mutual authentication implemented and tested over real handshakes | OCSP, certificate transparency, post-quantum and traffic-analysis resistance are not provided |
+| JSON Schema, a versioned error registry and a stand-alone conformance runner (`contracts/uai1/`) | Provider interoperability is untested against any live provider |
+| Provider clients for Anthropic, Gemini, OpenAI and Copilot, behind the adapter boundary | Authenticated transport is not required for same-host use (`local-process` profile) |
+
+The honest summary and the scored assessment are in `docs/interop/UAI1_R4_ASSESSMENT.md`.
+
+### Starting your own implementation
+
+Another team can implement UAI-1 without reading CNS code: `docs/interop/implementers/README.md` is the guide, and
+`contracts/uai1/` holds the schema, the error registry, the conformance suite and `run_conformance.py`, which runs any
+implementation (given a small adapter program) against the suite using only the standard library. Runnable examples are
+in `interop/examples/` (Python, Node and a provider adapter). Security profiles, and which suit which deployment, are in
+`docs/interop/SECURITY_PROFILES.md`.
+
+### What CNS is not meant to become
+
+Not a central intelligence, not a governance product, not a source of truth for the systems it connects, not an
+authority that grants permission, and not a platform participants must join. If a change would move CNS into deciding
+or authorizing, the right response is a separate component that sits beside it.
+
 ## What CNS is for
 
 The library is many repositories, and many of them decide something: whether a change may merge, whether a document
@@ -163,7 +270,10 @@ decision can leave the process with its root and be checked anywhere.
 | an independent Node implementation | `interop/node/uai.mjs` (OpenSSL Ed25519, no shared code) and `agent.mjs` |
 | the shared answer key | `contracts/uai-vectors.json` (`python -m cns_interop.vectors` keeps it current) |
 | the two-language demonstration | `python interop/demo.py`; `interop/act.py` is a separate process that acts once on a remote decision |
-| what moved and what did not | `docs/interop/SCORECARD.md` |
+| what moved and what did not | `docs/interop/SCORECARD.md`, and for revision 4 `docs/interop/UAI1_R4_ASSESSMENT.md` |
+| the stand-alone package for another implementer | `contracts/uai1/` (schema, errors, conformance suite and runner) and `docs/interop/implementers/README.md` |
+| the receiver (action runner) in each language | `interop/act.py` and `interop/node/act.mjs`, with `interop/node/grants.mjs` |
+| runnable examples | `interop/examples/` |
 
 `cns` never imports it, and it imports only `cns`, `cns_composition` and the standard library. Node 20 or later is
 needed to run the second implementation's tests; without it they fail and say so.
