@@ -193,8 +193,14 @@ UAI-1 is a foundation, not the whole interface. Not specified or implemented her
   confidential channel. There is no key agreement or session layer.
 - **Federation beyond one level.** No endorsement chains, delegation, published revocation lists or key rotation
   statements. The Node implementation pins only.
-- **A shared ledger across hosts.** Single use holds per audience on one host; several hosts acting for one
-  identity need a shared store.
+- **A shared ledger across hosts.** Single use holds per audience on one host (`FileLedger`, `SqliteLedger`);
+  several hosts acting for one identity need `CoordinatedLedger` over a linearizable store the receiver owns, and
+  refuse (`unavailable`) when that store gives no definite answer. No real store adapter ships: the in-memory
+  coordinator is a test stand-in, and a real backend must pass `cns_interop/ledger_conformance.py` and its own
+  partition tests. Guarantee by ledger: `MemoryLedger` one process; `FileLedger` and `SqliteLedger` one host;
+  `CoordinatedLedger` many hosts only as far as its coordinator is linearizable. Two local ledgers on two hosts accept
+  one decision twice. `reserve`, `commit` and `release` (leases) make an action recoverable after a crash and
+  at-least-once, so the action must be idempotent on the idempotency key (`RemoteDecisionGuard.idempotency_key`).
 - **Model and vendor adapters.** The protocol is model-agnostic; no adapter wraps a specific model API yet, and the
   reference agents decide by rule.
 - **Policy negotiation beyond fields, evidence and lifetime**, such as purpose limitation, retention or jurisdiction.

@@ -30,7 +30,7 @@ from cns.gate import GateOutcome, subject_digest
 
 from .envelope import Envelope, Refused, now_ms, open_envelope, seal
 from .identity import Signer, is_agent_id
-from .ledger import Ledger
+from .ledger import Ledger, Reservation
 from .manifest import NAME
 from .negotiate import TERMS_KEYS, terms_digest
 from .trust import TrustPolicy
@@ -95,15 +95,45 @@ class Verified:
     subject: Mapping[str, str]
     cns_root: str
     envelope: Envelope
+    #: Set when the decision was taken under a lease (`lease_ms`): the idempotency key and the lease to commit or release.
+    reservation: Optional[Reservation] = None
 
     @property
     def allowed(self) -> bool:
         return self.verdict == GateOutcome.PASS.value
 
 
+def _redeem(ledger: Any, env: Envelope, now: Optional[int], lease_ms: Optional[int]) -> Optional[Reservation]:
+    """Spend the decision, or lease it when `lease_ms` is given. A ledger that cannot give a definite answer (any
+    error that is not a refusal) means there is no authoritative state, so the answer is Refused('unavailable'):
+    permission is never inferred from a failure to check."""
+    try:
+        if lease_ms is not None:
+            reserve = getattr(ledger, "reserve", None)
+            if reserve is None:
+                raise ValueError("lease_ms needs a ledger with reserve, commit and release")
+            got: Reservation = reserve(env.sender, env.id, env.expires_at, lease_ms=lease_ms, now=now)
+            return got
+        try:
+            ledger.spend(env.sender, env.id, env.expires_at, now=now)
+        except TypeError as exc:
+            if "'now'" not in str(exc):
+                raise
+            ledger.spend(env.sender, env.id, env.expires_at)  # a ledger written before spend took the clock
+        return None
+    except (Refused, ValueError):
+        raise
+    except Exception as exc:
+        raise Refused("unavailable", "the ledger could not say whether this decision is new, so it is not "
+                                     f"accepted ({type(exc).__name__})") from None
+
+
 def verify_decision(wire: Mapping[str, Any], *, terms: Mapping[str, Any], accept_digest: str, ledger: Ledger,
-                    now: Optional[int] = None) -> Verified:
-    """Check a decision completely, as the requester (or anyone acting for it) holding only public information."""
+                    now: Optional[int] = None, lease_ms: Optional[int] = None) -> Verified:
+    """Check a decision completely, as the requester (or anyone acting for it) holding only public information.
+
+    With `lease_ms` the decision is leased, not spent: the returned `Verified.reservation` must be committed when the
+    action is done or released when it was not (see ledger.py, TWO PHASES)."""
     if not isinstance(terms, Mapping) or set(terms) != TERMS_KEYS:
         raise Refused("terms", "the terms to check against are not complete terms")
     env = open_envelope(wire, now=now, audience=terms["requester"], kinds={"decision"})
@@ -138,9 +168,9 @@ def verify_decision(wire: Mapping[str, Any], *, terms: Mapping[str, Any], accept
         raise Refused("terms", "the decision carries evidence the terms did not ask for")
     if body["verdict"] == GateOutcome.PASS.value and sorted(evidence) != list(terms["evidence"]):
         raise Refused("terms", "a pass that does not carry the evidence the terms require")
-    ledger.spend(env.sender, env.id, env.expires_at, now=now)
+    reservation = _redeem(ledger, env, now, lease_ms)
     return Verified(verdict=body["verdict"], reasons=tuple(body["reasons"]), evidence=evidence,
-                    subject=dict(body["subject"]), cns_root=body["cns_root"], envelope=env)
+                    subject=dict(body["subject"]), cns_root=body["cns_root"], envelope=env, reservation=reservation)
 
 
 class RemoteDecisionGuard:
@@ -177,8 +207,46 @@ class RemoteDecisionGuard:
         self._decider: Optional[str] = None
         self._expires_at: Optional[int] = None
         self._spent = False
+        self._reservation: Optional[Reservation] = None
+        self._closed = False
 
-    def authorize(self, wire: Mapping[str, Any], *, terms: Mapping[str, Any], accept_digest: str) -> Verified:
+    def _finish(self, reservation: Reservation, *, commit: bool) -> None:
+        try:
+            (self._ledger.commit if commit else self._ledger.release)(reservation, now=self._clock())  # type: ignore[attr-defined]
+        except Refused:
+            raise
+        except Exception as exc:
+            raise Refused("unavailable", f"the ledger did not confirm the {'commit' if commit else 'release'} "
+                                         f"({type(exc).__name__})") from None
+
+    def complete(self) -> None:
+        """The action the guard permitted is done: spend the decision for good. Needs `authorize(lease_ms=...)`.
+        Raises Refused('unavailable') if the ledger cannot confirm; the lease then lapses by itself and the action
+        may be offered again, which is why it must be idempotent on `idempotency_key`."""
+        with self._lock:
+            if self._reservation is None or self._closed or not self._spent:
+                raise ValueError("complete() follows a leased authorize and a permitted call, once")
+            self._closed = True
+            reservation = self._reservation
+        self._finish(reservation, commit=True)
+
+    def abort(self) -> None:
+        """The action did not happen: give the decision back so it can be redeemed again. Needs a leased authorize."""
+        with self._lock:
+            if self._reservation is None or self._closed:
+                raise ValueError("abort() follows a leased authorize, once, and not after complete()")
+            self._closed = True
+            self._spent = True  # this guard never permits again; a new guard may redeem the decision
+            reservation = self._reservation
+        self._finish(reservation, commit=False)
+
+    @property
+    def idempotency_key(self) -> Optional[str]:
+        """Pass this to the action, so a retry after a crash does it once. None unless the authorize was leased."""
+        return self._reservation.key if self._reservation is not None else None
+
+    def authorize(self, wire: Mapping[str, Any], *, terms: Mapping[str, Any], accept_digest: str,
+                  lease_ms: Optional[int] = None) -> Verified:
         with self._lock:
             if self._approved is not None:
                 raise ValueError("this guard was already authorized; one guard serves one decision")
@@ -190,9 +258,13 @@ class RemoteDecisionGuard:
                               "this guard protects")
             now = self._clock()
             self._trust.admit(terms.get("decider", ""), now=now)
-            got = verify_decision(wire, terms=terms, accept_digest=accept_digest, ledger=self._ledger, now=now)
+            got = verify_decision(wire, terms=terms, accept_digest=accept_digest, ledger=self._ledger, now=now,
+                                  lease_ms=lease_ms)
             if not got.allowed:
+                if got.reservation is not None:
+                    self._finish(got.reservation, commit=True)  # a non-pass is consumed like any decision
                 raise Refused("refused", "the decision is not a pass: " + "; ".join(got.reasons))
+            self._reservation = got.reservation
             self._approved = (got.subject["identity"], got.subject["digest"])
             self._decider = got.envelope.sender
             self._expires_at = got.envelope.expires_at
