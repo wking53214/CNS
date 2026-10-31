@@ -47,7 +47,7 @@ from typing import Any, Dict, FrozenSet, Iterable, Mapping, Optional
 
 from cns.gate import subject_digest
 
-from . import ed25519
+from . import crypto_backend
 from .identity import Signer, is_agent_id, public_of
 
 __all__ = ["VERSION", "KINDS", "FIELDS", "Envelope", "Refused", "seal", "sign_envelope", "open_envelope", "now_ms",
@@ -241,7 +241,7 @@ def open_envelope(wire: Mapping[str, Any], *, now: Optional[int] = None, skew_ms
     env = Envelope(kind=wire["kind"], id=wire["id"], sender=wire["from"], to=wire["to"],
                    conversation=wire["conversation"], in_reply_to=wire["in_reply_to"], issued_at=wire["issued_at"],
                    expires_at=wire["expires_at"], body=_plain(wire["body"]), sig=wire["sig"])
-    if not ed25519.verify(public_of(env.sender), _signing_input(env.unsigned()), bytes.fromhex(env.sig)):
+    if not crypto_backend.verify(public_of(env.sender), _signing_input(env.unsigned()), bytes.fromhex(env.sig)):
         raise Refused("signature", "the signature does not verify as the sender, so the envelope was forged or "
                                    "changed after it was signed")
     t = now_ms() if now is None else now

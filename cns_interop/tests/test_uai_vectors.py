@@ -97,7 +97,9 @@ def test_cns_interop_imports_only_cns_cns_composition_itself_and_the_standard_li
             names = [a.name for a in n.names] if isinstance(n, ast.Import) else \
                 [n.module or ""] if isinstance(n, ast.ImportFrom) and n.level == 0 else []
             for name in names:
-                assert name.split(".")[0] in allowed, f"{path.name} imports {name}"
+                # Step S5: the one optional third-party import, in the one backend file, inside a function.
+                optional = path.name == "crypto_backend.py" and name.split(".")[0] == "cryptography"
+                assert name.split(".")[0] in allowed or optional, f"{path.name} imports {name}"
 
 
 def test_cns_never_imports_cns_interop():

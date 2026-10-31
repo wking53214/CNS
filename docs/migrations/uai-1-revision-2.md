@@ -12,6 +12,16 @@ still passes unchanged.
 | refusal code `unavailable`, `lease_lost` | no (local refusal codes) | callers that match refusal codes should treat `unavailable` as "no authoritative answer, try later" |
 | `TrustPolicy(revocations=, max_staleness_ms=, follow_rotation=)` | no | optional, defaults keep revision 1 behavior |
 
+| `cns_interop.crypto_backend`, optional extra `cns[crypto]` | no | nobody; default stays the pure backend |
+| `Signer` refuses pickle and copy | no | code that pickled or copied a `Signer` must not (it leaked the seed) |
+
+## Dependency justification
+
+`cryptography` is optional, imported only inside `crypto_backend.CryptographyBackend`, and the core package still has
+`dependencies = []`. Security reason: the pure-Python signer is not constant time and keeps the seed in
+interpreter memory; a maintained OpenSSL binding is the practical hardened option short of an HSM. Interoperability
+reason: none needed, Ed25519 is deterministic and both backends emit identical bytes.
+
 ## Behavior that changed on purpose
 
 - A damaged `FileLedger` file used to raise a JSON error. It now refuses (`unavailable`) and spends nothing; a torn
@@ -23,3 +33,9 @@ still passes unchanged.
 
 Each change is its own commit. Removing the `revocation` kind leaves receivers that stored statements with a SQLite
 file they simply stop reading.
+
+## Existing test edited (CLAUDE.md rule 5)
+
+`cns_interop/tests/test_uai_vectors.py::test_cns_interop_imports_only_cns_cns_composition_itself_and_the_standard_library`
+asserted no third-party imports at all. Step S5 adds one, so the assertion now also allows `cryptography` in
+`crypto_backend.py` and nowhere else. Nothing else about the test changed.

@@ -215,5 +215,10 @@ UAI-1 is a foundation, not the whole interface. Not specified or implemented her
   reference agents decide by rule.
 - **Policy negotiation beyond fields, evidence and lifetime**, such as purpose limitation, retention or jurisdiction.
 - **Registries and search.** Manifests are exchanged directly; there is no directory.
-- **Signing hardening.** The Python Ed25519 is not constant-time. Verification is unaffected; for production
-  signing pass `Signer.external` a keystore-backed function.
+- **Signing hardening.** The default Ed25519 is the pure-Python RFC implementation, which is not constant time.
+  `cns_interop.crypto_backend` adds an optional `cryptography` (OpenSSL) backend, chosen explicitly
+  (`UAI_CRYPTO_BACKEND=cryptography`, no fallback if missing) and required for local seeds under
+  `UAI_PROFILE=production`. Both backends accept exactly the same signatures (strict checks first, then a differential
+  test); no side-channel resistance is claimed or measured. For keys that must never be in this process, use
+  `Signer.external` with a keystore or HSM function. A `Signer` refuses pickling and copying. The only algorithm is
+  `ed25519`, named in the identity; any other is refused, never mapped.

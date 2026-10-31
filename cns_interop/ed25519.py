@@ -23,9 +23,9 @@ hardened library; the protocol does not care which signer produced a valid signa
 from __future__ import annotations
 
 import hashlib
-from typing import Tuple
+from typing import Optional, Tuple
 
-__all__ = ["public_key", "sign", "verify", "SEED_BYTES", "PUBLIC_BYTES", "SIGNATURE_BYTES"]
+__all__ = ["public_key", "sign", "verify", "acceptable", "SEED_BYTES", "PUBLIC_BYTES", "SIGNATURE_BYTES"]
 
 SEED_BYTES = 32
 PUBLIC_BYTES = 32
@@ -135,23 +135,39 @@ def sign(seed: bytes, message: bytes) -> bytes:
     return big_r + int.to_bytes(s, 32, "little")
 
 
+def _parse(public: bytes, signature: bytes) -> Optional[Tuple[Point, Point, int]]:
+    """The checks every UAI-1 implementation shares before any equation is tried: lengths, canonical points, a
+    canonical s, and a public key that is not of small order. None means refuse."""
+    try:
+        if len(public) != PUBLIC_BYTES or len(signature) != SIGNATURE_BYTES:
+            return None
+        a = _decompress(bytes(public))
+        big_r = _decompress(bytes(signature[:32]))
+        s = int.from_bytes(signature[32:], "little")
+    except (ValueError, TypeError):
+        return None
+    if s >= _L:  # RFC 8032 5.1.7: refuse a non-canonical s, which would make one signature into many
+        return None
+    if _equal(_mul(8, a), _IDENTITY):  # a small-order key (the identity among them) is "signed for" by anyone
+        return None
+    return a, big_r, s
+
+
+def acceptable(public: bytes, signature: bytes) -> bool:
+    """Whether `public` and `signature` pass the shared strict checks. A verifier built on another library (see
+    crypto_backend.py) calls this first, so that the set of signatures it accepts is the same as this module's."""
+    return _parse(public, signature) is not None
+
+
 def verify(public: bytes, message: bytes, signature: bytes) -> bool:
     """Whether `signature` is `public`'s signature over `message`. False, never an exception, for anything malformed.
 
     Stricter than the bare RFC equation in three ways every UAI-1 implementation shares: a public key or R that is not
     the canonical encoding of a curve point is refused, a non-canonical s is refused, and a public key of small order
     is refused (its signatures can be made without any private key)."""
-    try:
-        if len(public) != PUBLIC_BYTES or len(signature) != SIGNATURE_BYTES:
-            return False
-        a = _decompress(bytes(public))
-        big_r = _decompress(bytes(signature[:32]))
-        s = int.from_bytes(signature[32:], "little")
-    except (ValueError, TypeError):
+    parsed = _parse(public, signature)
+    if parsed is None:
         return False
-    if s >= _L:  # RFC 8032 5.1.7: refuse a non-canonical s, which would make one signature into many
-        return False
-    if _equal(_mul(8, a), _IDENTITY):  # a small-order key (the identity among them) is "signed for" by anyone
-        return False
+    a, big_r, s = parsed
     k = int.from_bytes(_sha512(bytes(signature[:32]) + bytes(public) + message), "little") % _L
     return _equal(_mul(s, _G), _add(big_r, _mul(k, a)))
