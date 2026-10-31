@@ -2015,6 +2015,34 @@
    "audience": null,
    "expect": {
     "codes": [
+     "signature"
+    ],
+    "outcome": "refuse"
+   },
+   "id": "envelope/small-order-key-forged-signature-identity",
+   "kinds": null,
+   "now": 1800000000001,
+   "text": "{\"body\":{},\"conversation\":\"00000000000000000000000000000011\",\"expires_at\":1800000060000,\"from\":\"uai:ed25519:0100000000000000000000000000000000000000000000000000000000000000\",\"id\":\"00000000000000000000000000000011\",\"in_reply_to\":\"\",\"issued_at\":1800000000000,\"kind\":\"request\",\"sig\":\"01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\",\"to\":\"uai:ed25519:2012cb90ca60e8e5d8daf66e2272d2233e0486d557e8c66141ed8920177d7eb7\",\"v\":\"uai/1\"}",
+   "why": "a small-order public key verifies a crafted (R = the point, s = 0) signature for ANY message under the bare equation, so anyone could speak as that identity; it must be refused before the equation is tried"
+  },
+  {
+   "audience": null,
+   "expect": {
+    "codes": [
+     "signature"
+    ],
+    "outcome": "refuse"
+   },
+   "id": "envelope/small-order-key-forged-signature-order-two",
+   "kinds": null,
+   "now": 1800000000001,
+   "text": "{\"body\":{},\"conversation\":\"00000000000000000000000000000011\",\"expires_at\":1800000060000,\"from\":\"uai:ed25519:ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f\",\"id\":\"00000000000000000000000000000011\",\"in_reply_to\":\"\",\"issued_at\":1800000000000,\"kind\":\"request\",\"sig\":\"ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000\",\"to\":\"uai:ed25519:2012cb90ca60e8e5d8daf66e2272d2233e0486d557e8c66141ed8920177d7eb7\",\"v\":\"uai/1\"}",
+   "why": "a small-order public key verifies a crafted (R = the point, s = 0) signature for ANY message under the bare equation, so anyone could speak as that identity; it must be refused before the equation is tried"
+  },
+  {
+   "audience": null,
+   "expect": {
+    "codes": [
      "expired"
     ],
     "outcome": "refuse"

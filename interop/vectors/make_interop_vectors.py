@@ -214,6 +214,11 @@ def envelope_cases() -> List[Dict[str, Any]]:
     add("signature-uppercase", {**good, "sig": good["sig"].upper()}, codes=["malformed"], why="a signature is 128 lowercase hex digits")
     add("signature-short", {**good, "sig": good["sig"][:-2]}, codes=["malformed"], why="a signature is 128 hex digits")
     add("small-order-key", env(A, "request", {}, to=B.agent, n=5, **{"from": "uai:ed25519:" + "01" + "00" * 31}), codes=["signature"], why="a small-order key is 'signed for' by anyone, so it is refused")
+    for label, point in (("identity", "01" + "00" * 31), ("order-two", "ecff" + "ff" * 29 + "7f")):
+        forged = {**env(A, "request", {}, to=B.agent, n=17, **{"from": "uai:ed25519:" + point}), "sig": point + "00" * 32}
+        add(f"small-order-key-forged-signature-{label}", forged, codes=["signature"],
+            why="a small-order public key verifies a crafted (R = the point, s = 0) signature for ANY message under the bare "
+                "equation, so anyone could speak as that identity; it must be refused before the equation is tried")
     add("expired", good, now=NOW + 60_000, codes=["expired"], why="valid until, not including, expires_at")
     add("last-valid-millisecond", good, now=NOW + 59_999, outcome="ok", why="one millisecond before expiry is still valid")
     add("clock-skew-allowed", env(A, "request", {}, to=B.agent, n=6, issued=NOW + 120_000), now=NOW, outcome="ok", why="up to 120 s of clock skew is tolerated")
