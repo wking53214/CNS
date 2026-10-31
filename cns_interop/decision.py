@@ -138,7 +138,7 @@ def verify_decision(wire: Mapping[str, Any], *, terms: Mapping[str, Any], accept
         raise Refused("terms", "the decision carries evidence the terms did not ask for")
     if body["verdict"] == GateOutcome.PASS.value and sorted(evidence) != list(terms["evidence"]):
         raise Refused("terms", "a pass that does not carry the evidence the terms require")
-    ledger.spend(env.sender, env.id, env.expires_at)
+    ledger.spend(env.sender, env.id, env.expires_at, now=now)
     return Verified(verdict=body["verdict"], reasons=tuple(body["reasons"]), evidence=evidence,
                     subject=dict(body["subject"]), cns_root=body["cns_root"], envelope=env)
 

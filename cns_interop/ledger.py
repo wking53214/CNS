@@ -28,7 +28,7 @@ __all__ = ["Ledger", "MemoryLedger", "FileLedger"]
 
 
 class Ledger(Protocol):
-    def spend(self, sender: str, message_id: str, expires_at: Optional[int]) -> None: ...
+    def spend(self, sender: str, message_id: str, expires_at: Optional[int], *, now: Optional[int] = None) -> None: ...
 
 
 class MemoryLedger:
@@ -37,11 +37,11 @@ class MemoryLedger:
         self._lock = threading.Lock()
         self._keep_ms = keep_ms
 
-    def spend(self, sender: str, message_id: str, expires_at: Optional[int]) -> None:
+    def spend(self, sender: str, message_id: str, expires_at: Optional[int], *, now: Optional[int] = None) -> None:
         with self._lock:
             if (sender, message_id) in self._seen:
                 raise Refused("replayed", "this message was already accepted once")
-            cutoff = now_ms() - self._keep_ms  # an entry is kept until its message would be refused as expired
+            cutoff = _cutoff(now, self._keep_ms)  # an entry is kept until its message would be refused as expired
             self._seen = {k: e for k, e in self._seen.items() if e is None or e > cutoff}
             self._seen[(sender, message_id)] = expires_at
 
@@ -59,13 +59,13 @@ class FileLedger:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.touch(exist_ok=True)
 
-    def spend(self, sender: str, message_id: str, expires_at: Optional[int]) -> None:
+    def spend(self, sender: str, message_id: str, expires_at: Optional[int], *, now: Optional[int] = None) -> None:
         with self._locked() as fh:
             fd = fh.fileno()
             entries = self._read(fd, fh.read())
             if any(e["sender"] == sender and e["id"] == message_id for e in entries):
                 raise Refused("replayed", "this message was already accepted once")
-            cutoff = now_ms() - self._keep_ms
+            cutoff = _cutoff(now, self._keep_ms)
             live = [e for e in entries if e["expires_at"] is None or e["expires_at"] > cutoff]
             new = {"sender": sender, "id": message_id, "expires_at": expires_at}
             if len(live) == len(entries):
@@ -161,6 +161,13 @@ class FileLedger:
             os.fsync(dir_fd)
         finally:
             os.close(dir_fd)
+
+
+def _cutoff(now: Optional[int], keep_ms: int) -> int:
+    """Entries that expired before this are forgotten. It is taken from the EARLIER of the verifier's clock and this
+    host's clock, so a verifier whose clock runs behind never finds a message it still accepts already forgotten."""
+    wall = now_ms()
+    return (wall if now is None else min(now, wall)) - keep_ms
 
 
 def _line(entry: Dict[str, Any]) -> bytes:

@@ -122,7 +122,7 @@ class Decider:
     def _on_request(self, env: Envelope) -> Envelope:
         if env.in_reply_to:
             raise Refused("malformed", "a request opens an exchange and answers nothing")
-        self._ledger.spend(env.sender, env.id, env.expires_at)
+        self._ledger.spend(env.sender, env.id, env.expires_at, now=self._clock())
         try:
             req = read_request(env.body)
             if (req["capability"], req["version"]) not in self._caps:
@@ -147,7 +147,7 @@ class Decider:
             raise Refused("expired", "the offer this accept answers has lapsed")
         if env.sender != terms["requester"]:
             raise Refused("terms", "the accept comes from someone the offer was not made to")
-        self._ledger.spend(env.sender, env.id, env.expires_at)
+        self._ledger.spend(env.sender, env.id, env.expires_at, now=self._clock())
         del self._offers[env.in_reply_to]  # one accept per offer
         body = env.body
         try:
@@ -252,7 +252,7 @@ class Requester:
         known = self._requests.get(env.in_reply_to) or self._accepts.get(env.in_reply_to)
         if known is None or known[0] != env.sender:
             raise Refused("terms", f"the {env.kind} answers nothing this requester sent to its sender")
-        self._ledger.spend(env.sender, env.id, env.expires_at)
+        self._ledger.spend(env.sender, env.id, env.expires_at, now=self._clock())
         if env.kind == "refuse":
             self._requests.pop(env.in_reply_to, None)
             self._accepts.pop(env.in_reply_to, None)

@@ -19,7 +19,7 @@ from typing import Iterator, List
 import pytest
 
 from cns_interop.envelope import Refused, now_ms
-from cns_interop.ledger import FileLedger
+from cns_interop.ledger import FileLedger, MemoryLedger
 
 SENDER = "agent:test-sender"
 
@@ -159,3 +159,27 @@ def test_a_complete_last_line_without_a_newline_is_still_refused_as_torn_not_tru
     ledger = FileLedger(path)
     path.write_bytes(b'{"sender": "agent:test-sender", "id": "unacked", "expires_at": null}')
     ledger.spend(SENDER, "unacked", now_ms() + 60_000)  # it was never acknowledged, so it is new
+
+
+@pytest.mark.parametrize("kind", ["memory", "file"])
+def test_a_verifier_clock_behind_the_ledgers_never_finds_a_valid_message_forgotten(tmp_path, kind):
+    """The verifier still accepts a message its host clock calls long expired. The ledger must still remember it."""
+    ledger = MemoryLedger() if kind == "memory" else FileLedger(tmp_path / "spent.jsonl")
+    wall = now_ms()
+    behind = wall - 500_000                  # the verifier's clock
+    still_valid = wall - 300_000             # valid at `behind`, expired at `wall` by more than the keep window
+    ledger.spend(SENDER, "victim", still_valid, now=behind)
+    ledger.spend(SENDER, "other", wall + 60_000, now=behind)   # this spend would have pruned the victim
+    with pytest.raises(Refused) as exc:
+        ledger.spend(SENDER, "victim", still_valid, now=behind)
+    assert exc.value.code == "replayed"
+
+
+@pytest.mark.parametrize("kind", ["memory", "file"])
+def test_a_verifier_clock_ahead_of_the_ledgers_does_not_prune_early(tmp_path, kind):
+    ledger = MemoryLedger() if kind == "memory" else FileLedger(tmp_path / "spent.jsonl")
+    wall = now_ms()
+    ledger.spend(SENDER, "victim", wall + 30_000, now=wall + 1_000_000)
+    ledger.spend(SENDER, "other", wall + 60_000, now=wall + 1_000_000)
+    with pytest.raises(Refused):
+        ledger.spend(SENDER, "victim", wall + 30_000, now=wall + 1_000_000)
