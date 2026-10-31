@@ -6,6 +6,7 @@
 // Configuration comes from the environment, so keys do not appear in a process listing:
 //   UAI_SEED   this agent's 32-byte Ed25519 seed, hex (a real deployment would read it from a keystore)
 //   UAI_TRUST  comma-separated identities this agent pins; it deals with no one else
+//   UAI_CAP_NAME  decider only: the capability name it offers (default income-screen); a purpose is a name that carries it
 //   UAI_DOC    requester only: {"identity": ..., "values": {...}, "offer": [...], "evidence": [...]}
 //
 // Every stdout line is one JSON object: an envelope, {"uai_error": {code, reason}}, {"uai_ok": ...} or
@@ -25,7 +26,7 @@ const out = (obj) => process.stdout.write(JSON.stringify(obj) + "\n");
 const fail = (e) => out({ uai_error: { code: e.code || "internal", reason: e.reason || String(e.message || e) } });
 
 const CAP = {
-  name: "income-screen", version: 1, summary: "monthly income at or above 450000 cents, from a paystub or tax return",
+  name: process.env.UAI_CAP_NAME || "income-screen", version: 1, summary: "monthly income at or above 450000 cents, from a paystub or tax return",
   accepts: ["doc_type", "monthly_income_cents"], requires: ["doc_type", "monthly_income_cents"],
   evidence: ["threshold-check"], max_ttl_ms: 120000,
 };
