@@ -558,7 +558,8 @@ def run_act(stdin, ledger, *, capability="income-screen", version=1):
     root = str(ACT_PY.parents[1])
     env = {"PYTHONPATH": root, "PATH": "/usr/bin:/bin"}
     done = subprocess.run([sys.executable, str(ACT_PY), "--acting-for", REQ.agent, "--capability", capability,
-                           "--capability-version", str(version), "--trust", DEC.agent, "--ledger", str(ledger)],
+                           "--capability-version", str(version), "--trust", DEC.agent, "--ledger", str(ledger),
+                           "--decision-only"],
                           input=stdin, capture_output=True, text=True, env=env, timeout=60)
     assert done.returncode == 0, done.stderr  # a refusal is an answer, not a crash
     return json.loads(done.stdout)

@@ -995,14 +995,24 @@ def authorize_remote(guard: RemoteDecisionGuard, signed: Signed, wire: Optional[
 
 
 def act_elsewhere(signed: Signed, artifact: Judged, ledger: str) -> dict:
-    """Run interop/act.py as a separate process, configured to act for the operator and trust only the roster."""
+    """Run interop/act.py as a separate process, configured to act for the operator and trust only the roster. The
+    operator's POLICY is part of that configuration: a grants file that permits the one action `register-root` on this
+    capability from this roster and nothing else, a durable grant store and an audit record beside the ledger. A
+    roster's signature alone does not open the action; the operator's grant does."""
     job = {"decision": loads(signed.wire), "terms": signed.terms, "accept_digest": signed.accept_digest,
            "artifact": list(as_pair(artifact))}
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [HUB, os.environ.get("PYTHONPATH", "")])))
+    here = os.path.dirname(os.path.abspath(ledger))
+    grants = os.path.join(here, "spine-grants.json")
+    with open(grants, "w", encoding="utf-8") as fh:
+        json.dump({"grants": [{"id": "spine-register-root", "capability": SPINE_CAPABILITY.name,
+                               "version": SPINE_CAPABILITY.version, "requester": OPERATOR.agent,
+                               "deciders": [ROSTER.agent], "actions": ["register-root"], "disclose_max": []}]}, fh)
     done = subprocess.run([sys.executable, ACT_PY, "--acting-for", OPERATOR.agent, "--capability", SPINE_CAPABILITY.name,
                            "--capability-version", str(SPINE_CAPABILITY.version), "--trust", ROSTER.agent,
-                           "--ledger", ledger], input=json.dumps(job), capture_output=True, text=True, env=env,
-                          timeout=120, check=True)
+                           "--ledger", ledger, "--grants", grants, "--grant-store", os.path.join(here, "spine-grants.db"),
+                           "--action", "register-root", "--audit", os.path.join(here, "spine-audit.jsonl")],
+                          input=json.dumps(job), capture_output=True, text=True, env=env, timeout=120, check=True)
     return json.loads(done.stdout)
 
 

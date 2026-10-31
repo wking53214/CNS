@@ -201,12 +201,28 @@ A verified decision is not permission. `cns_interop.grants.GrantTable` is the re
 a `Grant` names the capability (a purpose is a capability name that carries it, e.g. `income-screen.loan-underwriting`,
 so no wire field is added), the version, the requester it is for, the deciders it accepts, the actions it permits, a
 ceiling on the fields it will disclose, an optional expiry, and optional approvers. `check_terms` runs on an offer before
-anything is disclosed; `permit(action, verified, terms)` runs before an action. Refusals: `no_grant`, `grant_expired`,
-`withdrawn`, `decider`, `action`, `disclosure`, `approval_required`, `approval`, `refused`, `terms`, `unavailable`.
-An action that needs a person needs an `Approval` signed by a listed approver, bound to one decision, one action and
-one document, with an expiry; an approver is never the decider or the requester. Every outcome is appended to a
-hash-chained audit record, and a failed audit write permits nothing. Delegation is not implemented: a grant is for the
-requester it names. A manifest remains an advertisement; nothing a sender signs adds to a grant.
+anything is disclosed; `permit(action, verified, terms)` runs before an action.
+
+What `permit` enforces, in revision 3: the terms handed to it must hash to the `terms_digest` the decider signed (terms
+the decision was not made under are refused as `terms`, even when a grant matches them); the permit is **single use**, a
+lease on `(decision, action)` in the permit ledger that `complete()` spends and `abort()` returns (a second permit for the
+same decision and action is `replayed`); a withdrawal written to a `GrantStore` survives a restart and is seen by every
+process sharing it; the audit record chains onto the real last entry under a file lock, so several writers keep one
+unbroken chain; an unreadable store, ledger or audit refuses (`unavailable`) and a permit whose audit write fails gives
+its lease back. Refusals: `no_grant`, `grant_expired`, `withdrawn`, `decider`, `action`, `disclosure`,
+`approval_required`, `approval`, `refused`, `terms`, `replayed`, `unavailable`.
+
+**Where it is enforced.** `RemoteDecisionGuard(grants=, action=)` opens only for a live Permit, and `interop/act.py`, the
+process that performs the action, takes the receiver's policy from its command line and **refuses to start without it**
+(`--grants`, `--grant-store`, `--action`, `--audit`). `--decision-only` keeps the revision 2 behavior, in which a
+signature alone opens the action; it says so on stderr and is not receiver-authorized. A refusal a person or operator can
+cure (no approval yet, a grant added later) does not burn the decision, because the decision is leased while policy is
+checked; a replay does.
+
+An action that needs a person needs an `Approval` signed by a listed approver, bound to one decision, one action and one
+document, with an expiry; an approver is never the decider or the requester. Every outcome is appended to a hash-chained
+audit record. Delegation is not implemented: a grant is for the requester it names. A manifest remains an advertisement;
+nothing a sender signs adds to a grant. The Node implementation does not yet have grants (planned, Tier 3).
 
 ## 8. What remains open
 

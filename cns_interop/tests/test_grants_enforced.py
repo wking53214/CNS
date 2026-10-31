@@ -150,7 +150,7 @@ def test_p_d_several_processes_writing_one_audit_file_keep_one_unbroken_chain(tm
         p.start()
     for p in ps:
         p.join()
-    assert [q.get() for _ in ps] == ["done"] * 4
+    assert [q.get(timeout=60) for _ in ps] == ["done"] * 4   # a crashed writer fails the test instead of hanging it
     last = verify_audit(path)                                                              # raises if the chain is broken
     assert len(path.read_text().splitlines()) == 100 and last != "0" * 64
     GrantTable([grant()], audit_path=path)                                                 # and a new table can start
