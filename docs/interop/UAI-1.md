@@ -195,6 +195,19 @@ of `RemoteDecisionGuard`; code written before it was added must pass it.
 A running guard stops trusting a decider with `guard.revoke(agent)`: a decider revoked before `authorize` is refused as
 `untrusted`, and one revoked after it closes the guard, so the next call answers False.
 
+## 7a. What this receiver permits (receiver-side, not on the wire)
+
+A verified decision is not permission. `cns_interop.grants.GrantTable` is the receiver's own policy, default deny:
+a `Grant` names the capability (a purpose is a capability name that carries it, e.g. `income-screen.loan-underwriting`,
+so no wire field is added), the version, the requester it is for, the deciders it accepts, the actions it permits, a
+ceiling on the fields it will disclose, an optional expiry, and optional approvers. `check_terms` runs on an offer before
+anything is disclosed; `permit(action, verified, terms)` runs before an action. Refusals: `no_grant`, `grant_expired`,
+`withdrawn`, `decider`, `action`, `disclosure`, `approval_required`, `approval`, `refused`, `terms`, `unavailable`.
+An action that needs a person needs an `Approval` signed by a listed approver, bound to one decision, one action and
+one document, with an expiry; an approver is never the decider or the requester. Every outcome is appended to a
+hash-chained audit record, and a failed audit write permits nothing. Delegation is not implemented: a grant is for the
+requester it names. A manifest remains an advertisement; nothing a sender signs adds to a grant.
+
 ## 8. What remains open
 
 UAI-1 is a foundation, not the whole interface. Not specified or implemented here:
