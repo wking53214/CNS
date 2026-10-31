@@ -231,8 +231,10 @@ def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = 
     The kernel is built with a guard (the one given, else a fresh one that nothing opens): it registers a root only
     when the guard says so. `unguarded=True` builds the kernel without one, which registers any root it admits. It is
     also built with an evidence guard (`tie_evidence_guard`), so its registry takes only the evidence TIE produced
-    from this document; `evidence_guarded=False` builds it without one, which takes any evidence at all."""
+    from this document; `evidence_guarded=False` builds it without one, which takes any evidence at all. Like
+    `unguarded=True` with `allow_unguarded_roots`, it says so with `allow_unguarded_evidence=True`."""
     kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded,
+                                allow_unguarded_evidence=not evidence_guarded,
                                 evidence_guard=tie_evidence_guard(evidence, source_id, text) if evidence_guarded else None)
     propositions = []
     for n, record in enumerate(evidence):
