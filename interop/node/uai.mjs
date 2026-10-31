@@ -552,24 +552,33 @@ export function verifyDecision(wire, { terms, acceptDigest, ledger, now = Date.n
 // configuration, never the caller's, says who it acts for, which capability it protects, whom it trusts, and where it
 // remembers spent decisions. Mirrors cns_interop.decision.RemoteDecisionGuard.
 export class RemoteDecisionGuard {
-  constructor(subjectOf, { actingFor, capability, trust, ledger, clock = Date.now }) {
+  constructor(subjectOf, { actingFor, capability, trust, ledger, clock = Date.now, grants = null, action = null }) {
     if (typeof subjectOf !== "function") throw new Error("subjectOf must read [identity, digest] from an artifact");
     if (!isAgentId(actingFor)) throw new Error("actingFor is the identity this guard acts for");
     if (!Array.isArray(capability) || capability.length !== 2 || typeof capability[0] !== "string" || !NAME.test(capability[0]) || !Number.isSafeInteger(capability[1]) || capability[1] < 1) throw new Error("capability is the [name, version] this guard protects");
     if (!trust || typeof trust.admit !== "function") throw new Error("a guard needs its own trust policy for deciders");
-    Object.assign(this, { subjectOf, actingFor, capability, trust, ledger, clock });
+    if ((grants === null) !== (action === null) || (action !== null && (typeof action !== "string" || !action))) throw new Error("grants and action go together: the guard then acts only under the receiver's own policy");
+    Object.assign(this, { subjectOf, actingFor, capability, trust, ledger, clock, grants, action });
+    this.permit = null;
     this.approved = null; this.decider = null; this.expiresAt = null; this.spent = false; this.reservation = null; this.closed = false;
   }
-  authorize(wire, { terms, acceptDigest, leaseMs = null }) {
+  authorize(wire, { terms, acceptDigest, leaseMs = null, approval = null }) {
     if (this.approved !== null) throw new Error("this guard was already authorized; one guard serves one decision");
     if (!isPlainObject(terms) || terms.requester !== this.actingFor) throw new Refused("audience", "the terms are for a requester this guard does not act for");
     if (terms.capability !== this.capability[0] || terms.version !== this.capability[1] || !Number.isSafeInteger(terms.version)) throw new Refused("terms", "the decision was negotiated for a different capability or version than this guard protects");
     const now = this.clock();
     this.trust.admit(typeof terms.decider === "string" ? terms.decider : "", { now });
+    if (this.grants !== null && leaseMs === null) leaseMs = 30000;   // a refusal a person can cure must not burn the decision
     const got = verifyDecision(wire, { terms, acceptDigest, ledger: this.ledger, now, leaseMs });
     if (!got.allowed) {
       if (got.reservation) this._finish(got.reservation, true);
       throw new Refused("refused", "the decision is not a pass: " + got.reasons.join("; "));
+    }
+    if (this.grants !== null) {
+      try { this.permit = this.grants.permit(this.action, got, terms, { approval, now }); } catch (e) {
+        if (e instanceof Refused && got.reservation) this._finish(got.reservation, false);   // give the decision back: approval may yet come
+        throw e;
+      }
     }
     this.approved = [got.subject.identity, got.subject.digest]; this.decider = got.envelope.from;
     this.expiresAt = got.envelope.expires_at; this.reservation = got.reservation;
@@ -583,6 +592,7 @@ export class RemoteDecisionGuard {
     let seen;
     try { seen = this.subjectOf(artifact); if (!Array.isArray(seen) || seen.length !== 2) return false; } catch { return false; }
     if (this.approved === null || this.spent) return false;
+    if (this.grants !== null && this.permit === null) return false;
     try { if (this.trust.isRevoked(this.decider, this.clock())) return false; } catch { return false; }
     if (this.expiresAt !== null && this.clock() >= this.expiresAt) return false;
     if (seen[0] !== this.approved[0] || seen[1] !== this.approved[1]) return false;
@@ -599,10 +609,12 @@ export class RemoteDecisionGuard {
   complete() {
     if (!this.reservation || this.closed || !this.spent) throw new Error("complete() follows a leased authorize and a permitted call, once");
     this.closed = true; this._finish(this.reservation, true);
+    if (this.permit) this.permit.complete();
   }
   abort() {
     if (!this.reservation || this.closed) throw new Error("abort() follows a leased authorize, once, and not after complete()");
     this.closed = true; this.spent = true; this._finish(this.reservation, false);
+    if (this.permit) this.permit.abort();
   }
   get idempotencyKey() { return this.reservation ? this.reservation.key : null; }
 }

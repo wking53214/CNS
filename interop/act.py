@@ -23,7 +23,8 @@ decision was made under; the permit for this decision and action has not been us
 record. It prints {"permitted": true|false, "permit": {...}} or {"refused": {"code": ..., "reason": ...}}.
 
 LEDGER BACKEND (the receiver's choice, never the job's). The default is files, which are safe for processes on ONE host.
-`--ledger-backend postgres` keeps decisions and permits in PostgreSQL (tables `<prefix>_decisions` and `<prefix>_permits`), so
+`--ledger-backend sqlite` is the same single-host promise in a SQLite file, the format the Node runner (interop/node/act.mjs)
+shares. `--ledger-backend postgres` keeps decisions and permits in PostgreSQL (tables `<prefix>_decisions` and `<prefix>_permits`), so
 processes on any number of hosts share them. The connection string is read from the environment variable NAMED by
 `--ledger-dsn-env`, so it is never on a command line. If the database cannot be reached the program refuses (exit 2): there
 is no fallback to files. Under UAI_PROFILE=production the file backend is refused outright. `--diagnostics` connects, then
@@ -53,7 +54,7 @@ from cns_interop import crypto_backend
 from cns_interop.decision import RemoteDecisionGuard
 from cns_interop.envelope import Refused
 from cns_interop.grants import Approval, GrantStore, GrantTable, load_grants
-from cns_interop.ledger import FileLedger
+from cns_interop.ledger import FileLedger, SqliteLedger
 from cns_interop.policy_postgres import policy_digest
 from cns_interop.trust import TrustPolicy
 from cns_interop.wire import loads
@@ -98,13 +99,14 @@ def _ledgers(cfg: argparse.Namespace) -> Tuple[object, object]:
         permits = None if cfg.decision_only else PostgresLedger(dsn, table=cfg.ledger_prefix + "_permits", **kw)  # type: ignore[arg-type]
         return decisions, permits
     if crypto_backend.production():
-        raise ValueError("the production profile does not accept the single-host file ledger; use --ledger-backend postgres")
+        raise ValueError("the production profile does not accept a single-host ledger; use --ledger-backend postgres")
     if cfg.ledger_dsn_env or cfg.require_sync_replication:
         raise ValueError("--ledger-dsn-env and --require-sync-replication belong to the postgres backend")
     if not cfg.ledger:
         raise ValueError("the file backend needs --ledger")
-    permits = None if cfg.decision_only else FileLedger(cfg.permit_ledger or cfg.ledger + ".permits")
-    return FileLedger(cfg.ledger), permits
+    cls = SqliteLedger if cfg.ledger_backend == "sqlite" else FileLedger
+    permits = None if cfg.decision_only else cls(cfg.permit_ledger or cfg.ledger + ".permits")
+    return cls(cfg.ledger), permits
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -114,7 +116,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--capability-version", required=True, type=int)
     p.add_argument("--trust", required=True, help="comma-separated decider identities this process accepts")
     p.add_argument("--ledger", help="the decision ledger file, shared by every process acting for the identity (file backend)")
-    p.add_argument("--ledger-backend", choices=("file", "postgres"), default="file",
+    p.add_argument("--ledger-backend", choices=("file", "sqlite", "postgres"), default="file",
                    help="where decisions and permits are spent; file is single-host, postgres is shared across hosts")
     p.add_argument("--ledger-dsn-env", help="the NAME of the environment variable that holds the PostgreSQL connection string")
     p.add_argument("--ledger-prefix", default="uai", help="table name prefix for the postgres backend")
