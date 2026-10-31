@@ -200,6 +200,13 @@ function canonicalPoint(hex) {
   return true;
 }
 
+// What is in force, for an operator to compare with what was approved. Node has one verifier (OpenSSL Ed25519 behind the
+// same strict pre-checks as Python) and no runtime switch, so there is nothing to downgrade; the profile is read once.
+const PROFILE = process.env.UAI_PROFILE === "production" ? "production" : "default";
+export const cryptoDiagnostics = () => Object.freeze({
+  algorithm: "ed25519", backend: "node:crypto (OpenSSL)", profile: PROFILE, frozen: true, constant_time_claimed: false,
+});
+
 export function verifySig(agent, msg, sigHex) {
   if (!isAgentId(agent) || !/^[0-9a-f]{128}$/.test(sigHex)) return false;
   const pubHex = agent.slice(AGENT_PREFIX.length);

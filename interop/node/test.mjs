@@ -101,3 +101,11 @@ test("a full exchange inside this implementation, with replay refused", () => {
   const tampered = JSON.parse(JSON.stringify(decision)); tampered.body.verdict = "pass"; tampered.body.reasons = ["edited"];
   assert.throws(() => U.verifyDecision(tampered, { terms, acceptDigest: U.envelopeDigest(accept), ledger: new U.Ledger() }), (e) => e.code === "signature");
 });
+
+test("crypto diagnostics name the one backend, the profile read once, and claim nothing about timing", () => {
+  const d = U.cryptoDiagnostics();
+  assert.equal(d.algorithm, "ed25519");
+  assert.equal(d.frozen, true);
+  assert.equal(d.constant_time_claimed, false);
+  assert.throws(() => { d.backend = "other"; });   // frozen object: a caller cannot rewrite what was reported
+});

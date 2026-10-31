@@ -20,6 +20,15 @@ CHOOSING
                                     signs with the cryptography backend, or hands `Signer.external` a keystore or HSM
                                     function. It never gets a quiet downgrade.
 
+FROZEN FOR THE LIFE OF THE PROCESS (revision 4)
+
+  * The profile is read from UAI_PROFILE ONCE, at first use, and never again; changing the variable later does nothing.
+  * Under the production profile the backend must be NAMED (UAI_CRYPTO_BACKEND set to `cryptography`; there is no default and
+    `pure` is refused), the first use freezes it, and `use()` raises: a running process cannot be talked into another backend.
+  * Outside production `use()` still works until `freeze()` is called, which the benchmark and tests rely on.
+  * `diagnostics()` reports the profile, the backend actually in force and whether it is frozen, so an operator can verify
+    the approved configuration instead of trusting it.
+
 WHAT THIS DOES NOT CLAIM
 
 That the cryptography backend is side-channel resistant. It delegates to a widely used, maintained library whose
@@ -36,7 +45,7 @@ from typing import Optional, Protocol
 from . import ed25519
 
 __all__ = ["ALGORITHM", "ALGORITHMS", "Backend", "PureBackend", "CryptographyBackend", "use", "current", "production",
-           "public_key", "sign", "verify"]
+           "freeze", "diagnostics", "public_key", "sign", "verify"]
 
 ALGORITHM = "ed25519"
 #: The only algorithm UAI-1 defines. An identity names its algorithm (`uai:ed25519:...`); anything else is refused,
@@ -103,6 +112,8 @@ class CryptographyBackend:
 
 
 _current: Optional[Backend] = None
+_profile: Optional[str] = None
+_frozen = False
 
 
 def _select(name: str) -> Backend:
@@ -113,22 +124,56 @@ def _select(name: str) -> Backend:
     raise ValueError(f"unknown crypto backend {name!r}: expected 'pure' or 'cryptography'")
 
 
+def production() -> bool:
+    """True under the production profile. UAI_PROFILE is read once; a later change to it is ignored."""
+    global _profile
+    if _profile is None:
+        _profile = os.environ.get("UAI_PROFILE", "")
+    return _profile == "production"
+
+
+def freeze() -> Backend:
+    """Pin the backend now. After this, `use()` raises for the rest of the process."""
+    global _frozen
+    backend = current()
+    _frozen = True
+    return backend
+
+
 def use(name: str) -> Backend:
-    """Choose the backend for this process. An unknown name, or a missing package, raises: nothing is substituted."""
+    """Choose the backend for this process. An unknown name, or a missing package, raises: nothing is substituted.
+
+    Refused once the process is frozen, and always under the production profile (configure it with UAI_CRYPTO_BACKEND at start)."""
     global _current
+    if production():
+        raise RuntimeError("the production profile fixes the cryptographic backend at start-up (UAI_CRYPTO_BACKEND); "
+                           "it cannot be changed in a running process")
+    if _frozen and (_current is None or _current.name != name):
+        raise RuntimeError("the cryptographic backend is frozen for this process and cannot be changed")
     _current = _select(name)
     return _current
 
 
 def current() -> Backend:
-    global _current
+    global _current, _frozen
     if _current is None:
-        _current = _select(os.environ.get("UAI_CRYPTO_BACKEND", "pure"))
+        if production():
+            name = os.environ.get("UAI_CRYPTO_BACKEND", "")
+            if name != "cryptography":
+                raise RuntimeError("the production profile needs UAI_CRYPTO_BACKEND=cryptography, named explicitly "
+                                   f"(got {name or 'nothing'!r}); there is no default and no fallback")
+            _current = _select(name)
+            _frozen = True
+        else:
+            _current = _select(os.environ.get("UAI_CRYPTO_BACKEND", "pure"))
     return _current
 
 
-def production() -> bool:
-    return os.environ.get("UAI_PROFILE", "") == "production"
+def diagnostics() -> dict:
+    """What is actually in force, for an operator to compare with what was approved. Reads nothing secret."""
+    backend = current()
+    return {"algorithm": ALGORITHM, "backend": backend.name, "profile": "production" if production() else "default",
+            "frozen": _frozen, "constant_time_claimed": False}
 
 
 def public_key(seed: bytes) -> bytes:

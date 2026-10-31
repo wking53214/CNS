@@ -158,3 +158,34 @@ def test_only_ed25519_identities_are_defined_and_others_are_refused_not_mapped()
         assert not is_agent_id(bad)
         with pytest.raises(ValueError):
             algorithm_of(bad)
+
+
+def test_the_production_profile_is_frozen_at_start_so_neither_use_nor_the_environment_can_downgrade_it():
+    base = ("from cns_interop import crypto_backend as cb\n"
+            "import os\n")
+    # the backend must be named: no default, and `pure` is not acceptable
+    for backend in ({}, {"UAI_CRYPTO_BACKEND": "pure"}):
+        done = _run(base + "cb.current()", UAI_PROFILE="production", **backend)
+        assert done.returncode != 0 and "explicitly" in done.stderr
+    prod = {"UAI_PROFILE": "production", "UAI_CRYPTO_BACKEND": "cryptography"}
+    # a running process cannot be moved to another backend, by use() ...
+    done = _run(base + "cb.current()\ntry:\n cb.use('pure')\nexcept RuntimeError as e:\n print('refused', e)", **prod)
+    assert done.returncode == 0 and "refused" in done.stdout, done.stderr
+    # ... or by editing the environment after start: the profile and backend were read once
+    done = _run(base + "cb.current()\nos.environ['UAI_PROFILE']=''\nos.environ['UAI_CRYPTO_BACKEND']='pure'\n"
+                "print(cb.production(), cb.current().name, cb.diagnostics())", **prod)
+    assert done.returncode == 0 and done.stdout.startswith("True cryptography"), done.stderr
+    assert "'frozen': True" in done.stdout and "'profile': 'production'" in done.stdout
+
+
+def test_outside_production_the_backend_can_be_set_until_it_is_frozen_and_diagnostics_report_it():
+    code = ("from cns_interop import crypto_backend as cb\n"
+            "cb.use('pure'); print(cb.diagnostics()['frozen'])\n"
+            "cb.freeze()\n"
+            "try:\n cb.use('cryptography')\nexcept RuntimeError as e:\n print('refused')\n"
+            "cb.use('pure'); print(cb.diagnostics())\n")
+    done = _run(code)
+    assert done.returncode == 0, done.stderr
+    lines = done.stdout.splitlines()
+    assert lines[0] == "False" and lines[1] == "refused"
+    assert "'backend': 'pure'" in lines[2] and "'frozen': True" in lines[2] and "'constant_time_claimed': False" in lines[2]
