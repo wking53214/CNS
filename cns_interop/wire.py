@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Tuple
 
-from .envelope import Envelope, Refused
+from .envelope import MAX_INT, Envelope, Refused
 
 __all__ = ["MAX_BYTES", "dumps", "loads"]
 
@@ -31,6 +31,16 @@ def _no_float(text: str) -> Any:
     raise Refused("profile", f"the number {text} is a float; UAI-1 carries integers only")
 
 
+def _bounded_int(text: str) -> int:
+    """An integer outside +/-(2**53 - 1) is refused while reading, as the Node reader does, not only later when the
+    envelope's profile is checked: a reader of any other kind of job (act.py's) must not see a number another
+    implementation would have refused."""
+    value = int(text)
+    if not -MAX_INT <= value <= MAX_INT:
+        raise Refused("profile", "an integer outside +/-(2**53 - 1), which not every runtime can represent exactly")
+    return value
+
+
 def _no_constant(text: str) -> Any:
     raise Refused("malformed", f"{text} is not a JSON value")
 
@@ -40,7 +50,7 @@ def dumps(envelope: Envelope) -> str:
     return json.dumps(envelope.to_wire(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def loads(text: str) -> Dict[str, Any]:
+def loads(text: "str | bytes | bytearray") -> Dict[str, Any]:
     """Parse one envelope's JSON. The result still has to pass `open_envelope` before anything trusts it."""
     if isinstance(text, (bytes, bytearray)):
         if len(text) > MAX_BYTES:
@@ -54,7 +64,7 @@ def loads(text: str) -> Dict[str, Any]:
     if len(text.encode("utf-8", "surrogatepass")) > MAX_BYTES:
         raise Refused("malformed", "the message is larger than 1 MiB")
     try:
-        value = json.loads(text, object_pairs_hook=_no_duplicates, parse_float=_no_float,
+        value = json.loads(text, object_pairs_hook=_no_duplicates, parse_float=_no_float, parse_int=_bounded_int,
                            parse_constant=_no_constant)
     except json.JSONDecodeError as exc:
         raise Refused("malformed", f"the message is not JSON ({exc.msg})") from None

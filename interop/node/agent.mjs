@@ -14,7 +14,6 @@
 // Its policy is its own and is not the Python reference's: it screens income against 450000 cents a month and only
 // for a paystub or a tax return, and it will not take any field it does not need.
 
-import { createInterface } from "node:readline";
 import * as U from "./uai.mjs";
 
 const role = process.argv[2];
@@ -43,7 +42,7 @@ function decider() {
   out(U.publish(me, "node-screener", "node/uai.mjs (OpenSSL Ed25519)", [CAP]));
   const refuse = (env, e) => U.seal(me, "refuse", { code: e.code, reasons: [e.reason] }, { to: env.from, replyTo: env, ttlMs: TTL });
   return (line) => {
-    const wire = U.strictParse(line);
+    const wire = U.strictParseBytes(line);
     if (wire.kind === "manifest") { U.readManifest(wire, { trust }); return out({ uai_ok: "manifest read" }); }
     const env = U.openEnvelope(wire, { audience: me.agent, kinds: new Set(["request", "accept"]) });
     if (env.expires_at === null) throw new U.Refused("malformed", "session messages must expire");
@@ -85,7 +84,7 @@ function requester() {
   const document = U.commit(doc.identity, doc.values);
   let decider = null, request = null, req = null, accept = null, terms = null;
   return (line) => {
-    const wire = U.strictParse(line);
+    const wire = U.strictParseBytes(line);
     if (!decider) {
       decider = U.readManifest(wire, { trust }).from;
       req = U.requestBody("income-screen", 1, { identity: document.identity, digest: document.digest, offerFields: doc.offer, requireEvidence: doc.evidence, maxTtlMs: 600000 });
@@ -108,5 +107,18 @@ function requester() {
 
 if (role !== "decider" && role !== "requester") { console.error("usage: node agent.mjs decider|requester"); process.exit(2); }
 const handle = role === "decider" ? decider() : requester();
-const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
-rl.on("line", (line) => { if (!line.trim()) return; try { handle(line); } catch (e) { fail(e); } });
+// Lines are read as BYTES and decoded strictly (U.strictParseBytes): invalid UTF-8 is refused, never replaced with
+// U+FFFD, so this agent reads exactly the text the Python reader would. A line longer than 1 MiB is dropped as it
+// grows, so a peer that never sends a newline cannot make this process hold memory without limit.
+let pending = Buffer.alloc(0), discarding = false;
+process.stdin.on("data", (chunk) => {
+  pending = Buffer.concat([pending, chunk]);
+  let k;
+  while ((k = pending.indexOf(0x0a)) >= 0) {
+    const line = pending.subarray(0, k); pending = pending.subarray(k + 1);
+    if (discarding) { discarding = false; continue; }
+    if (!line.toString("latin1").trim()) continue;
+    try { handle(line); } catch (e) { fail(e); }
+  }
+  if (pending.length > (1 << 20)) { pending = Buffer.alloc(0); if (!discarding) fail(new U.Refused("malformed", "the message is larger than 1 MiB")); discarding = true; }
+});

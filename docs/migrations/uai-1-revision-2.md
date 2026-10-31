@@ -41,10 +41,22 @@ asserted no third-party imports at all. Step S5 adds one, so the assertion now a
 `crypto_backend.py` and nowhere else. Nothing else about the test changed.
 
 Step S6 also adds `revocation.test.mjs` to the list of Node test files that `test_the_node_implementation_passes_the_same_answer_key`
-runs, and its expected pass count goes from 9 to 22 (the 9 that existed, 12 in the new file, 1 new agent test). Nothing else about the test changed.
+runs, and its expected pass count goes from 9 to 23 (the 9 that existed, 12 in the new file, 2 new agent tests). Nothing else about the test changed.
 
 ## Node implementation: what changed (S6)
 
 `PinnedTrust` takes `revocations`, `maxStalenessMs`, `followRotation`; `Ledger` prunes and leases; `RemoteDecisionGuard`
 exists; `verifyDecision` checks that the terms are complete; the Node decider no longer writes a ledger entry for a
 sender it does not admit. Endorsements are still Python only, and a peer admitted only by endorsement is refused.
+
+## Found by the interoperability campaign (S7) and fixed
+
+The independent answer key `contracts/uai-interop-vectors.json` (generator `interop/vectors/make_interop_vectors.py`,
+signatures from the OpenSSL command line, 135 hand-reasoned cases) was run through both implementations. It found:
+
+| finding | implementation | fix |
+|---|---|---|
+| a request with `max_ttl_ms` of 0 or `true` was accepted by `proposeTerms` and produced terms with a zero lifetime | Node | `readRequest` validates the capability name, the version, the ttl and the subject as the Python reader does |
+| an integer outside +/-(2**53-1) was refused only later, by the envelope profile check, so a reader of any other job (`act.py`) accepted it | Python | `wire.loads` refuses it while reading, as Node always did (`profile`) |
+| invalid UTF-8 was decoded to U+FFFD before parsing, so Node and Python could read different text out of the same bytes | Node | `strictParseBytes` with a fatal decoder; the agent reads stdin as bytes |
+| a peer that never sent a newline made the Node agent buffer without limit | Node | the agent drops a line that passes 1 MiB |

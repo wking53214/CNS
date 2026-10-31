@@ -97,6 +97,18 @@ export function strictParse(text) {
   return v;
 }
 
+// The same reading, from BYTES: the decoder is fatal, so invalid UTF-8 is refused instead of being replaced with U+FFFD
+// (two receivers that decode differently would read different text out of the same bytes), and a BOM is kept so the
+// parser refuses it. This is the entry point a transport should use; strictParse takes text that is already decoded.
+export function strictParseBytes(buf) {
+  if (!(buf instanceof Uint8Array)) throw new Refused("malformed", "the message is not bytes");
+  if (buf.length > 1 << 20) throw new Refused("malformed", "the message is larger than 1 MiB");
+  let text;
+  try { text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buf); }
+  catch { throw new Refused("malformed", "the message is not UTF-8"); }
+  return strictParse(text);
+}
+
 export function dumps(wire) { return JSON.stringify(sortDeep(wire)); }
 function sortDeep(v) {
   if (Array.isArray(v)) return v.map(sortDeep);
@@ -417,9 +429,12 @@ export function requestBody(capability, version, { identity, digest: d, offerFie
   return { capability, version, subject: { identity, digest: d }, offer_fields: cpSort(offerFields), require_evidence: cpSort(requireEvidence), max_ttl_ms: maxTtlMs };
 }
 
+const posInt = (v) => Number.isSafeInteger(v) && v > 0;
 export function readRequest(b) {
   if (!isPlainObject(b) || cpSort(Object.keys(b)).join() !== "capability,max_ttl_ms,offer_fields,require_evidence,subject,version") throw new Refused("malformed", "request body fields");
-  if (!isPlainObject(b.subject) || cpSort(Object.keys(b.subject)).join() !== "digest,identity") throw new Refused("malformed", "a subject is exactly identity and digest");
+  if (typeof b.capability !== "string" || !NAME.test(b.capability) || !posInt(b.version)) throw new Refused("malformed", "a request names a capability and a positive version");
+  if (!posInt(b.max_ttl_ms)) throw new Refused("malformed", "max_ttl_ms is a positive integer");
+  if (!isPlainObject(b.subject) || cpSort(Object.keys(b.subject)).join() !== "digest,identity" || !["identity", "digest"].every((k) => typeof b.subject[k] === "string" && b.subject[k] !== "")) throw new Refused("malformed", "a subject is exactly identity and digest, both non-empty text");
   return { ...b, offer_fields: names(b.offer_fields, "offer_fields"), require_evidence: names(b.require_evidence, "require_evidence") };
 }
 
