@@ -260,3 +260,15 @@ UAI-1 is a foundation, not the whole interface. Not specified or implemented her
   test); no side-channel resistance is claimed or measured. For keys that must never be in this process, use
   `Signer.external` with a keystore or HSM function. A `Signer` refuses pickling and copying. The only algorithm is
   `ed25519`, named in the identity; any other is refused, never mapped.
+
+
+## 9. Revision 4 (what was added, and what did not change)
+
+The wire format, signatures, digests and every existing refusal code are unchanged. Added: a frozen cryptographic profile
+(`UAI_PROFILE=production` needs `UAI_CRYPTO_BACKEND=cryptography`, read once); security and transport profiles with an
+implemented TLS 1.3 mutual-authentication profile (`SECURITY_PROFILES.md`); a Node receiver with the same authorization rules
+as Python (`interop/node/grants.mjs`); a selectable ledger backend and a shared PostgreSQL policy and audit store for the
+action runner; a JSON Schema, a versioned error registry and a conformance suite for independent implementers
+(`contracts/uai1/`); OpenAI and Copilot provider clients. Migration: `docs/migrations/uai-1-revision-4.md`. Assessment:
+`UAI1_R4_ASSESSMENT.md`. Open: no live provider call, no independent implementation, no multi-machine run, delegation
+deliberately not specified.

@@ -17,7 +17,7 @@ dependencies = []
 crypto = ["cryptography>=42"]
 # The PostgreSQL ledger (cns_interop.ledger_postgres): a coordinator several hosts can share. psycopg is imported only inside it.
 postgres = ["psycopg[binary]>=3.1"]
-dev = ["pytest>=7", "mypy>=1.8", "ruff==0.17.2", "cryptography>=42", "psycopg[binary]>=3.1"]
+dev = ["pytest>=7", "mypy>=1.8", "ruff==0.17.2", "cryptography>=42", "psycopg[binary]>=3.1", "jsonschema>=4"]
 
 [tool.setuptools.packages.find]
 # The wheel carries two packages. `cns` is the shapes package and stays

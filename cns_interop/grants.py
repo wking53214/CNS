@@ -220,7 +220,10 @@ class GrantTable:
 
     def __init__(self, grants: List[Grant] = (), *, audit_path: "os.PathLike[str] | str | None" = None,  # type: ignore[assignment]
                  store: Optional[GrantStore] = None, permit_ledger: Any = None, permit_lease_ms: int = 60_000,
-                 audit_recover: bool = False) -> None:
+                 audit_recover: bool = False, audit_sink: Any = None) -> None:
+        if audit_sink is not None and audit_path is not None:
+            raise ValueError("an audit record is a file or a shared sink, not both")
+        self._sink = audit_sink
         self._grants: Dict[tuple, Grant] = {}  # type: ignore[type-arg]
         for g in grants:
             if (g.capability, g.version) in self._grants:
@@ -235,6 +238,8 @@ class GrantTable:
         self._lock = threading.Lock()
         self._audit = Path(audit_path) if audit_path is not None else None
         self._last = "0" * 64
+        if self._sink is not None:
+            self._last = self._sink.verify()  # a damaged shared chain is refused here, before anything is permitted
         if self._audit is not None:
             self._audit.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -372,6 +377,9 @@ class GrantTable:
             "decision_id": verified.envelope.id, "subject_digest": verified.subject.get("digest", ""),
             "approver": approver, "terms_digest": verified.terms_digest,
             "retain_ms": next((g.retain_ms for g in self._grants.values() if g.id == grant), 0)}
+        if self._sink is not None:
+            self._last = self._sink.append(entry)  # one chain across every host; raises Refused('unavailable') on failure
+            return self._last
         with self._lock:
             if self._audit is None:
                 entry["prev"] = self._last

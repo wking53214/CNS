@@ -36,30 +36,29 @@ from typing import Any, Callable, Optional
 from .envelope import Refused
 from .ledger import Reservation, _check_lease
 
-__all__ = ["PostgresLedger"]
+__all__ = ["PostgresLedger", "PgGuard"]
 
 _NAME = re.compile(r"\A[a-z_][a-z0-9_]{0,40}\Z")
 _NOW_MS = "(extract(epoch from clock_timestamp()) * 1000)::bigint"
 
 
-class PostgresLedger:
-    def __init__(self, dsn: str, *, table: str = "uai_spent", keep_ms: int = 120_000, connect_timeout_s: int = 3,
-                 statement_timeout_ms: int = 3_000, tcp_user_timeout_ms: int = 3_000,
-                 require_sync_replication: bool = False, allow_caller_time: bool = False) -> None:
+class PgGuard:
+    """One hardened way to talk to PostgreSQL, shared by the ledger and the receiver's policy and audit stores: bounded
+    connect, statement, lock and TCP timeouts, an optional quorum-durable commit requirement, and every answer that is not
+    definite turned into Refused('unavailable')."""
+
+    def __init__(self, dsn: str, *, connect_timeout_s: int = 3, statement_timeout_ms: int = 3_000,
+                 tcp_user_timeout_ms: int = 3_000, require_sync_replication: bool = False) -> None:
         try:
             import psycopg
         except ImportError:
-            raise RuntimeError("PostgresLedger needs the optional extra: pip install 'cns[postgres]'") from None
-        if not _NAME.match(table):
-            raise ValueError("table is a lowercase SQL identifier")
-        self._pg, self._dsn, self._t, self._keep = psycopg, dsn, table, keep_ms
+            raise RuntimeError("PostgreSQL support needs the optional extra: pip install 'cns[postgres]'") from None
+        self._pg, self._dsn = psycopg, dsn
         self._connect_kw: dict[str, Any] = {"connect_timeout": connect_timeout_s, "tcp_user_timeout": tcp_user_timeout_ms,
                             "options": f"-c statement_timeout={statement_timeout_ms} -c lock_timeout={statement_timeout_ms}"}
-        self._sync, self._caller_time = require_sync_replication, allow_caller_time
+        self._sync = require_sync_replication
         self._commit_wait_s = statement_timeout_ms / 1000.0
-        self._guard(self._create)
 
-    # ------------------------------------------------------------------------------------------------ plumbing
     def _connect(self) -> Any:
         return self._pg.connect(self._dsn, autocommit=False, **self._connect_kw)
 
@@ -103,6 +102,19 @@ class PostgresLedger:
             raise Refused("unavailable", "this ledger was told to require quorum-durable commits and the server is not "
                                          "configured for them (synchronous_standby_names and synchronous_commit)")
         db.execute("SET LOCAL synchronous_commit = 'remote_apply'")
+
+
+class PostgresLedger(PgGuard):
+    def __init__(self, dsn: str, *, table: str = "uai_spent", keep_ms: int = 120_000, connect_timeout_s: int = 3,
+                 statement_timeout_ms: int = 3_000, tcp_user_timeout_ms: int = 3_000,
+                 require_sync_replication: bool = False, allow_caller_time: bool = False) -> None:
+        if not _NAME.match(table):
+            raise ValueError("table is a lowercase SQL identifier")
+        super().__init__(dsn, connect_timeout_s=connect_timeout_s, statement_timeout_ms=statement_timeout_ms,
+                         tcp_user_timeout_ms=tcp_user_timeout_ms, require_sync_replication=require_sync_replication)
+        self._t, self._keep = table, keep_ms
+        self._caller_time = allow_caller_time
+        self._guard(self._create)
 
     def _create(self, db: Any) -> None:
         db.execute("SELECT pg_advisory_xact_lock(7243001)")  # two hosts creating the table at once must not race
