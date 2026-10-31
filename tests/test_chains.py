@@ -152,7 +152,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 2
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 37
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 39
 
 
 def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
@@ -260,3 +260,19 @@ def test_the_evidence_script_accepts_only_the_guards_it_builds_and_requires_a_cc
                        ("is_write_permission", "DecisionGuard")):
         assert f"isinstance({'guard' if name != 'is_write_permission' else 'permission'}, {kind})" in ast.get_source_segment(text, functions[name])
     assert "refuse_inactive_root_evidence=True" in ast.get_source_segment(text, functions["kernel_root"])
+
+
+def test_the_evidence_script_gives_every_decision_a_lifetime_and_checks_the_evidence_timestamp():
+    """Policy, pinned so loosening it is a change made in review: an approval that nobody uses should not wait forever,
+    and a record that says it was added in the future is not one the guard takes."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    ttl = next(n for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "SPINE_TTL")
+    assert 0 < ast.literal_eval(ttl.value) <= 3600
+    functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    decide = functions["decide"]
+    assert next(a for a in decide.args.args + decide.args.kwonlyargs if a.arg == "ttl") is not None
+    assert [d.id for d in decide.args.defaults if isinstance(d, ast.Name)] == ["SPINE_TTL"]
+    decides = [c for c in ast.walk(decide) if isinstance(c, ast.Call) and getattr(c.func, "attr", "") == "decide"]
+    assert len(decides) == 1 and any(k.arg == "ttl" for k in decides[0].keywords)
+    assert "added_by_now(record.created_at)" in ast.get_source_segment(text, functions["tie_evidence_guard"])

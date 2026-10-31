@@ -94,9 +94,11 @@ Governance_Gateway (each under src/) and CCC (at its root) importable.
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import hashlib
 import logging
 import sys
+import time
 from typing import Callable, Dict, List, Optional, Tuple
 
 from ccc.cns_connector import Attempt, CccGate
@@ -144,6 +146,10 @@ REQUIRED_SEATS = (
     "CCC:ccc.transition",
     "CNS:same_subject",
 )
+
+#: How long, in seconds, a decision of this roster stays good. An approval nobody uses should not wait forever to be
+#: used: the guard refuses a decision once it has expired. Policy, like REQUIRED_SEATS: reviewed with it.
+SPINE_TTL = 300.0
 
 INVOICE = ("Invoice INV-2207 dated 2026-03-04 came to $412.00 for the burst kitchen pipe. "
            "Payment of $412.00 was received on 2026-03-11.")
@@ -208,10 +214,20 @@ def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[E
     TIE never produced, one about another document, or one that claims another kind, is refused. So is one that
     carries a real id with anything else altered (its provider, its independence, whether it is active, its detail,
     the proposition it supports): the record must be exactly what `kernel_evidence` gives for that id, so an id cannot
-    be taken first with false metadata. Only `created_at` is left out, because it is when the record was added. Unlike the root
+    be taken first with false metadata. Only `created_at` is left out of that comparison, because it is
+    when the record was added; it must still be a time with an offset that is not in the future. Unlike the root
     guard it is not spent by a yes, because one document gives TIE many records. Policy, like READERS."""
     produced, digest = {record.evidence_id for record in evidence}, sha256(text)
     expected = {record.evidence_id: kernel_evidence(record, f"p{n}", source_id, text) for n, record in enumerate(evidence)}
+
+    def added_by_now(created_at: object) -> bool:
+        # created_at is when the record was added: a time with an offset, not later than now (a minute of clock skew is
+        # allowed). One that says it is older than it is cannot be told from an honest one, so this does not try.
+        try:
+            moment = datetime.datetime.fromisoformat(str(created_at))
+        except ValueError:
+            return False
+        return moment.tzinfo is not None and moment <= datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=60)
 
     def whole(record: EvidenceRecord) -> Dict[str, object]:
         # created_at is when the record was added, not part of what it says, so it is the one part left out.
@@ -220,7 +236,7 @@ def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[E
     def permits(record: EvidenceRecord) -> bool:
         return (record.evidence_id in produced and record.kind is EvidenceKind.SOURCE_OBSERVATION
                 and record.detail.get("source_id") == source_id and record.detail.get("source_sha256") == digest
-                and whole(record) == whole(expected[record.evidence_id]))
+                and whole(record) == whole(expected[record.evidence_id]) and added_by_now(record.created_at))
 
     return TieEvidenceGuard(permits)
 
@@ -408,11 +424,11 @@ def binds_write(request: WriteRequest) -> Tuple[str, str]:
     return request.operation, write_request_digest(request)
 
 
-def fresh_guard() -> DecisionGuard:
+def fresh_guard(clock: Callable[[], float] = time.time) -> DecisionGuard:
     """A closed guard that will open, once, for the exact root the kernel's seat judged, and only for a decision from
     a roster that seats every required seat. Policy, like READERS."""
     return DecisionGuard(reads_root, seat="Conservation_Kernel:root_admission", binding_of=binds_root,
-                         required_seats=REQUIRED_SEATS)
+                         required_seats=REQUIRED_SEATS, clock=clock)
 
 
 def fresh_ccc_guard() -> DecisionGuard:
@@ -518,11 +534,12 @@ def is_write_permission(permission: object) -> bool:
 
 
 def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: DoorArtifact, drop: str = "",
-           ccc: Optional[Attempt] = None, system: Optional[CCCSystem] = None):
+           ccc: Optional[Attempt] = None, system: Optional[CCCSystem] = None, ttl: Optional[float] = SPINE_TTL):
     """The whole roster, decided once. Returns the decision and how many claims HERALD judged without their document.
 
     CCC judges `ccc` (by default, the document HERALD read) against `system` (by default, an empty store that carries
-    this script's write permission). The kernel's guards and CCC's permission must be the kinds this script builds."""
+    this script's write permission). The kernel's guards and CCC's permission must be the kinds this script builds.
+    The decision stops counting `ttl` seconds after it is issued (`SPINE_TTL`)."""
     steps = [("HERALD", HeraldSourceGate(), read.document),
              ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True,
                                                           accept_guard=is_root_guard,
@@ -542,7 +559,7 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
         bindings = {seat: binds for seat, binds in BINDINGS.items() if seat != drop}
         decision = SuperGate(seats, required=REQUIRED_SEATS, same_subject=readers, binding_of=bindings,
                              strict_binding=True).decide(
-            {f"{repo}:{gate.name}": c for repo, gate, c in steps})
+            {f"{repo}:{gate.name}": c for repo, gate, c in steps}, ttl=ttl)
     finally:
         log.removeHandler(unchecked)
         log.propagate = propagate
@@ -1156,6 +1173,43 @@ def failed_write_gives_the_approval_back() -> Dict[str, object]:
                  approval_given_back=given_back, retry_refused=retry_refused, artifacts_after_retry=len(system.store.artifacts))
 
 
+def expired_approval_is_refused() -> Dict[str, object]:
+    """The roster allows the true invoice's root, and the spine's decisions carry a lifetime. The approval is used after
+    that lifetime has passed, which the guard refuses; the root is not registered."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    now = [time.time()]
+    guard = fresh_guard(clock=lambda: now[0])
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+    decided = decide(read, kernel, root, door(root, "doc-1"))
+    opened = authorize(guard, decided[0])
+    now[0] += SPINE_TTL + 1
+    registered, by_guard = register(kernel, root)
+    return facts(decided, evidence, refusal, approval_expires=decided[0].expires_at is not None, guard_opened=opened,
+                 registered_after_expiry=registered, refused_by_guard=by_guard)
+
+
+def evidence_with_odd_timestamp() -> Dict[str, object]:
+    """Evidence under a real TIE id, otherwise exactly right, whose `created_at` is in the future, is not a time, or has
+    no offset. Each is refused and the id stays free. A record that claims to be older than it is cannot be told from an
+    honest one, and the guard does not try."""
+    read = herald(INVOICE, "doc-1")
+    evidence, _ = tie(read.export, "doc-1", INVOICE)
+    honest = kernel_evidence(evidence[0], "p0", "doc-1", INVOICE)
+    kernel = ConservationKernel(root_guard=fresh_guard(), evidence_guard=tie_evidence_guard(evidence, "doc-1", INVOICE))
+    odd = [dataclasses.replace(honest, created_at=when) for when in ("2999-01-01T00:00:00+00:00", "last tuesday",
+                                                                      "2026-10-30T10:00:00")]
+    refusals = [refused_by_evidence_guard(lambda record=record: kernel.registry.add_evidence(record)) for record in odd]
+    held_before = len(kernel.registry.snapshot()["evidence"])
+    try:
+        kernel.registry.add_evidence(honest)
+    except InvalidEvent:  # the id is taken: what a guard that lets an odd record in first leaves behind
+        pass
+    held = kernel.registry.evidence(honest.evidence_id)
+    return {"evidence_refused": refusals, "evidence_held_after_refusals": held_before,
+            "honest_record_accepted": held is not None and held.created_at == honest.created_at}
+
+
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
     """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
@@ -1306,6 +1360,12 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      failed_write_gives_the_approval_back,
      {**HELD, "guard_opened": True, "first_write_failed": True, "approval_given_back": True, "retry_refused": False,
       "artifacts_after_retry": 2}),
+    ("SEAM HOLDS: the spine's approvals carry a lifetime, and an approval used after it has passed is refused by the guard",
+     expired_approval_is_refused,
+     {**HELD, "approval_expires": True, "guard_opened": True, "registered_after_expiry": False, "refused_by_guard": True}),
+    ("SEAM HOLDS: evidence under a real TIE id whose created_at is in the future, not a time, or has no offset is refused, and the id stays free",
+     evidence_with_odd_timestamp,
+     {"evidence_refused": [True, True, True], "evidence_held_after_refusals": 0, "honest_record_accepted": True}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
