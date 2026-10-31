@@ -152,7 +152,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 2
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 31
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 37
 
 
 def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
@@ -241,3 +241,22 @@ def test_the_evidence_guard_compares_the_whole_record_with_what_tie_s_translatio
     body = ast.get_source_segment(text, guard)
     for required in ("kernel_evidence(", "whole(record) == whole(expected[record.evidence_id])", '!= "created_at"'):
         assert required in body, required
+
+
+def test_the_evidence_script_accepts_only_the_guards_it_builds_and_requires_a_ccc_permission():
+    """Policy, pinned so loosening it is a change made in review. Asking whether a guard exists is satisfied by a function
+    that says yes to everything, so the kernel seat is given predicates that accept the script's own guards, and the CCC
+    seat requires a write permission and accepts only the script's kind."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    functions = {n.name: n for n in ast.parse(text).body if isinstance(n, ast.FunctionDef)}
+    calls = {name: [c for c in ast.walk(functions["decide"]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == name]
+             for name in ("CnsRootAdmissionGate", "CccGate")}
+    assert all(len(found) == 1 for found in calls.values())
+    kernel = {k.arg: k.value for k in calls["CnsRootAdmissionGate"][0].keywords}
+    assert [kernel[a].id for a in ("accept_guard", "accept_evidence_guard")] == ["is_root_guard", "is_evidence_guard"]
+    ccc = {k.arg: k.value for k in calls["CccGate"][0].keywords}
+    assert ccc["require_permission"].value is True and ccc["accept_permission"].id == "is_write_permission"
+    for name, kind in (("is_root_guard", "DecisionGuard"), ("is_evidence_guard", "TieEvidenceGuard"),
+                       ("is_write_permission", "DecisionGuard")):
+        assert f"isinstance({'guard' if name != 'is_write_permission' else 'permission'}, {kind})" in ast.get_source_segment(text, functions[name])
+    assert "refuse_inactive_root_evidence=True" in ast.get_source_segment(text, functions["kernel_root"])

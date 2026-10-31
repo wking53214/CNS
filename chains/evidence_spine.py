@@ -116,6 +116,8 @@ from conservation_kernel.cns_connector import DEFAULT_ROOT_SUBJECT, CnsRootAdmis
 from conservation_kernel.enums import EpistemicStatus as RootStatus
 from conservation_kernel.enums import EvidenceKind, OriginStatus
 from conservation_kernel.errors import InvalidEvent
+from conservation_kernel.ledger import ConservationLedger
+from conservation_kernel.registry import EvidenceRegistry
 from governance_gateway.cns_connector import CnsGate as GatewayGate
 from governance_gateway.cns_connector import artifact_digest as door_digest
 from governance_gateway.cns_connector import artifact_subject as door_subject
@@ -186,6 +188,16 @@ def tie(export: dict, source_id: str, text: str) -> Tuple[list, str]:
         return [], str(exc)
 
 
+class TieEvidenceGuard:
+    """The spine's evidence guard, as a kind of object, so a roster can accept this guard and not just any function."""
+
+    def __init__(self, permits: Callable[[EvidenceRecord], bool]) -> None:
+        self._permits = permits
+
+    def __call__(self, record: EvidenceRecord) -> bool:
+        return self._permits(record)
+
+
 def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[EvidenceRecord], bool]:
     """The kernel's `evidence_guard`: it permits an evidence record only if TIE produced it from this document.
 
@@ -210,7 +222,7 @@ def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[E
                 and record.detail.get("source_id") == source_id and record.detail.get("source_sha256") == digest
                 and whole(record) == whole(expected[record.evidence_id]))
 
-    return permits
+    return TieEvidenceGuard(permits)
 
 
 def kernel_evidence(record, pid: str, source_id: str, text: str) -> EvidenceRecord:
@@ -222,15 +234,22 @@ def kernel_evidence(record, pid: str, source_id: str, text: str) -> EvidenceReco
 
 def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = RootStatus.INFERENCE,
                 cite_evidence: bool = True, guard: Optional[DecisionGuard] = None,
-                unguarded: bool = False, evidence_guarded: bool = True) -> Tuple[ConservationKernel, RootArtifact]:
+                unguarded: bool = False, evidence_guarded: bool = True,
+                permissive: bool = False) -> Tuple[ConservationKernel, RootArtifact]:
     """The caller's step from TIE evidence to a kernel root. No repository ships this; it is written here.
 
     The kernel is built with a guard (the one given, else a fresh one that nothing opens): it registers a root only
     when the guard says so. `unguarded=True` builds the kernel without one, which registers any root it admits. It is
     also built with an evidence guard (`tie_evidence_guard`), so its registry takes only the evidence TIE produced
-    from this document; `evidence_guarded=False` builds it without one, which takes any evidence at all."""
-    kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded,
-                                evidence_guard=tie_evidence_guard(evidence, source_id, text) if evidence_guarded else None)
+    from this document; `evidence_guarded=False` builds it without one, which takes any evidence at all.
+    `permissive=True` builds it with a guard of each kind that says yes to everything: a guard is there, and nothing
+    stands behind it."""
+    if permissive:
+        kernel = ConservationKernel(root_guard=lambda artifact: True, evidence_guard=lambda record: True)
+    else:
+        kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded,
+                                    evidence_guard=tie_evidence_guard(evidence, source_id, text) if evidence_guarded else None,
+                                    refuse_inactive_root_evidence=True)
     propositions = []
     for n, record in enumerate(evidence):
         pid = f"p{n}"
@@ -484,15 +503,33 @@ class _Unchecked(logging.Handler):
             self.count += 1
 
 
+def is_root_guard(guard: object) -> bool:
+    """The kernel's root guard is acceptable to the roster only if it is the kind of guard this script builds."""
+    return isinstance(guard, DecisionGuard)
+
+
+def is_evidence_guard(guard: object) -> bool:
+    return isinstance(guard, TieEvidenceGuard)
+
+
+def is_write_permission(permission: object) -> bool:
+    """CCC's write permission is acceptable only if it is the kind of guard this script builds."""
+    return isinstance(permission, DecisionGuard)
+
+
 def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: DoorArtifact, drop: str = "",
            ccc: Optional[Attempt] = None, system: Optional[CCCSystem] = None):
     """The whole roster, decided once. Returns the decision and how many claims HERALD judged without their document.
 
-    CCC judges `ccc` (by default, the document HERALD read) against `system` (by default, an empty store)."""
+    CCC judges `ccc` (by default, the document HERALD read) against `system` (by default, an empty store that carries
+    this script's write permission). The kernel's guards and CCC's permission must be the kinds this script builds."""
     steps = [("HERALD", HeraldSourceGate(), read.document),
-             ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True), root),
+             ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True,
+                                                          accept_guard=is_root_guard,
+                                                          accept_evidence_guard=is_evidence_guard), root),
              ("Governance_Gateway", GatewayGate(), entry),
-             ("CCC", CccGate(CCCSystem() if system is None else system),
+             ("CCC", CccGate(CCCSystem(write_permission=fresh_ccc_guard()) if system is None else system,
+                             require_permission=True, accept_permission=is_write_permission),
               ccc or ccc_ingest(read.document.text, read.document.source_id)),
              ("HERALD", HeraldConfidenceGate(read.gate, document=read.document), read.amount())]
     steps = [step for step in steps if f"{step[0]}:{step[1].name}" != drop]
@@ -816,7 +853,7 @@ def ccc_deciding_registers_nothing() -> Dict[str, object]:
     """The roster allows the document. CCC's gate judged the ingest on a scratch copy, so its store is still empty."""
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
-    system = CCCSystem()
+    system = CCCSystem(write_permission=fresh_ccc_guard())
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, door(root, "doc-1"), system=system)
     return facts(decided, evidence, refusal, ccc_artifacts=len(system.store.artifacts))
@@ -1029,6 +1066,96 @@ def ccc_altered_arguments() -> Dict[str, object]:
                  ccc_artifacts_after_true=len(system.store.artifacts))
 
 
+def permissive_guards_get_no_approval() -> Dict[str, object]:
+    """Everything is in order except that the kernel's two guards say yes to everything. A guard is there, so the roster
+    cannot tell by asking whether one exists; it can tell which guard it is."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, permissive=True)
+    return facts(decide(read, kernel, root, door(root, "doc-1")), evidence, refusal)
+
+
+def kernel_parts_cannot_be_swapped() -> Dict[str, object]:
+    """A caller replaces the kernel's ledger and registry with ones that have no guard, then registers a root with no
+    decision. The kernel's parts are read-only, so neither replacement is accepted and the root is refused."""
+    read = herald(INVOICE, "doc-1")
+    evidence, _ = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+
+    def refused_assignment(name: str, value: object) -> bool:
+        try:
+            setattr(kernel, name, value)
+            return False
+        except AttributeError:
+            return True
+    ledger_refused = refused_assignment("ledger", ConservationLedger())
+    registry_refused = refused_assignment("registry", EvidenceRegistry())
+    registered, by_guard = register(kernel, root)
+    return {"ledger_swap_refused": ledger_refused, "registry_swap_refused": registry_refused,
+            "kernel_still_guarded": [kernel.has_root_guard, kernel.has_evidence_guard],
+            "registered_without_decision": registered, "refused_by_guard": by_guard}
+
+
+def ccc_without_permission_gets_no_approval() -> Dict[str, object]:
+    """Everything is in order except that the CCC the write would go to has no write permission."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    return facts(decide(read, kernel, root, door(root, "doc-1"), system=CCCSystem()), evidence, refusal)
+
+
+def ccc_permissive_permission_gets_no_approval() -> Dict[str, object]:
+    """Everything is in order except that CCC's write permission says yes to everything."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    return facts(decide(read, kernel, root, door(root, "doc-1"), system=CCCSystem(write_permission=lambda request: True)),
+                 evidence, refusal)
+
+
+def fact_citing_evidence_about_another_proposition() -> Dict[str, object]:
+    """A root stated as FACT whose only evidence is a real record TIE produced, recorded for a different proposition."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    claim = Proposition(proposition_id="p7", text="The invoice came to $41,200.00.", epistemic_status=RootStatus.FACT,
+                        origin=OriginStatus.MACHINE_ORIGINATED, evidence_refs=(evidence[0].evidence_id,),
+                        source_refs=("doc-1",))
+    other = RootArtifact(artifact_id=root.artifact_id, content=root.content, propositions=(claim,), producer=root.producer,
+                         created_at=root.created_at)
+    return facts(decide(read, kernel, other, door(other, "doc-1")), evidence, refusal)
+
+
+def failed_write_gives_the_approval_back() -> Dict[str, object]:
+    """The roster allows an ingest that cites a source CCC holds. The source is then removed, which makes the approved
+    write fail before it changes anything. The approval is given back, so the same ingest goes in once the source is
+    back. (CCC tells the guard the write failed and the store did not change; a write that failed after changing the
+    store would keep it used.)"""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    seed = CCCSystem()
+    source = seed.ingest("Dana confirms the invoice is on file.", actor=CccActor.human("dana"), authorization_basis="on file")
+    guard = fresh_ccc_guard()
+    system = CCCSystem(store=seed.store, write_permission=guard)
+    attempt_ = ccc_ingest(INVOICE, "doc-1", source_material=(source.artifact_id,))
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
+    opened = authorize(guard, decided[0])
+    held = system.store.artifacts.pop(source.artifact_id)
+    try:
+        attempt_.run(system)
+        first_failed = False
+    except WritePermissionRefused:
+        first_failed = False
+    except Exception:  # noqa: BLE001 - CCC could not find the source: the failure this scenario is about
+        first_failed = True
+    given_back = not guard.spent
+    system.store.artifacts[source.artifact_id] = held
+    retry_refused = refused_by_permission(lambda: attempt_.run(system))
+    return facts(decided, evidence, refusal, guard_opened=opened, first_write_failed=first_failed,
+                 approval_given_back=given_back, retry_refused=retry_refused, artifacts_after_retry=len(system.store.artifacts))
+
+
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
     """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
@@ -1162,6 +1289,23 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      evidence_with_altered_metadata,
      {"evidence_refused": [True, True, True, True, True], "evidence_held_after_refusals": 0,
       "honest_record_accepted": True, "held_provider": "herald", "held_independent": False, "held_active": True}),
+    ("SEAM HOLDS: a kernel whose two guards say yes to everything gets no approval from the roster, even though a guard is there",
+     permissive_guards_get_no_approval, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"]}),
+    ("SEAM HOLDS: replacing the kernel's ledger and registry after the roster approves is refused, and a root with no decision is still refused",
+     kernel_parts_cannot_be_swapped,
+     {"ledger_swap_refused": True, "registry_swap_refused": True, "kernel_still_guarded": [True, True],
+      "registered_without_decision": False, "refused_by_guard": True}),
+    ("SEAM HOLDS: a CCC with no write permission gets no approval from the roster, even when every gate passes",
+     ccc_without_permission_gets_no_approval, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["ccc.transition"]}),
+    ("SEAM HOLDS: a CCC whose write permission says yes to everything gets no approval from the roster",
+     ccc_permissive_permission_gets_no_approval, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["ccc.transition"]}),
+    ("SEAM HOLDS: a root stated as FACT on a real TIE record that was recorded for a different proposition is refused by the kernel",
+     fact_citing_evidence_about_another_proposition,
+     {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"]}),
+    ("SEAM HOLDS: an approved ingest that fails before changing anything gives the approval back, and the same ingest goes in once the source is back",
+     failed_write_gives_the_approval_back,
+     {**HELD, "guard_opened": True, "first_write_failed": True, "approval_given_back": True, "retry_refused": False,
+      "artifacts_after_retry": 2}),
     ("GAP: the roster says no, yet a kernel built without the guard and called directly registers the root",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
