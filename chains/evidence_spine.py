@@ -55,7 +55,9 @@ TIE produced its id from the verified export of this document, it is a source ob
 and this text's SHA-256. A record TIE never produced, one carrying another document's text or source, or one of
 another kind is refused, and a FACT root citing the forged id is then not admissible. This guard is not spent by a yes,
 because one document gives TIE many records. It checks provenance, not a person's approval. A kernel built without an
-evidence guard takes any evidence, and a scenario records that as the second GAP. As with the root guard, the roster
+evidence guard takes any evidence, and a scenario records that as the second GAP. Current kernels refuse to be built
+that way unless the builder passes `allow_unguarded_evidence=True`, which this script does only for that scenario and
+for the roster's refusal of such a kernel. As with the root guard, the roster
 refuses to approve such a kernel (the kernel's seat is built with `require_evidence_guard=True`), so no approval is
 issued for it; calling it directly is still not stopped.
 
@@ -231,9 +233,12 @@ def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = 
     The kernel is built with a guard (the one given, else a fresh one that nothing opens): it registers a root only
     when the guard says so. `unguarded=True` builds the kernel without one, which registers any root it admits. It is
     also built with an evidence guard (`tie_evidence_guard`), so its registry takes only the evidence TIE produced
-    from this document; `evidence_guarded=False` builds it without one, which takes any evidence at all."""
+    from this document; `evidence_guarded=False` builds it without one, which takes any evidence at all. A current kernel
+    refuses to be built without an evidence guard unless `allow_unguarded_evidence=True` says so, which is passed only
+    then, so that gap is reachable only by saying so."""
     kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded,
-                                evidence_guard=tie_evidence_guard(evidence, source_id, text) if evidence_guarded else None)
+                                evidence_guard=tie_evidence_guard(evidence, source_id, text) if evidence_guarded else None,
+                                allow_unguarded_evidence=not evidence_guarded)
     propositions = []
     for n, record in enumerate(evidence):
         pid = f"p{n}"
