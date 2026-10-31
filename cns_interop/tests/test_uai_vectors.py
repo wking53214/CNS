@@ -56,10 +56,10 @@ def test_the_python_reference_passes_its_own_answer_key():
 
 
 def test_the_node_implementation_passes_the_same_answer_key():
-    tests = [str(ROOT / "interop" / "node" / name) for name in ("test.mjs", "agent.test.mjs")]
+    tests = [str(ROOT / "interop" / "node" / name) for name in ("test.mjs", "agent.test.mjs", "revocation.test.mjs")]
     done = subprocess.run([node(), "--test", *tests], capture_output=True, text=True, timeout=180)
     assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-2000:]
-    assert "# fail 0" in done.stdout and "# pass 9" in done.stdout
+    assert "# fail 0" in done.stdout and "# pass 23" in done.stdout
 
 
 def test_the_node_small_order_list_is_exactly_the_curves_eight_torsion_points():
@@ -97,7 +97,9 @@ def test_cns_interop_imports_only_cns_cns_composition_itself_and_the_standard_li
             names = [a.name for a in n.names] if isinstance(n, ast.Import) else \
                 [n.module or ""] if isinstance(n, ast.ImportFrom) and n.level == 0 else []
             for name in names:
-                assert name.split(".")[0] in allowed, f"{path.name} imports {name}"
+                # Step S5: the one optional third-party import, in the one backend file, inside a function.
+                optional = path.name == "crypto_backend.py" and name.split(".")[0] == "cryptography"
+                assert name.split(".")[0] in allowed or optional, f"{path.name} imports {name}"
 
 
 def test_cns_never_imports_cns_interop():

@@ -9,7 +9,7 @@ expired one. Without that, "interoperable" meant "imports the same Python packag
 An envelope is a small, fixed set of fields around a free-form `body`:
 
     v            "uai/1", the protocol version. Anything else is refused, never guessed at.
-    kind         what the message is (KINDS).
+    kind         what the message is (KINDS; `revocation` was added after the first release, see docs/migrations).
     id           32 random hex digits, unique per message; a receiver's ledger refuses a second use.
     from         the sender's identity (identity.py). The signature must verify as this key.
     to           the one identity it is addressed to, or "" for a broadcast such as a manifest.
@@ -47,7 +47,7 @@ from typing import Any, Dict, FrozenSet, Iterable, Mapping, Optional
 
 from cns.gate import subject_digest
 
-from . import ed25519
+from . import crypto_backend
 from .identity import Signer, is_agent_id, public_of
 
 __all__ = ["VERSION", "KINDS", "FIELDS", "Envelope", "Refused", "seal", "sign_envelope", "open_envelope", "now_ms",
@@ -62,6 +62,7 @@ KINDS: FrozenSet[str] = frozenset({
     "accept",       # the requester agreeing to those terms, with what it discloses
     "refuse",       # either side declining, with reasons
     "decision",     # the agent's signed verdict (decision.py)
+    "revocation",   # a signed statement that an identity or endorsement is no longer trusted, or was replaced
 })
 FIELDS: FrozenSet[str] = frozenset({"v", "kind", "id", "from", "to", "conversation", "in_reply_to", "issued_at",
                                     "expires_at", "body", "sig"})
@@ -240,7 +241,7 @@ def open_envelope(wire: Mapping[str, Any], *, now: Optional[int] = None, skew_ms
     env = Envelope(kind=wire["kind"], id=wire["id"], sender=wire["from"], to=wire["to"],
                    conversation=wire["conversation"], in_reply_to=wire["in_reply_to"], issued_at=wire["issued_at"],
                    expires_at=wire["expires_at"], body=_plain(wire["body"]), sig=wire["sig"])
-    if not ed25519.verify(public_of(env.sender), _signing_input(env.unsigned()), bytes.fromhex(env.sig)):
+    if not crypto_backend.verify(public_of(env.sender), _signing_input(env.unsigned()), bytes.fromhex(env.sig)):
         raise Refused("signature", "the signature does not verify as the sender, so the envelope was forged or "
                                    "changed after it was signed")
     t = now_ms() if now is None else now

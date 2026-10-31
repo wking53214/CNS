@@ -6,6 +6,7 @@
 // Configuration comes from the environment, so keys do not appear in a process listing:
 //   UAI_SEED   this agent's 32-byte Ed25519 seed, hex (a real deployment would read it from a keystore)
 //   UAI_TRUST  comma-separated identities this agent pins; it deals with no one else
+//   UAI_CAP_NAME  decider only: the capability name it offers (default income-screen); a purpose is a name that carries it
 //   UAI_DOC    requester only: {"identity": ..., "values": {...}, "offer": [...], "evidence": [...]}
 //
 // Every stdout line is one JSON object: an envelope, {"uai_error": {code, reason}}, {"uai_ok": ...} or
@@ -14,7 +15,6 @@
 // Its policy is its own and is not the Python reference's: it screens income against 450000 cents a month and only
 // for a paystub or a tax return, and it will not take any field it does not need.
 
-import { createInterface } from "node:readline";
 import * as U from "./uai.mjs";
 
 const role = process.argv[2];
@@ -26,7 +26,7 @@ const out = (obj) => process.stdout.write(JSON.stringify(obj) + "\n");
 const fail = (e) => out({ uai_error: { code: e.code || "internal", reason: e.reason || String(e.message || e) } });
 
 const CAP = {
-  name: "income-screen", version: 1, summary: "monthly income at or above 450000 cents, from a paystub or tax return",
+  name: process.env.UAI_CAP_NAME || "income-screen", version: 1, summary: "monthly income at or above 450000 cents, from a paystub or tax return",
   accepts: ["doc_type", "monthly_income_cents"], requires: ["doc_type", "monthly_income_cents"],
   evidence: ["threshold-check"], max_ttl_ms: 120000,
 };
@@ -43,15 +43,15 @@ function decider() {
   out(U.publish(me, "node-screener", "node/uai.mjs (OpenSSL Ed25519)", [CAP]));
   const refuse = (env, e) => U.seal(me, "refuse", { code: e.code, reasons: [e.reason] }, { to: env.from, replyTo: env, ttlMs: TTL });
   return (line) => {
-    const wire = U.strictParse(line);
+    const wire = U.strictParseBytes(line);
     if (wire.kind === "manifest") { U.readManifest(wire, { trust }); return out({ uai_ok: "manifest read" }); }
     const env = U.openEnvelope(wire, { audience: me.agent, kinds: new Set(["request", "accept"]) });
     if (env.expires_at === null) throw new U.Refused("malformed", "session messages must expire");
     if (env.expires_at - env.issued_at > 86400000) throw new U.Refused("malformed", "a session message may live at most 24 hours");
-    try { trust.admit(env.from); } catch (e) { ledger.spend(env.from, env.id); return out(refuse(env, e)); }
+    try { trust.admit(env.from); } catch (e) { return out(refuse(env, e)); } // no ledger entry for a sender that is not admitted: anyone can mint keys
     if (env.kind === "request") {
       if (env.in_reply_to) throw new U.Refused("malformed", "a request answers nothing");
-      ledger.spend(env.from, env.id);
+      ledger.spend(env.from, env.id, env.expires_at);
       let terms;
       try { terms = U.proposeTerms(CAP, env.body, { decider: me.agent, requester: env.from }); } catch (e) { return out(refuse(env, e)); }
       const offer = U.seal(me, "offer", { terms }, { to: env.from, replyTo: env, ttlMs: TTL });
@@ -65,7 +65,7 @@ function decider() {
     if (Date.now() >= open.expiresAt) { offers.delete(env.in_reply_to); throw new U.Refused("expired", "the offer this accept answers has lapsed"); }
     const terms = open.terms;
     if (env.from !== terms.requester) throw new U.Refused("terms", "the accept comes from someone the offer was not made to");
-    ledger.spend(env.from, env.id);
+    ledger.spend(env.from, env.id, env.expires_at);
     offers.delete(env.in_reply_to);
     let seen;
     try {
@@ -85,7 +85,7 @@ function requester() {
   const document = U.commit(doc.identity, doc.values);
   let decider = null, request = null, req = null, accept = null, terms = null;
   return (line) => {
-    const wire = U.strictParse(line);
+    const wire = U.strictParseBytes(line);
     if (!decider) {
       decider = U.readManifest(wire, { trust }).from;
       req = U.requestBody("income-screen", 1, { identity: document.identity, digest: document.digest, offerFields: doc.offer, requireEvidence: doc.evidence, maxTtlMs: 600000 });
@@ -95,7 +95,7 @@ function requester() {
     if (!accept) {
       const env = U.openEnvelope(wire, { audience: me.agent, kinds: new Set(["offer", "refuse"]) });
       if (env.from !== decider || env.in_reply_to !== U.envelopeDigest(request)) throw new U.Refused("terms", "a reply to something this requester did not send");
-      ledger.spend(env.from, env.id);
+      ledger.spend(env.from, env.id, env.expires_at);
       if (env.kind === "refuse") return out({ uai_result: { declined: env.body.reasons } });
       terms = U.checkTerms(env.body.terms, req, { decider, requester: me.agent });
       accept = U.seal(me, "accept", { terms_digest: U.termsDigest(terms), disclosure: terms.disclose.length ? document.reveal(terms.disclose) : null }, { to: decider, replyTo: env, ttlMs: TTL });
@@ -108,5 +108,18 @@ function requester() {
 
 if (role !== "decider" && role !== "requester") { console.error("usage: node agent.mjs decider|requester"); process.exit(2); }
 const handle = role === "decider" ? decider() : requester();
-const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
-rl.on("line", (line) => { if (!line.trim()) return; try { handle(line); } catch (e) { fail(e); } });
+// Lines are read as BYTES and decoded strictly (U.strictParseBytes): invalid UTF-8 is refused, never replaced with
+// U+FFFD, so this agent reads exactly the text the Python reader would. A line longer than 1 MiB is dropped as it
+// grows, so a peer that never sends a newline cannot make this process hold memory without limit.
+let pending = Buffer.alloc(0), discarding = false;
+process.stdin.on("data", (chunk) => {
+  pending = Buffer.concat([pending, chunk]);
+  let k;
+  while ((k = pending.indexOf(0x0a)) >= 0) {
+    const line = pending.subarray(0, k); pending = pending.subarray(k + 1);
+    if (discarding) { discarding = false; continue; }
+    if (!line.toString("latin1").trim()) continue;
+    try { handle(line); } catch (e) { fail(e); }
+  }
+  if (pending.length > (1 << 20)) { pending = Buffer.alloc(0); if (!discarding) fail(new U.Refused("malformed", "the message is larger than 1 MiB")); discarding = true; }
+});

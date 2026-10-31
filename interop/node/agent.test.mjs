@@ -24,7 +24,7 @@ function startDecider() {
     while ((k = buf.indexOf("\n")) >= 0) { const l = JSON.parse(buf.slice(0, k)); buf = buf.slice(k + 1); (waiters.shift() || ((x) => lines.push(x)))(l); }
   });
   const next = () => (lines.length ? Promise.resolve(lines.shift()) : new Promise((r) => waiters.push(r)));
-  return { next, send: (o) => p.stdin.write(JSON.stringify(o) + "\n"), stop: () => p.kill() };
+  return { next, send: (o) => p.stdin.write(JSON.stringify(o) + "\n"), raw: (b) => p.stdin.write(b), stop: () => p.kill() };
 }
 
 async function exchange(agent, { extra = {}, skew = 0 }) {
@@ -49,5 +49,38 @@ test("the Node decider decides a proper exchange, refuses a lapsed offer and an 
     assert.equal(lapsed.uai_error?.code, "expired");
     const leaky = await exchange(agent, { extra: { ssn: "123-45-6789" } });
     assert.equal(leaky.kind, "refuse"); assert.equal(leaky.body.code, "terms");
+  } finally { agent.stop(); }
+});
+
+test("the Node decider answers an unadmitted sender with a signed refusal each time and remembers nothing about it", async () => {
+  const agent = startDecider();
+  try {
+    assert.equal((await agent.next()).kind, "manifest");
+    const stranger = U.signerFromSeed(Buffer.alloc(32, 99));
+    const doc = U.commit("loan-x", { doc_type: "paystub", monthly_income_cents: 500000 });
+    const body = U.requestBody("income-screen", 1, { identity: doc.identity, digest: doc.digest, offerFields: ["doc_type", "monthly_income_cents"], requireEvidence: ["threshold-check"], maxTtlMs: 600000 });
+    const request = U.seal(stranger, "request", body, { to: D.agent, ttlMs: 60000 });
+    agent.send(request);
+    const first = await agent.next();
+    assert.equal(first.kind, "refuse"); assert.equal(first.body.code, "untrusted");
+    agent.send(request);                       // the same bytes again: still a refusal, not a "replayed" error from a ledger entry
+    const second = await agent.next();
+    assert.equal(second.kind, "refuse"); assert.equal(second.body.code, "untrusted");
+  } finally { agent.stop(); }
+});
+
+test("the Node agent refuses invalid UTF-8 and an endless line instead of decoding leniently or buffering without limit", async () => {
+  const agent = startDecider();
+  try {
+    assert.equal((await agent.next()).kind, "manifest");
+    agent.raw(Buffer.concat([Buffer.from('{"a":"'), Buffer.from([0xff]), Buffer.from('"}\n')]));
+    const bad = await agent.next();
+    assert.equal(bad.uai_error?.code, "malformed"); assert.match(bad.uai_error.reason, /UTF-8/);
+    agent.raw(Buffer.alloc((1 << 20) + 10, 0x61));        // no newline, over the limit
+    const big = await agent.next();
+    assert.equal(big.uai_error?.code, "malformed");
+    agent.raw(Buffer.from("tail\n"));                      // the rest of that line is dropped, then the agent works
+    agent.send({ not: "an envelope" });
+    assert.equal((await agent.next()).uai_error?.code, "malformed");
   } finally { agent.stop(); }
 });

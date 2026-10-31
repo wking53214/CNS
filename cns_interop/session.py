@@ -85,12 +85,12 @@ class Decider:
                        endorsements=self._endorsements, ttl_ms=24 * 3600 * 1000, now=self._clock())
 
     def _admit(self, agent: str, now: int) -> None:
-        if agent in self._trust.revoked:
+        if self._trust.is_revoked(agent, now=now):
             self._admitted.pop(agent, None)
             raise Refused("untrusted", "this receiver has revoked that identity")
         cached = self._admitted.get(agent)
-        if cached is not None and (cached.expires_at is None or now < cached.expires_at) and \
-                cached.authority not in self._trust.revoked and cached.endorsement not in self._trust.revoked:
+        if cached is not None and (cached.expires_at is None or now < cached.expires_at) and not (
+                self._trust.is_revoked(cached.authority, now=now) or self._trust.is_revoked(cached.endorsement, now=now)):
             return
         self._admitted.pop(agent, None)
         self._trust.admit(agent, now=now)  # pinned, or refused
@@ -122,7 +122,7 @@ class Decider:
     def _on_request(self, env: Envelope) -> Envelope:
         if env.in_reply_to:
             raise Refused("malformed", "a request opens an exchange and answers nothing")
-        self._ledger.spend(env.sender, env.id, env.expires_at)
+        self._ledger.spend(env.sender, env.id, env.expires_at, now=self._clock())
         try:
             req = read_request(env.body)
             if (req["capability"], req["version"]) not in self._caps:
@@ -147,7 +147,7 @@ class Decider:
             raise Refused("expired", "the offer this accept answers has lapsed")
         if env.sender != terms["requester"]:
             raise Refused("terms", "the accept comes from someone the offer was not made to")
-        self._ledger.spend(env.sender, env.id, env.expires_at)
+        self._ledger.spend(env.sender, env.id, env.expires_at, now=self._clock())
         del self._offers[env.in_reply_to]  # one accept per offer
         body = env.body
         try:
@@ -252,7 +252,7 @@ class Requester:
         known = self._requests.get(env.in_reply_to) or self._accepts.get(env.in_reply_to)
         if known is None or known[0] != env.sender:
             raise Refused("terms", f"the {env.kind} answers nothing this requester sent to its sender")
-        self._ledger.spend(env.sender, env.id, env.expires_at)
+        self._ledger.spend(env.sender, env.id, env.expires_at, now=self._clock())
         if env.kind == "refuse":
             self._requests.pop(env.in_reply_to, None)
             self._accepts.pop(env.in_reply_to, None)
