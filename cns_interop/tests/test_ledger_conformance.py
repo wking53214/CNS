@@ -28,7 +28,7 @@ def _sqlite(tmp_path):
 
 def _coordinated(tmp_path):
     c = InMemoryCoordinator()
-    return lambda: CoordinatedLedger(c)
+    return lambda: CoordinatedLedger(c, allow_caller_time=True)  # the generic properties drive time with now=
 
 
 BACKENDS = {"memory": _memory, "file": _file, "sqlite": _sqlite, "coordinated": _coordinated}
