@@ -154,7 +154,7 @@ class RemoteDecisionGuard:
 
     `subject_of(artifact)` reads (identity, digest) from whatever the action is about to touch. Like `DecisionGuard`
     it answers True at most once, also under concurrent calls, never raises, and a refusal does not spend the
-    permission. A decider revoked in the guard's `trust` after `authorize` closes the guard."""
+    permission. A decider revoked in the guard's `trust`, or with `revoke`, after `authorize` closes the guard."""
 
     def __init__(self, subject_of: Callable[[object], Tuple[str, str]], *, acting_for: str,
                  capability: Tuple[str, int], trust: TrustPolicy, ledger: Ledger,
@@ -197,6 +197,16 @@ class RemoteDecisionGuard:
             self._decider = got.envelope.sender
             self._expires_at = got.envelope.expires_at
             return got
+
+    def revoke(self, agent: str) -> None:
+        """Stop trusting `agent` from now on. A decider revoked before `authorize` is refused there; one revoked after
+        closes the guard. The guard swaps in its own policy with the identity added, so the policy it was built with,
+        which belongs to the caller, is never changed."""
+        if not is_agent_id(agent):
+            raise ValueError("revoke takes an agent identity")
+        with self._lock:
+            t = self._trust
+            self._trust = TrustPolicy(pinned=t.pinned, authorities=t.authorities, revoked=t.revoked | {agent})
 
     def __call__(self, artifact: object) -> bool:
         try:
