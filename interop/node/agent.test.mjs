@@ -51,3 +51,20 @@ test("the Node decider decides a proper exchange, refuses a lapsed offer and an 
     assert.equal(leaky.kind, "refuse"); assert.equal(leaky.body.code, "terms");
   } finally { agent.stop(); }
 });
+
+test("the Node decider answers an unadmitted sender with a signed refusal each time and remembers nothing about it", async () => {
+  const agent = startDecider();
+  try {
+    assert.equal((await agent.next()).kind, "manifest");
+    const stranger = U.signerFromSeed(Buffer.alloc(32, 99));
+    const doc = U.commit("loan-x", { doc_type: "paystub", monthly_income_cents: 500000 });
+    const body = U.requestBody("income-screen", 1, { identity: doc.identity, digest: doc.digest, offerFields: ["doc_type", "monthly_income_cents"], requireEvidence: ["threshold-check"], maxTtlMs: 600000 });
+    const request = U.seal(stranger, "request", body, { to: D.agent, ttlMs: 60000 });
+    agent.send(request);
+    const first = await agent.next();
+    assert.equal(first.kind, "refuse"); assert.equal(first.body.code, "untrusted");
+    agent.send(request);                       // the same bytes again: still a refusal, not a "replayed" error from a ledger entry
+    const second = await agent.next();
+    assert.equal(second.kind, "refuse"); assert.equal(second.body.code, "untrusted");
+  } finally { agent.stop(); }
+});

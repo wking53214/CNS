@@ -39,3 +39,12 @@ file they simply stop reading.
 `cns_interop/tests/test_uai_vectors.py::test_cns_interop_imports_only_cns_cns_composition_itself_and_the_standard_library`
 asserted no third-party imports at all. Step S5 adds one, so the assertion now also allows `cryptography` in
 `crypto_backend.py` and nowhere else. Nothing else about the test changed.
+
+Step S6 also adds `revocation.test.mjs` to the list of Node test files that `test_the_node_implementation_passes_the_same_answer_key`
+runs, and its expected pass count goes from 9 to 22 (the 9 that existed, 12 in the new file, 1 new agent test). Nothing else about the test changed.
+
+## Node implementation: what changed (S6)
+
+`PinnedTrust` takes `revocations`, `maxStalenessMs`, `followRotation`; `Ledger` prunes and leases; `RemoteDecisionGuard`
+exists; `verifyDecision` checks that the terms are complete; the Node decider no longer writes a ledger entry for a
+sender it does not admit. Endorsements are still Python only, and a peer admitted only by endorsement is refused.

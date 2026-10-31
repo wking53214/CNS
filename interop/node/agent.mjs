@@ -48,10 +48,10 @@ function decider() {
     const env = U.openEnvelope(wire, { audience: me.agent, kinds: new Set(["request", "accept"]) });
     if (env.expires_at === null) throw new U.Refused("malformed", "session messages must expire");
     if (env.expires_at - env.issued_at > 86400000) throw new U.Refused("malformed", "a session message may live at most 24 hours");
-    try { trust.admit(env.from); } catch (e) { ledger.spend(env.from, env.id); return out(refuse(env, e)); }
+    try { trust.admit(env.from); } catch (e) { return out(refuse(env, e)); } // no ledger entry for a sender that is not admitted: anyone can mint keys
     if (env.kind === "request") {
       if (env.in_reply_to) throw new U.Refused("malformed", "a request answers nothing");
-      ledger.spend(env.from, env.id);
+      ledger.spend(env.from, env.id, env.expires_at);
       let terms;
       try { terms = U.proposeTerms(CAP, env.body, { decider: me.agent, requester: env.from }); } catch (e) { return out(refuse(env, e)); }
       const offer = U.seal(me, "offer", { terms }, { to: env.from, replyTo: env, ttlMs: TTL });
@@ -65,7 +65,7 @@ function decider() {
     if (Date.now() >= open.expiresAt) { offers.delete(env.in_reply_to); throw new U.Refused("expired", "the offer this accept answers has lapsed"); }
     const terms = open.terms;
     if (env.from !== terms.requester) throw new U.Refused("terms", "the accept comes from someone the offer was not made to");
-    ledger.spend(env.from, env.id);
+    ledger.spend(env.from, env.id, env.expires_at);
     offers.delete(env.in_reply_to);
     let seen;
     try {
@@ -95,7 +95,7 @@ function requester() {
     if (!accept) {
       const env = U.openEnvelope(wire, { audience: me.agent, kinds: new Set(["offer", "refuse"]) });
       if (env.from !== decider || env.in_reply_to !== U.envelopeDigest(request)) throw new U.Refused("terms", "a reply to something this requester did not send");
-      ledger.spend(env.from, env.id);
+      ledger.spend(env.from, env.id, env.expires_at);
       if (env.kind === "refuse") return out({ uai_result: { declined: env.body.reasons } });
       terms = U.checkTerms(env.body.terms, req, { decider, requester: me.agent });
       accept = U.seal(me, "accept", { terms_digest: U.termsDigest(terms), disclosure: terms.disclose.length ? document.reveal(terms.disclose) : null }, { to: decider, replyTo: env, ttlMs: TTL });

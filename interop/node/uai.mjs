@@ -7,12 +7,13 @@
 // independent implementations to agree, which is the point.
 //
 // Scope: envelope, strict wire parsing, canonical digest, identity, pinned trust, manifests, negotiation, selective
-// disclosure, decisions and a replay ledger. Endorsement-based trust is in the Python reference only.
+// disclosure, decisions, a replay ledger with leases, signed revocation and rotation, and a RemoteDecisionGuard.
+// Endorsement-based trust is in the Python reference only: a peer admitted only by endorsement is refused here.
 
 import { createHash, createPrivateKey, createPublicKey, randomBytes, sign as edSign, verify as edVerify } from "node:crypto";
 
 export const VERSION = "uai/1";
-export const KINDS = new Set(["manifest", "endorsement", "request", "offer", "accept", "refuse", "decision"]);
+export const KINDS = new Set(["manifest", "endorsement", "request", "offer", "accept", "refuse", "decision", "revocation"]);
 export const FIELDS = ["body", "conversation", "expires_at", "from", "id", "in_reply_to", "issued_at", "kind", "sig", "to", "v"];
 export const MAX_INT = Number.MAX_SAFE_INTEGER;
 export const MAX_DEPTH = 32;
@@ -247,20 +248,106 @@ export function openEnvelope(wire, { now = Date.now(), skewMs = 120000, audience
 // ---------------------------------------------------------------- trust, ledger
 
 export class PinnedTrust {
-  constructor(pinned = [], revoked = []) { this.pinned = new Set(pinned); this.revoked = new Set(revoked); }
-  admit(agent) {
-    if (this.revoked.has(agent)) throw new Refused("untrusted", "this receiver has revoked that identity");
-    if (!this.pinned.has(agent)) throw new Refused("untrusted", "the identity is not pinned and no endorsement admits it");
+  // `revocations` is a RevocationStore. With `maxStalenessMs`, a store never refreshed, or refreshed longer ago than
+  // that, makes admit refuse ("unavailable"): the receiver cannot rule out a revocation it has not heard.
+  constructor(pinned = [], revoked = [], { revocations = null, maxStalenessMs = null, followRotation = false } = {}) {
+    this.pinned = new Set(pinned); this.revoked = new Set(revoked);
+    this.revocations = revocations; this.maxStalenessMs = maxStalenessMs; this.followRotation = followRotation;
+  }
+  isRevoked(subject, now = Date.now()) {
+    if (this.revoked.has(subject)) return true;
+    if (!this.revocations) return false;
+    if (this.maxStalenessMs !== null) {
+      const age = this.revocations.ageMs(now);
+      if (age === null || age > this.maxStalenessMs) throw new Refused("unavailable", "this receiver's revocation list is too old to rule out a revocation");
+    }
+    return this.revocations.isRevoked(subject, now);
+  }
+  admit(agent, { now = Date.now() } = {}) {
+    if (this.isRevoked(agent, now)) throw new Refused("untrusted", "this receiver has revoked that identity");
+    if (this.pinned.has(agent)) return { agent, via: "pinned" };
+    if (this.followRotation && this.revocations) {
+      const before = this.revocations.predecessorOf(agent);
+      if (before !== null && this.pinned.has(before)) return { agent, via: "rotated", authority: before };
+    }
+    throw new Refused("untrusted", "the identity is not pinned and no endorsement admits it");
   }
 }
 
+// One state machine for spend, reserve, commit and release, as in cns_interop/ledger.py. An entry is committed or
+// leased. An expired message, or a lapsed lease, is forgotten; "expired" is judged by the EARLIER of the verifier's
+// clock and this host's, so a verifier running behind never finds a message it still accepts already forgotten.
 export class Ledger {
-  constructor() { this.seen = new Set(); }
-  spend(sender, id) {
-    const k = `${sender} ${id}`;
-    if (this.seen.has(k)) throw new Refused("replayed", "this message was already accepted once");
-    this.seen.add(k);
+  constructor({ keepMs = 120000 } = {}) { this.seen = new Map(); this.keepMs = keepMs; }
+  _entry(sender, id, now) {
+    const wall = Date.now(), cutoff = Math.min(now, wall) - this.keepMs;
+    for (const [k, e] of this.seen) if ((e.expiresAt !== null && e.expiresAt <= cutoff) || (e.leaseUntil !== null && e.leaseUntil <= now)) this.seen.delete(k);
+    return this.seen.get(`${sender} ${id}`);
   }
+  spend(sender, id, expiresAt = null, { now = Date.now() } = {}) {
+    if (this._entry(sender, id, now)) throw new Refused("replayed", "this message was already accepted once");
+    this.seen.set(`${sender} ${id}`, { expiresAt, leaseUntil: null, token: null });
+  }
+  reserve(sender, id, expiresAt = null, { leaseMs, now = Date.now() } = {}) {
+    if (!Number.isSafeInteger(leaseMs) || leaseMs <= 0 || leaseMs > 3600000) throw new RangeError("leaseMs is a positive integer, at most 3600000");
+    if (this._entry(sender, id, now)) throw new Refused("replayed", "this message was already accepted once or is being redeemed");
+    const token = randomBytes(16).toString("hex"), leaseUntil = now + leaseMs;
+    this.seen.set(`${sender} ${id}`, { expiresAt, leaseUntil, token });
+    return { sender, id, expiresAt, token, leaseUntil, key: `${sender} ${id}` };
+  }
+  commit(r, { now = Date.now() } = {}) {
+    const cur = this._entry(r.sender, r.id, now);
+    if (cur && cur.token !== r.token) throw new Refused("lease_lost", "the message was taken by another redemption after this lease lapsed");
+    this.seen.set(r.key, { expiresAt: r.expiresAt, leaseUntil: null, token: null });
+  }
+  release(r, { now = Date.now() } = {}) {
+    const cur = this._entry(r.sender, r.id, now);
+    if (!cur) return;
+    if (cur.token !== r.token) throw new Refused("lease_lost", "only the holder of a lease can release it");
+    this.seen.delete(r.key);
+  }
+}
+
+// ---------------------------------------------------------------- revocation and rotation (cns_interop/revocation.py)
+
+const HEX32_ID = /^[0-9a-f]{32}$/;
+export function readStatement(wire, { authorities = [], now = Date.now() } = {}) {
+  const env = openEnvelope(wire, { now, kinds: new Set(["revocation"]) });
+  const b = env.body;
+  if (cpSort(Object.keys(b)).join() !== "action,effective_at,reason,subject,successor") throw new Refused("malformed", "a revocation body has exactly: action, effective_at, reason, subject, successor");
+  const { subject, action, successor, reason, effective_at: eff } = b;
+  if (typeof subject !== "string" || !(isAgentId(subject) || HEX32_ID.test(subject))) throw new Refused("malformed", "the subject is an agent identity or an endorsement id");
+  if (!["revoke", "rotate"].includes(action) || typeof reason !== "string") throw new Refused("malformed", "action is revoke or rotate, and reason is text");
+  if (!Number.isSafeInteger(eff) || eff < 0) throw new Refused("malformed", "effective_at is a time in ms");
+  if (action === "revoke" && successor !== "") throw new Refused("malformed", "a revoke names no successor");
+  if (action === "rotate") {
+    if (!isAgentId(successor) || successor === subject || !isAgentId(subject)) throw new Refused("malformed", "a rotate names another agent identity as its successor");
+    if (env.from !== subject) throw new Refused("untrusted", "only an identity can rotate itself");
+  }
+  if (env.from !== subject && !new Set(authorities).has(env.from)) throw new Refused("untrusted", "a revocation must come from the subject itself or an authority this receiver lists");
+  return { subject, action, successor, reason, effectiveAt: eff, signer: env.from, id: env.id, envelope: env };
+}
+
+export class RevocationStore {
+  constructor() { this.rows = new Map(); this.successors = new Map(); this.freshAt = null; }
+  accept(wire, { authorities = [], now = Date.now() } = {}) {
+    const st = readStatement(wire, { authorities, now });
+    const have = this.rows.get(st.subject);
+    if (have && have.action === "rotate" && st.action === "revoke" && st.signer !== st.subject) {
+      // An authority revoking a key that already named a successor: withdraw the successor too.
+      this.rows.set(st.subject, { action: "revoke", successor: "", effectiveAt: have.effectiveAt, signer: st.signer });
+      this.successors.delete(have.successor);
+    }
+    if (!have) {
+      this.rows.set(st.subject, { action: st.action, successor: st.successor, effectiveAt: st.effectiveAt, signer: st.signer });
+      if (st.action === "rotate" && !this.successors.has(st.successor)) this.successors.set(st.successor, st.subject);
+    }
+    return st;
+  }
+  isRevoked(subject, now = Date.now()) { const r = this.rows.get(subject); return !!r && now >= r.effectiveAt; }
+  predecessorOf(agent) { return this.successors.has(agent) ? this.successors.get(agent) : null; }
+  markFresh(now = Date.now()) { this.freshAt = now; }
+  ageMs(now = Date.now()) { return this.freshAt === null ? null : Math.max(0, now - this.freshAt); }
 }
 
 // ---------------------------------------------------------------- disclosure
@@ -377,7 +464,26 @@ export function issueDecision(signer, accept, terms, verdict, { reasons = [], ev
     { to: terms.requester, replyTo: accept, ttlMs: terms.decision_ttl_ms, now });
 }
 
-export function verifyDecision(wire, { terms, acceptDigest, ledger, now = Date.now() }) {
+const TERMS_FIELDS = "capability,decider,decision_ttl_ms,disclose,evidence,requester,subject,version";
+
+// A ledger that cannot give a definite answer (anything thrown that is not a refusal) means there is no authoritative
+// state, so the answer is "unavailable": permission is never inferred from a failure to check.
+function redeem(ledger, env, now, leaseMs) {
+  try {
+    if (leaseMs !== null && leaseMs !== undefined) {
+      if (typeof ledger.reserve !== "function") throw new RangeError("leaseMs needs a ledger with reserve, commit and release");
+      return ledger.reserve(env.from, env.id, env.expires_at, { leaseMs, now });
+    }
+    ledger.spend(env.from, env.id, env.expires_at, { now });
+    return null;
+  } catch (e) {
+    if (e instanceof Refused || e instanceof RangeError) throw e;
+    throw new Refused("unavailable", `the ledger could not say whether this decision is new, so it is not accepted (${e && e.name})`);
+  }
+}
+
+export function verifyDecision(wire, { terms, acceptDigest, ledger, now = Date.now(), leaseMs = null }) {
+  if (!isPlainObject(terms) || cpSort(Object.keys(terms)).join() !== TERMS_FIELDS) throw new Refused("terms", "the terms to check against are not complete terms");
   const env = openEnvelope(wire, { now, audience: terms.requester, kinds: new Set(["decision"]) });
   if (env.from !== terms.decider) throw new Refused("untrusted", "signed by someone other than the decider the terms name");
   if (env.in_reply_to !== acceptDigest) throw new Refused("terms", "the decision answers a different accept");
@@ -388,6 +494,7 @@ export function verifyDecision(wire, { terms, acceptDigest, ledger, now = Date.n
   if (!VERDICTS.includes(b.verdict)) throw new Refused("malformed", "unknown verdict");
   if (env.expires_at === null || env.expires_at - env.issued_at > terms.decision_ttl_ms) throw new Refused("terms", "lives longer than the terms allow");
   if (!Array.isArray(b.evidence) || !Array.isArray(b.reasons) || !b.reasons.every((r) => typeof r === "string")) throw new Refused("malformed", "evidence and reasons are lists");
+  if (typeof b.cns_root !== "string") throw new Refused("malformed", "cns_root is text and evidence a list");
   const evidence = Object.create(null);
   for (const it of b.evidence) {
     if (!isPlainObject(it) || cpSort(Object.keys(it)).join() !== "content,digest,kind" || typeof it.kind !== "string" || !isPlainObject(it.content) || it.kind in evidence) throw new Refused("malformed", "evidence item");
@@ -397,6 +504,65 @@ export function verifyDecision(wire, { terms, acceptDigest, ledger, now = Date.n
   const kinds = cpSort(Object.keys(evidence));
   if (!kinds.every((k) => terms.evidence.includes(k))) throw new Refused("terms", "evidence the terms did not ask for");
   if (b.verdict === "pass" && kinds.join() !== terms.evidence.join()) throw new Refused("terms", "a pass without the required evidence");
-  ledger.spend(env.from, env.id);
-  return { verdict: b.verdict, allowed: b.verdict === "pass", reasons: b.reasons, evidence, subject: b.subject, cnsRoot: b.cns_root, envelope: env };
+  const reservation = redeem(ledger, env, now, leaseMs);
+  return { verdict: b.verdict, allowed: b.verdict === "pass", reasons: b.reasons, evidence, subject: b.subject, cnsRoot: b.cns_root, envelope: env, reservation };
+}
+
+// Closed until a verified, allowed decision opens it; then permits one action on that one document. Its own
+// configuration, never the caller's, says who it acts for, which capability it protects, whom it trusts, and where it
+// remembers spent decisions. Mirrors cns_interop.decision.RemoteDecisionGuard.
+export class RemoteDecisionGuard {
+  constructor(subjectOf, { actingFor, capability, trust, ledger, clock = Date.now }) {
+    if (typeof subjectOf !== "function") throw new Error("subjectOf must read [identity, digest] from an artifact");
+    if (!isAgentId(actingFor)) throw new Error("actingFor is the identity this guard acts for");
+    if (!Array.isArray(capability) || capability.length !== 2 || typeof capability[0] !== "string" || !NAME.test(capability[0]) || !Number.isSafeInteger(capability[1]) || capability[1] < 1) throw new Error("capability is the [name, version] this guard protects");
+    if (!trust || typeof trust.admit !== "function") throw new Error("a guard needs its own trust policy for deciders");
+    Object.assign(this, { subjectOf, actingFor, capability, trust, ledger, clock });
+    this.approved = null; this.decider = null; this.expiresAt = null; this.spent = false; this.reservation = null; this.closed = false;
+  }
+  authorize(wire, { terms, acceptDigest, leaseMs = null }) {
+    if (this.approved !== null) throw new Error("this guard was already authorized; one guard serves one decision");
+    if (!isPlainObject(terms) || terms.requester !== this.actingFor) throw new Refused("audience", "the terms are for a requester this guard does not act for");
+    if (terms.capability !== this.capability[0] || terms.version !== this.capability[1] || !Number.isSafeInteger(terms.version)) throw new Refused("terms", "the decision was negotiated for a different capability or version than this guard protects");
+    const now = this.clock();
+    this.trust.admit(typeof terms.decider === "string" ? terms.decider : "", { now });
+    const got = verifyDecision(wire, { terms, acceptDigest, ledger: this.ledger, now, leaseMs });
+    if (!got.allowed) {
+      if (got.reservation) this._finish(got.reservation, true);
+      throw new Refused("refused", "the decision is not a pass: " + got.reasons.join("; "));
+    }
+    this.approved = [got.subject.identity, got.subject.digest]; this.decider = got.envelope.from;
+    this.expiresAt = got.envelope.expires_at; this.reservation = got.reservation;
+    return got;
+  }
+  revoke(agent) {
+    if (!isAgentId(agent)) throw new Error("revoke takes an agent identity");
+    this.trust.revoked.add(agent);
+  }
+  call(artifact) {
+    let seen;
+    try { seen = this.subjectOf(artifact); if (!Array.isArray(seen) || seen.length !== 2) return false; } catch { return false; }
+    if (this.approved === null || this.spent) return false;
+    try { if (this.trust.isRevoked(this.decider, this.clock())) return false; } catch { return false; }
+    if (this.expiresAt !== null && this.clock() >= this.expiresAt) return false;
+    if (seen[0] !== this.approved[0] || seen[1] !== this.approved[1]) return false;
+    this.spent = true;
+    return true;
+  }
+  _finish(reservation, commit) {
+    try { commit ? this.ledger.commit(reservation, { now: this.clock() }) : this.ledger.release(reservation, { now: this.clock() }); }
+    catch (e) {
+      if (e instanceof Refused) throw e;
+      throw new Refused("unavailable", `the ledger did not confirm the ${commit ? "commit" : "release"} (${e && e.name})`);
+    }
+  }
+  complete() {
+    if (!this.reservation || this.closed || !this.spent) throw new Error("complete() follows a leased authorize and a permitted call, once");
+    this.closed = true; this._finish(this.reservation, true);
+  }
+  abort() {
+    if (!this.reservation || this.closed) throw new Error("abort() follows a leased authorize, once, and not after complete()");
+    this.closed = true; this.spent = true; this._finish(this.reservation, false);
+  }
+  get idempotencyKey() { return this.reservation ? this.reservation.key : null; }
 }
