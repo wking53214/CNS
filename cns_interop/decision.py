@@ -102,6 +102,12 @@ class Verified:
     def allowed(self) -> bool:
         return self.verdict == GateOutcome.PASS.value
 
+    @property
+    def terms_digest(self) -> str:
+        """The digest of the exact terms this decision was made under, as the decider signed it. A receiver that acts
+        on the decision must hold terms that hash to this, or it is acting on terms the decision never named."""
+        return str(self.envelope.body["terms_digest"])
+
 
 def _redeem(ledger: Any, env: Envelope, now: Optional[int], lease_ms: Optional[int]) -> Optional[Reservation]:
     """Spend the decision, or lease it when `lease_ms` is given. A ledger that cannot give a definite answer (any
