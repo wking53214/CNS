@@ -13,6 +13,7 @@ the owner on GitHub; these files do not do it.
 
 | tag | type | package | GitHub Release |
 |---|---|---|---|
+| [`v2.3.0`](v2.3.0.md) | annotated | 2.3.0 | none yet; the text is ready for the owner to publish |
 | [`v2.2.0`](v2.2.0.md) | lightweight | 2.2.0 | published 2026-10-30, latest |
 | [`v2.1.0`](v2.1.0.md) | annotated | 2.1.0 | published 2026-10-30 |
 | [`v2.0.0`](v2.0.0.md) | annotated | 2.0.0 | published 2026-10-30 |
