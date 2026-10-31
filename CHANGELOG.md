@@ -9,8 +9,8 @@ release and "floor" the lowest a consumer may pin; both are defined in `cns_comp
 Tagging is the owner's decision. An entry whose heading says "not yet tagged" describes this tree; after the tag
 exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the table and moves `current`.
 
-The entry is changed to "tagged" in a commit after the tag, so the copy of this file inside `v2.0.0`, `v2.1.0` and
-`v2.2.0` still says "not yet tagged". A tag is never moved to fix that, because a pin to it would then install
+The entry is changed to "tagged" in a commit after the tag, so the copy of this file inside `v2.0.0`, `v2.1.0`, `v2.2.0` and
+`v2.3.0` still says "not yet tagged". A tag is never moved to fix that, because a pin to it would then install
 different code. This file on `main` says what is true now, and so does the GitHub Release of each tag that has
 one; the text for every tag is kept in `docs/releases/`. A heading's date is the day the tag was made; where the tagged commit is older, the
 entry says so.
@@ -61,13 +61,14 @@ not a release.
   It now uses `cns_interop.wire.loads`, so those are refused (`malformed`, `profile`) before anything is verified, and
   a job that is not JSON is refused instead of crashing the process.
 
-## [2.3.0] - 2026-10-30 (not yet tagged)
+## [2.3.0] - 2026-10-30
 
 The work merged to `main` after the `v2.2.0` tag (`ce6bd05`). A minor version, by the owner's decision of 2026-10-30:
 every addition below is an optional argument, a new function or a new file, the `cns` package's shapes are unchanged
-(`tests/public_shape.json` moves only its version), and the changed behaviours refuse what was wrongly allowed. Not
-tagged: `contracts/cns-releases.json` keeps `current` at `v2.2.0` and the floor at 1.9.0 until the owner tags, and
-`release --check` calls this tree unreleased. Each line names the commit that holds it.
+(`tests/public_shape.json` moves only its version), and the changed behaviours refuse what was wrongly allowed. Tagged
+`v2.3.0` by the owner, an annotated tag at `41592fb7b6735abe140f745353c09ba3eed8e7a2` (the merge of #65, 2026-10-30);
+`contracts/cns-releases.json` has `current` at `v2.3.0` and the floor at 1.9.0. Work merged after the tag is under
+Unreleased. Each line names the commit that holds it.
 
 ### Added
 
