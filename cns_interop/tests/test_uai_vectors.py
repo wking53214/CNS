@@ -59,7 +59,7 @@ def test_the_node_implementation_passes_the_same_answer_key():
     tests = [str(ROOT / "interop" / "node" / name) for name in ("test.mjs", "agent.test.mjs", "revocation.test.mjs")]
     done = subprocess.run([node(), "--test", *tests], capture_output=True, text=True, timeout=180)
     assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-2000:]
-    assert "# fail 0" in done.stdout and "# pass 23" in done.stdout
+    assert "# fail 0" in done.stdout and "# pass 24" in done.stdout
 
 
 def test_the_node_small_order_list_is_exactly_the_curves_eight_torsion_points():
@@ -98,7 +98,8 @@ def test_cns_interop_imports_only_cns_cns_composition_itself_and_the_standard_li
                 [n.module or ""] if isinstance(n, ast.ImportFrom) and n.level == 0 else []
             for name in names:
                 # Step S5: the one optional third-party import, in the one backend file, inside a function.
-                optional = path.name == "crypto_backend.py" and name.split(".")[0] == "cryptography"
+                optional = (path.name == "crypto_backend.py" and name.split(".")[0] == "cryptography") or (
+                    path.name == "ledger_postgres.py" and name.split(".")[0] == "psycopg")  # T1-3: the other one, also lazy
                 assert name.split(".")[0] in allowed or optional, f"{path.name} imports {name}"
 
 

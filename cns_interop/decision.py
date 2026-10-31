@@ -102,6 +102,12 @@ class Verified:
     def allowed(self) -> bool:
         return self.verdict == GateOutcome.PASS.value
 
+    @property
+    def terms_digest(self) -> str:
+        """The digest of the exact terms this decision was made under, as the decider signed it. A receiver that acts
+        on the decision must hold terms that hash to this, or it is acting on terms the decision never named."""
+        return str(self.envelope.body["terms_digest"])
+
 
 def _redeem(ledger: Any, env: Envelope, now: Optional[int], lease_ms: Optional[int]) -> Optional[Reservation]:
     """Spend the decision, or lease it when `lease_ms` is given. A ledger that cannot give a definite answer (any
@@ -188,7 +194,8 @@ class RemoteDecisionGuard:
 
     def __init__(self, subject_of: Callable[[object], Tuple[str, str]], *, acting_for: str,
                  capability: Tuple[str, int], trust: TrustPolicy, ledger: Ledger,
-                 clock: Callable[[], int] = now_ms) -> None:
+                 clock: Callable[[], int] = now_ms, grants: Optional[Any] = None,
+                 action: Optional[str] = None) -> None:
         if not callable(subject_of):
             raise ValueError("subject_of must read (identity, digest) from an artifact")
         if not is_agent_id(acting_for):
@@ -199,6 +206,9 @@ class RemoteDecisionGuard:
             raise ValueError("capability is the (name, version) this guard protects")
         if not isinstance(trust, TrustPolicy):
             raise ValueError("a guard needs its own trust policy for deciders")
+        if (grants is None) != (action is None) or (action is not None and (not isinstance(action, str) or not action)):
+            raise ValueError("grants and action go together: the guard then acts only under the receiver's own policy")
+        self._grants, self._action, self._permit = grants, action, None
         self._subject_of, self._ledger, self._clock = subject_of, ledger, clock
         self._acting_for, self._trust = acting_for, trust
         self._capability = (capability[0], capability[1])
@@ -229,6 +239,8 @@ class RemoteDecisionGuard:
             self._closed = True
             reservation = self._reservation
         self._finish(reservation, commit=True)
+        if self._permit is not None:
+            self._permit.complete()
 
     def abort(self) -> None:
         """The action did not happen: give the decision back so it can be redeemed again. Needs a leased authorize."""
@@ -239,6 +251,8 @@ class RemoteDecisionGuard:
             self._spent = True  # this guard never permits again; a new guard may redeem the decision
             reservation = self._reservation
         self._finish(reservation, commit=False)
+        if self._permit is not None:
+            self._permit.abort()
 
     @property
     def idempotency_key(self) -> Optional[str]:
@@ -246,7 +260,7 @@ class RemoteDecisionGuard:
         return self._reservation.key if self._reservation is not None else None
 
     def authorize(self, wire: Mapping[str, Any], *, terms: Mapping[str, Any], accept_digest: str,
-                  lease_ms: Optional[int] = None) -> Verified:
+                  lease_ms: Optional[int] = None, approval: Optional[Any] = None) -> Verified:
         with self._lock:
             if self._approved is not None:
                 raise ValueError("this guard was already authorized; one guard serves one decision")
@@ -258,12 +272,21 @@ class RemoteDecisionGuard:
                               "this guard protects")
             now = self._clock()
             self._trust.admit(terms.get("decider", ""), now=now)
+            if self._grants is not None and lease_ms is None:
+                lease_ms = 30_000  # under receiver policy a refusal that a person can cure must not burn the decision
             got = verify_decision(wire, terms=terms, accept_digest=accept_digest, ledger=self._ledger, now=now,
                                   lease_ms=lease_ms)
             if not got.allowed:
                 if got.reservation is not None:
                     self._finish(got.reservation, commit=True)  # a non-pass is consumed like any decision
                 raise Refused("refused", "the decision is not a pass: " + "; ".join(got.reasons))
+            if self._grants is not None:
+                try:  # the receiver's own policy decides; a signed decision alone never opens the guard
+                    self._permit = self._grants.permit(self._action, got, terms, approval=approval, now=now)
+                except Refused:
+                    if got.reservation is not None:
+                        self._finish(got.reservation, commit=False)  # give the decision back: approval may yet come
+                    raise
             self._reservation = got.reservation
             self._approved = (got.subject["identity"], got.subject["digest"])
             self._decider = got.envelope.sender
@@ -282,6 +305,11 @@ class RemoteDecisionGuard:
                                       revocations=t.revocations, max_staleness_ms=t.max_staleness_ms,
                                       follow_rotation=t.follow_rotation)
 
+    @property
+    def permit(self) -> Optional[Any]:
+        """The receiver's Permit for this redemption, when the guard was built with `grants`."""
+        return self._permit
+
     def __call__(self, artifact: object) -> bool:
         try:
             seen = tuple(self._subject_of(artifact))
@@ -289,6 +317,8 @@ class RemoteDecisionGuard:
             return False
         with self._lock:  # check and spend as one step, so concurrent callers cannot all pass the check
             if self._approved is None or self._spent:
+                return False
+            if self._grants is not None and self._permit is None:
                 return False
             try:  # trust was checked at authorize; revocation can come after it, and a store that cannot answer closes it
                 if self._decider is None or self._trust.is_revoked(self._decider, now=self._clock()):

@@ -174,7 +174,13 @@ def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_aga
     assert set(policy) == {"WRITES_A_DOCUMENT", "WRITES_NO_DOCUMENT"}
     assert policy["WRITES_A_DOCUMENT"] == ("ingest", "record")
     assert set(policy["WRITES_NO_DOCUMENT"]) == {"derive", "infer", "interpret", "record_external_finding", "discover",
-                                                 "detect_road_sign", "record_road_sign"}
+                                                 "detect_road_sign", "record_road_sign",
+                                                 # CCC #51 (single write funnel): doors that act on an existing record or are a
+                                                 # person's act. Reviewed 2026-10-31: no roster decision reads a document from them.
+                                                 "accept", "adopt_discovery", "advance_discovery", "amend", "attach_evidence",
+                                                 "classify", "correct", "decide", "erase", "establish_provenance", "ratify",
+                                                 "record_resolution", "redact", "reject", "relate", "resolve_uncertainty",
+                                                 "supersede"}
     assert not set(policy["WRITES_A_DOCUMENT"]) & set(policy["WRITES_NO_DOCUMENT"])
     text = EVIDENCE.read_text(encoding="utf-8")
     assert "ccc_doors_all_named()" in text and "def ccc_gated_doors" in text and "__wrapped__" in text

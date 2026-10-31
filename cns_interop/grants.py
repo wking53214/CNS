@@ -39,8 +39,10 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import threading
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Mapping, Optional
 
@@ -50,8 +52,10 @@ from . import crypto_backend
 from .decision import Verified
 from .envelope import MAX_INT, Refused, now_ms
 from .identity import Signer, is_agent_id, public_of
+from .ledger import MemoryLedger, Reservation
+from .negotiate import TERMS_KEYS, terms_digest
 
-__all__ = ["Grant", "GrantTable", "Approval", "approve", "Permit", "verify_audit"]
+__all__ = ["Grant", "GrantTable", "GrantStore", "Approval", "approve", "Permit", "verify_audit", "load_grants"]
 
 _APPROVAL_TAG = b"uai/1 approval\n"
 
@@ -113,7 +117,12 @@ def approve(approver: Signer, verified: Verified, action: str, *, ttl_ms: int = 
 
 @dataclass(frozen=True)
 class Permit:
-    """The receiver's yes. Holding one is what an action may rely on, not holding a Verified decision."""
+    """The receiver's yes. Holding one is what an action may rely on, not holding a Verified decision.
+
+    A permit is SINGLE USE: it is a lease on `(decision, action)` in the table's permit ledger. `complete()` spends it
+    for good once the action is done; `abort()` gives it back when the action did not happen. A holder that does
+    neither loses it when the lease lapses, and the action may then be offered again, so the action must be idempotent
+    on `idempotency_key`."""
 
     grant: str
     action: str
@@ -123,27 +132,131 @@ class Permit:
     subject_digest: str
     approver: str
     audit_digest: str
+    terms_digest: str = ""
+    idempotency_key: str = ""
+    _reservation: Optional[Reservation] = field(default=None, repr=False, compare=False)
+    _ledger: Any = field(default=None, repr=False, compare=False)
+
+    def complete(self) -> None:
+        if self._reservation is None or self._ledger is None:
+            raise ValueError("this permit holds no lease to complete")
+        _finish(self._ledger, self._reservation, commit=True)
+
+    def abort(self) -> None:
+        if self._reservation is None or self._ledger is None:
+            raise ValueError("this permit holds no lease to abort")
+        _finish(self._ledger, self._reservation, commit=False)
+
+
+def _finish(ledger: Any, reservation: Reservation, *, commit: bool) -> None:
+    try:
+        (ledger.commit if commit else ledger.release)(reservation)
+    except Refused:
+        raise
+    except Exception as exc:
+        raise Refused("unavailable", f"the permit ledger did not confirm the {'commit' if commit else 'release'} "
+                                     f"({type(exc).__name__})") from None
+
+
+class GrantStore:
+    """The receiver's durable grant state: which grants have been withdrawn. SQLite, shared by every process on the
+    host. A withdrawal written here survives a restart and is seen by every process; an unreadable store answers
+    Refused('unavailable'), never 'not withdrawn'."""
+
+    def __init__(self, path: "os.PathLike[str] | str", *, busy_ms: int = 5_000) -> None:
+        self._path, self._busy = str(path), busy_ms
+        Path(self._path).parent.mkdir(parents=True, exist_ok=True)
+        self._run("CREATE TABLE IF NOT EXISTS withdrawn (grant_id TEXT PRIMARY KEY, at INTEGER NOT NULL)")
+
+    def _run(self, sql: str, args: tuple = ()) -> list:  # type: ignore[type-arg]
+        try:
+            db = sqlite3.connect(self._path, timeout=self._busy / 1000, isolation_level=None)
+            try:
+                db.execute("PRAGMA synchronous=FULL")
+                return db.execute(sql, args).fetchall()
+            finally:
+                db.close()
+        except sqlite3.Error as exc:
+            raise Refused("unavailable", f"the grant store did not answer ({exc})") from None
+
+    def withdraw(self, grant_id: str, now: Optional[int] = None) -> None:
+        self._run("INSERT OR IGNORE INTO withdrawn VALUES (?, ?)", (grant_id, now_ms() if now is None else now))
+
+    def is_withdrawn(self, grant_id: str) -> bool:
+        return bool(self._run("SELECT 1 FROM withdrawn WHERE grant_id=?", (grant_id,)))
+
+
+def load_grants(text: str) -> List[Grant]:
+    """Read a receiver's grants from its own configuration file: one JSON object `{"grants": [ ... ]}`, read as strictly
+    as a wire message. Anything unexpected raises ValueError, so a typo can never become a wider grant."""
+    from .wire import loads
+
+    try:
+        doc = loads(text)
+    except Refused as exc:
+        raise ValueError(f"the grants file is not strict JSON ({exc.code})") from None
+    if set(doc) != {"grants"} or not isinstance(doc["grants"], list):
+        raise ValueError('the grants file is exactly {"grants": [...]}')
+    keys = {"id", "capability", "version", "requester", "deciders", "actions", "disclose_max", "expires_at",
+            "approvers", "retain_ms"}
+    required = {"id", "capability", "version", "requester", "deciders", "actions"}
+    out = []
+    for g in doc["grants"]:
+        if not isinstance(g, dict) or not required <= set(g) <= keys:
+            raise ValueError("a grant has " + ", ".join(sorted(required)) + " and optionally the rest of: "
+                             + ", ".join(sorted(keys - required)))
+        for lst in ("deciders", "actions", "disclose_max", "approvers"):
+            if lst in g and (not isinstance(g[lst], list) or not all(isinstance(x, str) for x in g[lst])):
+                raise ValueError(f"{lst} is a list of text")
+        fields: Dict[str, Any] = {k: (frozenset(v) if isinstance(v, list) else v) for k, v in g.items()}
+        out.append(Grant(**fields))
+    return out
 
 
 class GrantTable:
-    def __init__(self, grants: List[Grant] = (), *, audit_path: "os.PathLike[str] | str | None" = None) -> None:  # type: ignore[assignment]
-        self._grants: Dict[tuple, Grant] = {}
+    """The receiver's policy. `store` makes withdrawals durable and shared; `permit_ledger` makes permits single use
+    across processes (pass a `FileLedger`, `SqliteLedger` or coordinated ledger; the default is this process only);
+    `audit_path` is safe for several writers. Without `store` a withdrawal lasts only as long as this object."""
+
+    def __init__(self, grants: List[Grant] = (), *, audit_path: "os.PathLike[str] | str | None" = None,  # type: ignore[assignment]
+                 store: Optional[GrantStore] = None, permit_ledger: Any = None, permit_lease_ms: int = 60_000,
+                 audit_recover: bool = False) -> None:
+        self._grants: Dict[tuple, Grant] = {}  # type: ignore[type-arg]
         for g in grants:
             if (g.capability, g.version) in self._grants:
                 raise ValueError(f"two grants for {g.capability} version {g.version}")
             self._grants[(g.capability, g.version)] = g
-        self._withdrawn: set = set()
+        self._withdrawn: set = set()  # type: ignore[type-arg]
+        self._store = store
+        self._permits = permit_ledger if permit_ledger is not None else MemoryLedger()
+        if not callable(getattr(self._permits, "reserve", None)):
+            raise ValueError("permit_ledger needs reserve, commit and release (see ledger.TwoPhaseLedger)")
+        self._lease_ms = permit_lease_ms
         self._lock = threading.Lock()
         self._audit = Path(audit_path) if audit_path is not None else None
         self._last = "0" * 64
         if self._audit is not None:
             self._audit.parent.mkdir(parents=True, exist_ok=True)
-            self._last = verify_audit(self._audit)
+            try:
+                self._last = verify_audit(self._audit)
+            except Refused:
+                if not audit_recover:
+                    raise
+                self._last = _recover_audit(self._audit)
 
     def withdraw(self, grant_id: str) -> None:
-        """Permission withdrawn. From the next `permit` on, every action under this grant is refused (`withdrawn`)."""
+        """Permission withdrawn. From the next `permit` on, every action under this grant is refused (`withdrawn`), in
+        every process that shares the `store`, and after a restart."""
+        if self._store is not None:
+            self._store.withdraw(grant_id)
+            return
         with self._lock:
             self._withdrawn.add(grant_id)
+
+    def _is_withdrawn(self, grant_id: str) -> bool:
+        if grant_id in self._withdrawn:
+            return True
+        return self._store.is_withdrawn(grant_id) if self._store is not None else False
 
     def _grant_for(self, capability: Any, version: Any) -> Grant:
         g = self._grants.get((capability, version)) if isinstance(capability, str) else None
@@ -156,7 +269,7 @@ class GrantTable:
         covers every field the terms ask to see? Raises Refused. A requester calls this on the offer."""
         t = now_ms() if now is None else now
         g = self._grant_for(terms.get("capability"), terms.get("version"))
-        if g.id in self._withdrawn:
+        if self._is_withdrawn(g.id):
             raise Refused("withdrawn", "the permission for this purpose was withdrawn")
         if g.expires_at is not None and t >= g.expires_at:
             raise Refused("grant_expired", "the permission for this purpose has expired")
@@ -172,27 +285,58 @@ class GrantTable:
 
     def permit(self, action: str, verified: Verified, terms: Mapping[str, Any], *, approval: Optional[Approval] = None,
                now: Optional[int] = None) -> Permit:
-        """May this receiver perform `action` on what `verified` judged? Permit, or Refused with the reason. Every
-        outcome is written to the audit record first-class: if that cannot be written, nothing is permitted."""
+        """May this receiver perform `action` on what `verified` judged? A single-use Permit, or Refused with the
+        reason. The terms must be the terms the decision was made under (their digest is compared with the one the
+        decider signed). Every outcome is written to the audit record: if that cannot be written, nothing is permitted
+        and the lease on the permit is given back."""
         t = now_ms() if now is None else now
         approver = ""
+        reservation: Optional[Reservation] = None
+        g: Optional[Grant] = None
         try:
+            if not isinstance(terms, Mapping) or set(terms) != TERMS_KEYS:
+                raise Refused("terms", "the terms are not complete UAI-1 terms")
             if not verified.allowed:
                 raise Refused("refused", "a decision that is not a pass permits nothing")
+            try:
+                held = terms_digest(terms)
+            except TypeError:
+                raise Refused("terms", "the terms cannot be digested") from None
+            if held != verified.terms_digest:
+                raise Refused("terms", "these are not the terms the decision was made under")
             g = self.check_terms(terms, now=t)
-            if verified.envelope.sender != terms.get("decider") or verified.subject != dict(terms["subject"]):
+            if verified.envelope.sender != terms["decider"] or verified.subject != dict(terms["subject"]):
                 raise Refused("terms", "the verified decision is not the one the terms describe")
             if action not in g.actions:
                 raise Refused("action", f"this grant does not permit {action!r}")
             if g.approvers:
                 approver = self._check_approval(g, approval, verified, action, t)
+            reservation = self._reserve(g, verified, action, t)
         except Refused as exc:
             self._record(t, action, terms, verified, approver, exc.code, "")
             raise
-        digest = self._record(t, action, terms, verified, approver, "permitted", g.id)
+        assert g is not None and reservation is not None
+        try:
+            digest = self._record(t, action, terms, verified, approver, "permitted", g.id)
+        except Refused:
+            _finish(self._permits, reservation, commit=False)
+            raise
         return Permit(grant=g.id, action=action, capability=g.capability, version=g.version,
                       decision_id=verified.envelope.id, subject_digest=verified.subject["digest"], approver=approver,
-                      audit_digest=digest)
+                      audit_digest=digest, terms_digest=held, idempotency_key=reservation.key,
+                      _reservation=reservation, _ledger=self._permits)
+
+    def _reserve(self, g: Grant, verified: Verified, action: str, now: int) -> Reservation:
+        try:
+            got: Reservation = self._permits.reserve(f"permit:{g.id}", f"{verified.envelope.id}:{action}",
+                                                     verified.envelope.expires_at, lease_ms=self._lease_ms, now=now)
+            return got
+        except Refused as exc:
+            if exc.code == "replayed":
+                raise Refused("replayed", "this decision already produced a permit for this action") from None
+            raise
+        except Exception as exc:
+            raise Refused("unavailable", f"the permit ledger gave no answer ({type(exc).__name__})") from None
 
     def _check_approval(self, g: Grant, approval: Optional[Approval], verified: Verified, action: str, now: int) -> str:
         if approval is None:
@@ -219,34 +363,70 @@ class GrantTable:
 
     def _record(self, now: int, action: str, terms: Mapping[str, Any], verified: Verified, approver: str, outcome: str,
                 grant: str) -> str:
-        entry = {"at": now, "action": action, "outcome": outcome, "grant": grant,
-                 "capability": str(terms.get("capability")), "version": terms.get("version") if isinstance(
-                     terms.get("version"), int) else 0, "decider": str(terms.get("decider")),
-                 "requester": str(terms.get("requester")), "decision_id": verified.envelope.id,
-                 "subject_digest": verified.subject.get("digest", ""), "approver": approver,
-                 "terms_digest": subject_digest({k: terms[k] for k in sorted(terms)}) if self._plain(terms) else "",
-                 "retain_ms": next((g.retain_ms for g in self._grants.values() if g.id == grant), 0)}
+        if not isinstance(terms, Mapping):
+            terms = {}  # an audit entry is written for every outcome, including terms that were not even a mapping
+        entry: Dict[str, Any] = {
+            "at": now, "action": action, "outcome": outcome, "grant": grant, "capability": str(terms.get("capability")),
+            "version": terms.get("version") if isinstance(terms.get("version"), int) else 0,
+            "decider": str(terms.get("decider")), "requester": str(terms.get("requester")),
+            "decision_id": verified.envelope.id, "subject_digest": verified.subject.get("digest", ""),
+            "approver": approver, "terms_digest": verified.terms_digest,
+            "retain_ms": next((g.retain_ms for g in self._grants.values() if g.id == grant), 0)}
         with self._lock:
-            entry["prev"] = self._last
-            digest = subject_digest(entry)
-            if self._audit is not None:
-                try:
-                    with open(self._audit, "ab", buffering=0) as fh:
-                        fh.write((json.dumps({**entry, "digest": digest}, sort_keys=True) + "\n").encode("utf-8"))
-                        os.fsync(fh.fileno())
-                except OSError as exc:
-                    raise Refused("unavailable", f"the audit record could not be written, so nothing is permitted "
-                                                 f"({type(exc).__name__})") from None
+            if self._audit is None:
+                entry["prev"] = self._last
+                self._last = subject_digest(entry)
+                return self._last
+            try:
+                import fcntl
+
+                with open(self._audit, "a+b") as fh:
+                    fcntl.flock(fh, fcntl.LOCK_EX)  # every writer, in any process, chains onto the REAL last entry
+                    entry["prev"] = _tail_digest(fh)
+                    digest = subject_digest(entry)
+                    fh.write((json.dumps({**entry, "digest": digest}, sort_keys=True) + "\n").encode("utf-8"))
+                    fh.flush()
+                    os.fsync(fh.fileno())
+            except OSError as exc:
+                raise Refused("unavailable", f"the audit record could not be written, so nothing is permitted "
+                                             f"({type(exc).__name__})") from None
             self._last = digest
             return digest
 
-    @staticmethod
-    def _plain(terms: Mapping[str, Any]) -> bool:
-        try:
-            subject_digest({k: terms[k] for k in sorted(terms)})
-            return True
-        except TypeError:
-            return False
+
+def _tail_digest(fh: Any) -> str:
+    """The digest of the last entry in an audit file opened for update (and locked); zeros if empty. A last line that
+    is not a complete entry means the file is damaged: Refused('unavailable'), and nothing is written."""
+    fh.seek(0, os.SEEK_END)
+    size = fh.tell()
+    if size == 0:
+        return "0" * 64
+    fh.seek(max(0, size - 65536))
+    data = fh.read()
+    if not data.endswith(b"\n"):
+        raise Refused("unavailable", "the audit record ends in a partial entry; recover it before writing")
+    try:
+        return str(json.loads(data.splitlines()[-1].decode("utf-8"))["digest"])
+    except (ValueError, KeyError, UnicodeDecodeError, TypeError, IndexError):
+        raise Refused("unavailable", "the audit record's last entry cannot be read") from None
+
+
+def _recover_audit(path: Path) -> str:
+    """Set a damaged audit file aside, untouched, and start a new chain whose first entry names the damaged file and
+    its SHA-256. This is an explicit operator action (`audit_recover=True`), never automatic."""
+    import hashlib
+
+    damaged = path.with_name(path.name + f".damaged.{int(time.time())}")
+    data = path.read_bytes()
+    os.replace(path, damaged)
+    entry = {"at": now_ms(), "outcome": "audit_recovered", "damaged_file": damaged.name,
+             "damaged_sha256": hashlib.sha256(data).hexdigest(), "prev": "0" * 64}
+    digest = subject_digest(entry)
+    with open(path, "wb") as fh:
+        fh.write((json.dumps({**entry, "digest": digest}, sort_keys=True) + "\n").encode("utf-8"))
+        fh.flush()
+        os.fsync(fh.fileno())
+    return digest
 
 
 def verify_audit(path: "os.PathLike[str] | str") -> str:

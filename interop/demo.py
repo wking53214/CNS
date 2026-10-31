@@ -93,13 +93,22 @@ class NodeAgent:
 def act(decision: Dict[str, Any], terms: Dict[str, Any], accept_digest: str, artifact: List[str], *,
         acting_for: str, capability: str, version: int, trust: str, ledger: str) -> Dict[str, Any]:
     """Run interop/act.py as its own process. Its configuration (who it acts for, which capability it acts on, which
-    deciders it trusts, its ledger) is its command line; the job carries only the decision and what it is about."""
+    deciders it trusts, its ledger) is its command line, and so is the receiver's POLICY: a grants file naming the
+    capability, decider and action, a durable grant store and an audit record. The job carries only the decision and what
+    it is about. Without that policy act.py refuses to start: a signature alone does not open the action."""
     job = {"decision": decision, "terms": terms, "accept_digest": accept_digest, "artifact": artifact}
     env = dict(os.environ, PYTHONPATH=str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    here = Path(ledger).parent
+    grants = here / "grants.json"
+    grants.write_text(json.dumps({"grants": [{"id": "demo-ingest", "capability": capability, "version": version,
+                                              "requester": acting_for, "deciders": [trust], "actions": ["ingest"],
+                                              "disclose_max": ["doc_type", "monthly_income_cents", "employer"]}]}),
+                      encoding="utf-8")
     done = subprocess.run([sys.executable, str(ACT_PY), "--acting-for", acting_for,
                            "--capability", capability, "--capability-version", str(version), "--trust", trust,
-                           "--ledger", ledger], input=json.dumps(job), capture_output=True, text=True,
-                          env=env, timeout=60, check=True)
+                           "--ledger", ledger, "--grants", str(grants), "--grant-store", str(here / "grants.db"),
+                           "--action", "ingest", "--audit", str(here / "audit.jsonl")], input=json.dumps(job),
+                          capture_output=True, text=True, env=env, timeout=60, check=True)
     result: Dict[str, Any] = json.loads(done.stdout)
     return result
 
@@ -253,12 +262,13 @@ def round_python_decides(log: List[str]) -> Dict[str, Any]:
         cold.discover(decider.manifest().to_wire())
         r = cold.request(decider.agent, document("x", 500_000), "income-screen", 1,
                          offer_fields=["monthly_income_cents", "doc_type"], max_ttl_ms=600_000)
-        reply = decider.handle(r.to_wire())
-        assert reply is not None
-        log.append(f"Rails: a requester the Python decider does not trust -> {reply.kind} "
-                   f"({reply.body['reasons'][0]})")
-        return {"result": result, "decider": dec_signer.agent, "stranger_reply": reply.kind,
-                "stranger_reason": reply.body["reasons"][0]}
+        try:
+            reply = decider.handle(r.to_wire())
+            seen = (reply.kind if reply is not None else "none", reply.body["reasons"][0] if reply is not None else "")
+        except Refused as exc:  # revision 3: a sender the decider has not admitted gets nothing signed and costs it no signature check
+            seen = ("dropped", exc.reason)
+        log.append(f"Rails: a requester the Python decider does not trust -> {seen[0]} ({seen[1]})")
+        return {"result": result, "decider": dec_signer.agent, "stranger_reply": seen[0], "stranger_reason": seen[1]}
     finally:
         agent.close()
 

@@ -23,6 +23,7 @@ hardened library; the protocol does not care which signer produced a valid signa
 from __future__ import annotations
 
 import hashlib
+from functools import lru_cache
 from typing import Optional, Tuple
 
 __all__ = ["public_key", "sign", "verify", "acceptable", "SEED_BYTES", "PUBLIC_BYTES", "SIGNATURE_BYTES"]
@@ -135,20 +136,34 @@ def sign(seed: bytes, message: bytes) -> bytes:
     return big_r + int.to_bytes(s, 32, "little")
 
 
+@lru_cache(maxsize=4096)
+def _public_point(public: bytes) -> Optional[Point]:
+    """A public key's decoded point if it is canonical and not of small order, else None. A pure function of 32 bytes, so
+    caching it cannot change an answer; it only stops a sender that reuses one key from making the receiver redo the
+    expensive part for every message."""
+    try:
+        a = _decompress(public)
+    except ValueError:
+        return None
+    if _equal(_mul(8, a), _IDENTITY):  # a small-order key (the identity among them) is "signed for" by anyone
+        return None
+    return a
+
+
 def _parse(public: bytes, signature: bytes) -> Optional[Tuple[Point, Point, int]]:
     """The checks every UAI-1 implementation shares before any equation is tried: lengths, canonical points, a
     canonical s, and a public key that is not of small order. None means refuse."""
     try:
         if len(public) != PUBLIC_BYTES or len(signature) != SIGNATURE_BYTES:
             return None
-        a = _decompress(bytes(public))
+        a = _public_point(bytes(public))
+        if a is None:
+            return None
         big_r = _decompress(bytes(signature[:32]))
         s = int.from_bytes(signature[32:], "little")
     except (ValueError, TypeError):
         return None
     if s >= _L:  # RFC 8032 5.1.7: refuse a non-canonical s, which would make one signature into many
-        return None
-    if _equal(_mul(8, a), _IDENTITY):  # a small-order key (the identity among them) is "signed for" by anyone
         return None
     return a, big_r, s
 

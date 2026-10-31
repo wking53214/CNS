@@ -100,6 +100,12 @@ class Flaky:
     def __init__(self, inner, fail=None):
         self.inner, self.fail = inner, fail or {}
 
+    def now(self):
+        return self.inner.now()
+
+    def next_fence(self):
+        return self.inner.next_fence()
+
     def get(self, key):
         if self.fail.get("get"):
             raise self.fail["get"]

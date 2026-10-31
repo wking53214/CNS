@@ -86,15 +86,16 @@ ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need PostgreS
 run). Their seams are not exercised here and nothing below speaks for them.
 
 CCC is covered as far as its gate goes and as far as its write permission goes. The gate judges an attempted `ingest`.
-CCC built with the roster's guard as its `write_permission` asks that guard before `ingest`, `record`, `derive`,
-`infer`, `interpret`, `record_external_finding`, `discover`, `detect_road_sign` and `record_road_sign`, so a direct call
-after a "no" is refused. An approved decision opens `ingest` and `record` once, for the one document it judged. The
-other seven carry a conclusion, a finding or an observation, which no seat judges, so they stay refused after any
-decision. The doors CCC gates are read off CCC itself and compared with the reader's two lists, so a door CCC starts
-gating later turns this script red until the reader names it. A CCC built without a permission is not stopped, and
-nothing here can see that. `decide` and the versioning methods are not gated, by CCC's design: a human's action is
-never held up by a machine's roster. CCC also leaves open, on purpose, the methods that change a record that already
-exists and `detect_conflict`, `ask`, `attach_evidence` and `relate`; nothing here speaks for them.
+CCC built with the roster's guard as its `write_permission` asks that guard before every write, since CCC #51 made them
+one funnel: `ingest` and `record`, which carry a document, and the rest, which do not. An approved decision opens
+`ingest` and `record` once, for the one document it judged. Every other door carries a conclusion, a finding, an
+observation, or acts on a record that already exists or is a person's act, none of which any seat judges, so those stay
+refused after any decision: under this permission a person's act is not let through by a machine's roster. The doors CCC
+gates are read off CCC itself and compared with the reader's two lists, so a door CCC starts gating later turns this
+script red until the reader names it, which is how CCC #51's seventeen new doors were found. A CCC built without a
+permission is not stopped, and nothing here can see that. `ingest` takes the document in as UNKNOWN: CCC refuses to
+ingest a conclusion and a model may not enter material as evidence. Methods CCC still leaves open (`detect_conflict`,
+`ask`) are not spoken for here.
 
 This is a check, not a demonstration: every scenario states the facts it must produce, and the script exits 1 if any
 differs, naming the scenario and the fact. Run with HERALD (at its root), TIE, Conservation_Kernel and
@@ -263,9 +264,14 @@ def door(root: RootArtifact, source_id: str) -> DoorArtifact:
 
 
 def ccc_ingest(text: str, source_id: str, **more) -> Attempt:
-    """The caller's step from the document to the attempt CCC judges: HERALD's reading, ingested as an inference by a
-    model actor. No repository ships this either. `more` overrides what the attempt asks CCC to record."""
-    return ccc_attempt("ingest", text, actor=CccActor.model("herald"), epistemic_status=CccStatus.INFERENCE,
+    """The caller's step from the document to the attempt CCC judges: HERALD's reading, taken in as material of unknown
+    standing by a model actor. No repository ships this either. `more` overrides what the attempt asks CCC to record.
+
+    It is UNKNOWN and not INFERENCE since CCC #51: `ingest` takes material in and refuses to make a conclusion
+    (CCC-EPISTEMIC-001), and a model may not enter material as evidence or as a human-established record
+    (CCC-RATIFICATION-001), so UNKNOWN is the honest standing for a document a machine read. A conclusion about it is
+    made later by `derive`, `infer` or `interpret`, which keep the evidence it rests on and ask the permission themselves."""
+    return ccc_attempt("ingest", text, actor=CccActor.model("herald"), epistemic_status=CccStatus.UNKNOWN,
                        metadata={"source_id": source_id}, reason="document read by HERALD", **more)
 
 
@@ -304,8 +310,18 @@ WRITES_A_DOCUMENT = ("ingest", "record")
 #: `interpret`), a finding (`record_external_finding`, `discover`) or an observation (`detect_road_sign`,
 #: `record_road_sign`). None carries the text the roster compared, only a claim about it, so no decision opens them.
 #: Policy, like READERS: reviewed with it, and held by `ccc_doors_all_named` against the doors CCC really gates.
+#:
+#: Since CCC #51 every write goes through one funnel, so CCC also asks about the doors that act on a record that ALREADY
+#: EXISTS or that a person performs: `accept`, `adopt_discovery`, `advance_discovery`, `amend`, `attach_evidence`,
+#: `classify`, `correct`, `decide`, `erase`, `establish_provenance`, `ratify`, `record_resolution`, `redact`, `reject`,
+#: `relate`, `resolve_uncertainty` and `supersede`. None of them brings in the text the roster compared, so no roster
+#: decision can read a document from one: under THIS permission they stay shut, and that is the stated policy, not an
+#: oversight. A deployment that wants a person's act to pass supplies CCC's human verifier (`ccc.human_auth`) for it; a
+#: machine's roster is never what lets a human's decision through.
 WRITES_NO_DOCUMENT = ("derive", "infer", "interpret", "record_external_finding", "discover", "detect_road_sign",
-                      "record_road_sign")
+                      "record_road_sign", "accept", "adopt_discovery", "advance_discovery", "amend", "attach_evidence",
+                      "classify", "correct", "decide", "erase", "establish_provenance", "ratify", "record_resolution",
+                      "redact", "reject", "relate", "resolve_uncertainty", "supersede")
 
 
 def reads_write(request: WriteRequest) -> Judged:
@@ -995,14 +1011,24 @@ def authorize_remote(guard: RemoteDecisionGuard, signed: Signed, wire: Optional[
 
 
 def act_elsewhere(signed: Signed, artifact: Judged, ledger: str) -> dict:
-    """Run interop/act.py as a separate process, configured to act for the operator and trust only the roster."""
+    """Run interop/act.py as a separate process, configured to act for the operator and trust only the roster. The
+    operator's POLICY is part of that configuration: a grants file that permits the one action `register-root` on this
+    capability from this roster and nothing else, a durable grant store and an audit record beside the ledger. A
+    roster's signature alone does not open the action; the operator's grant does."""
     job = {"decision": loads(signed.wire), "terms": signed.terms, "accept_digest": signed.accept_digest,
            "artifact": list(as_pair(artifact))}
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [HUB, os.environ.get("PYTHONPATH", "")])))
+    here = os.path.dirname(os.path.abspath(ledger))
+    grants = os.path.join(here, "spine-grants.json")
+    with open(grants, "w", encoding="utf-8") as fh:
+        json.dump({"grants": [{"id": "spine-register-root", "capability": SPINE_CAPABILITY.name,
+                               "version": SPINE_CAPABILITY.version, "requester": OPERATOR.agent,
+                               "deciders": [ROSTER.agent], "actions": ["register-root"], "disclose_max": []}]}, fh)
     done = subprocess.run([sys.executable, ACT_PY, "--acting-for", OPERATOR.agent, "--capability", SPINE_CAPABILITY.name,
                            "--capability-version", str(SPINE_CAPABILITY.version), "--trust", ROSTER.agent,
-                           "--ledger", ledger], input=json.dumps(job), capture_output=True, text=True, env=env,
-                          timeout=120, check=True)
+                           "--ledger", ledger, "--grants", grants, "--grant-store", os.path.join(here, "spine-grants.db"),
+                           "--action", "register-root", "--audit", os.path.join(here, "spine-audit.jsonl")],
+                          input=json.dumps(job), capture_output=True, text=True, env=env, timeout=120, check=True)
     return json.loads(done.stdout)
 
 

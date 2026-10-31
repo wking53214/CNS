@@ -31,6 +31,7 @@ from .disclosure import Committed, open_disclosure
 from .envelope import Envelope, Refused, now_ms, open_envelope, seal
 from .identity import Signer
 from .ledger import Ledger, MemoryLedger
+from .limits import Limits, RateLimiter
 from .manifest import Capability, Manifest, publish, read_manifest
 from .negotiate import check_terms, propose_terms, read_request, request_body, terms_digest
 from .trust import Admission, TrustPolicy
@@ -68,8 +69,13 @@ class Decider:
     def __init__(self, signer: Signer, *, name: str, implementation: str,
                  capabilities: Sequence[Tuple[Capability, Judge]], trust: TrustPolicy,
                  ledger: Optional[Ledger] = None, clock: Callable[[], int] = now_ms, message_ttl_ms: int = 60_000,
-                 endorsements: Iterable[Envelope] = ()) -> None:
+                 endorsements: Iterable[Envelope] = (), unknown_sender: str = "drop",
+                 limits: Optional[Limits] = None, limiter: Optional[RateLimiter] = None) -> None:
+        if unknown_sender not in ("drop", "refuse"):
+            raise ValueError("unknown_sender is 'drop' (no reply, no signature check) or 'refuse' (a signed refusal)")
         self.signer, self.name, self.implementation = signer, name, implementation
+        self._unknown, self._limits, self._limiter = unknown_sender, limits if limits is not None else Limits(), limiter
+        self.dropped = self.rate_limited = 0
         self._caps = {(c.name, c.version): (c, j) for c, j in capabilities}
         self._trust, self._ledger, self._clock, self._ttl = trust, ledger or MemoryLedger(), clock, message_ttl_ms
         self._endorsements = list(endorsements)
@@ -95,6 +101,16 @@ class Decider:
         self._admitted.pop(agent, None)
         self._trust.admit(agent, now=now)  # pinned, or refused
 
+    def _known(self, agent: str, now: int) -> bool:
+        """Whether `agent` is one this receiver has already admitted: pinned, or admitted through an endorsement it read in
+        a manifest and that has not lapsed; and not revoked. The same answer `_admit` gives, without the signature."""
+        if self._trust.is_revoked(agent, now=now):
+            return False
+        if agent in self._trust.pinned:
+            return True
+        cached = self._admitted.get(agent)
+        return cached is not None and (cached.expires_at is None or now < cached.expires_at)
+
     def _refuse(self, env: Envelope, code: str, reason: str) -> Envelope:
         return seal(self.signer, "refuse", {"code": code, "reasons": [reason]}, to=env.sender, reply_to=env,
                     ttl_ms=self._ttl, now=self._clock())
@@ -102,6 +118,16 @@ class Decider:
     def handle(self, wire: Mapping[str, Any]) -> Optional[Envelope]:
         """Process one inbound message; return the reply to send, or None (a manifest needs none)."""
         now = self._clock()
+        claimed = wire.get("from") if isinstance(wire, Mapping) else None
+        if self._limiter is not None and not self._limiter.allow(claimed):
+            self.rate_limited += 1  # spent nothing on it: no parsing beyond this, no signature check, no reply
+            raise Refused("rate_limited", "this receiver is not taking more messages from that source right now")
+        if (self._unknown == "drop" and isinstance(wire, Mapping) and wire.get("kind") in ("request", "accept")
+                and isinstance(claimed, str) and not self._known(claimed, now)):
+            # A sender this receiver has not admitted cannot be served, so nothing is spent on proving who it is and
+            # nothing is signed for it. (Anyone can make a key; answering them all with a signature is a free amplifier.)
+            self.dropped += 1
+            raise Refused("untrusted", "the sender is not one this receiver deals with")
         if isinstance(wire, Mapping) and wire.get("kind") == "manifest":
             # Admitted once, here, and remembered until the endorsement lapses; a sender who is not admitted
             # leaves nothing behind to re-check on every later message.
@@ -109,7 +135,8 @@ class Decider:
             if admission is not None and admission.via == "endorsed":
                 self._admitted[manifest.agent] = admission
             return None
-        env = open_envelope(wire, now=now, audience=self.agent, kinds={"request", "accept"})
+        env = open_envelope(wire, now=now, audience=self.agent, kinds={"request", "accept"},
+                            max_nodes=self._limits.max_nodes)
         _must_expire(env)
         try:
             self._admit(env.sender, now)

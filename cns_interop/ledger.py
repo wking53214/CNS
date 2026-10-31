@@ -65,6 +65,10 @@ class Reservation:
     expires_at: Optional[int]
     token: str
     lease_until: int
+    #: A value that only grows across every reservation the ledger grants. A protected target that remembers the highest
+    #: fence it has acted on and refuses a lower one (fencing.FencedTarget) rejects a stale holder whose lease lapsed
+    #: and whose action arrives late. 0 means this ledger issues none (FileLedger), so such a target must not trust it.
+    fence: int = 0
 
     @property
     def key(self) -> str:
@@ -97,7 +101,9 @@ def _is_entry(e: Any) -> bool:
         return False
     if set(e) == {"sender", "id", "expires_at"}:
         return True
-    return (set(e) == {"sender", "id", "expires_at", "lease_until", "token"} and isinstance(e["token"], str)
+    return (set(e) in ({"sender", "id", "expires_at", "lease_until", "token"},
+                       {"sender", "id", "expires_at", "lease_until", "token", "fence"})
+            and isinstance(e["token"], str)
             and isinstance(e["lease_until"], int) and not isinstance(e["lease_until"], bool))
 
 
@@ -117,12 +123,14 @@ def _spend_step(cur: Optional[Dict[str, Any]], sender: str, message_id: str, exp
 
 
 def _reserve_step(cur: Optional[Dict[str, Any]], sender: str, message_id: str, expires_at: Optional[int],
-                  now: int, lease_ms: int, token: str) -> Dict[str, Any]:
+                  now: int, lease_ms: int, token: str, fence: int = 0) -> Dict[str, Any]:
     if cur is not None:
         raise Refused("replayed", "this message was already accepted once" if "lease_until" not in cur
                       else "this message is being redeemed right now")
-    return {"sender": sender, "id": message_id, "expires_at": expires_at, "lease_until": now + lease_ms,
-            "token": token}
+    entry = {"sender": sender, "id": message_id, "expires_at": expires_at, "lease_until": now + lease_ms, "token": token}
+    if fence:
+        entry["fence"] = fence
+    return entry
 
 
 def _commit_step(cur: Optional[Dict[str, Any]], r: Reservation) -> Dict[str, Any]:
@@ -146,6 +154,11 @@ class MemoryLedger:
         self._seen: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._keep_ms = keep_ms
+        self._fence = 0
+
+    def _next_fence(self) -> int:
+        self._fence += 1  # called from a step, which runs under self._lock
+        return self._fence
 
     def _mutate(self, sender: str, message_id: str, now: Optional[int],
                 step: Callable[[Optional[Dict[str, Any]], int], Optional[Dict[str, Any]]]) -> Dict[str, Any]:
@@ -167,8 +180,8 @@ class MemoryLedger:
                 now: Optional[int] = None) -> Reservation:
         token, lease = secrets.token_hex(16), _check_lease(lease_ms)
         e = self._mutate(sender, message_id, now, lambda cur, t: _reserve_step(
-            cur, sender, message_id, expires_at, t, lease, token))
-        return Reservation(sender, message_id, expires_at, token, e["lease_until"])
+            cur, sender, message_id, expires_at, t, lease, token, self._next_fence()))
+        return Reservation(sender, message_id, expires_at, token, e["lease_until"], e.get("fence", 0))
 
     def commit(self, reservation: Reservation, *, now: Optional[int] = None) -> None:
         self._mutate(reservation.sender, reservation.message_id, now, lambda cur, t: _commit_step(cur, reservation))
@@ -405,14 +418,32 @@ class Coordinator(Protocol):
 
     def cas(self, key: str, expected: Optional[Dict[str, Any]], new: Optional[Dict[str, Any]]) -> bool: ...
 
+    def now(self) -> int:
+        """The coordinator's own clock, in milliseconds. Every lease is judged by THIS clock and never by a caller's, so
+        a host whose clock is wrong cannot shorten or lengthen anyone's lease. A SQL store answers `now()`; etcd answers
+        with a lease TTL; a store that cannot give one cannot be a coordinator."""
+
+    def next_fence(self) -> int:
+        """A linearizable counter that only grows (a sequence, an etcd revision). Handed out with each reservation."""
+
 
 class InMemoryCoordinator:
     """A single-process stand-in, linearizable by a lock. It exists so the semantics can be tested, including with
     injected faults. It is NOT evidence that any real distributed store behaves this way."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: Callable[[], int] = now_ms) -> None:
         self._data: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
+        self._clock = clock
+        self._fence = 0
+
+    def now(self) -> int:
+        return self._clock()
+
+    def next_fence(self) -> int:
+        with self._lock:
+            self._fence += 1
+            return self._fence
 
     def get(self, key: str) -> Optional[Dict[str, Any]]:
         with self._lock:
@@ -435,13 +466,18 @@ class CoordinatedLedger:
     answer from the coordinator (an exception, a timeout, an ambiguous write) is Refused('unavailable'): no
     authoritative state, no permission. Entries are never pruned here; give the coordinator a TTL from `expires_at`."""
 
-    def __init__(self, coordinator: Coordinator, *, attempts: int = 3) -> None:
-        self._c, self._attempts = coordinator, attempts
+    def __init__(self, coordinator: Coordinator, *, attempts: int = 3, allow_caller_time: bool = False) -> None:
+        if not all(callable(getattr(coordinator, m, None)) for m in ("get", "cas", "now", "next_fence")):
+            raise ValueError("a coordinator needs get, cas, now and next_fence (see ledger.Coordinator)")
+        self._c, self._attempts, self._caller_time = coordinator, attempts, allow_caller_time
 
     def _run(self, sender: str, message_id: str, now: Optional[int],
              step: Callable[[Optional[Dict[str, Any]], int], Optional[Dict[str, Any]]]) -> Dict[str, Any]:
-        key, t = f"{sender} {message_id}", now_ms() if now is None else now
+        key = f"{sender} {message_id}"
         try:
+            # Time comes from the COORDINATOR, not from the caller, unless a test stand-in is explicitly allowed to drive
+            # it: a host with a wrong clock must not be able to shorten another host's lease.
+            t = now if (self._caller_time and now is not None) else self._c.now()
             for _ in range(self._attempts):
                 cur = self._c.get(key)
                 if cur is not None and _forgotten(cur, t - 1, t) and "lease_until" in cur:
@@ -465,8 +501,8 @@ class CoordinatedLedger:
                 now: Optional[int] = None) -> Reservation:
         token, lease = secrets.token_hex(16), _check_lease(lease_ms)
         e = self._run(sender, message_id, now, lambda cur, t: _reserve_step(
-            cur, sender, message_id, expires_at, t, lease, token))
-        return Reservation(sender, message_id, expires_at, token, e["lease_until"])
+            cur, sender, message_id, expires_at, t, lease, token, self._c.next_fence()))
+        return Reservation(sender, message_id, expires_at, token, e["lease_until"], e.get("fence", 0))
 
     def commit(self, reservation: Reservation, *, now: Optional[int] = None) -> None:
         self._run(reservation.sender, reservation.message_id, now, lambda cur, t: _commit_step(cur, reservation))
