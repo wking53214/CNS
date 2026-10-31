@@ -38,7 +38,7 @@ function plugs in; that plug-in is a contract, labeled `live=False` until someon
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Mapping, Protocol, Sequence, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Sequence, Tuple
 
 from cns.gate import GateOutcome
 
@@ -137,16 +137,31 @@ class AdapterJudge:
     for a pass and only for the kinds the terms ask for (the decider enforces the rest). Any failure, in the adapter,
     in parsing, or in the policy, is raised, and the decider signs a terminal_breach that says so."""
 
-    def __init__(self, adapter: AgentAdapter, policy: Policy) -> None:
-        self._adapter, self._policy = adapter, policy
+    def __init__(self, adapter: AgentAdapter, policy: Policy,
+                 observer: Optional[Callable[[Any, Optional[Recommendation], Optional[Judgment], Optional[Exception]], None]] = None) -> None:
+        self._adapter, self._policy, self._observer = adapter, policy, observer
 
     @property
     def info(self) -> ProviderInfo:
         return self._adapter.info()
 
     def __call__(self, capability: Capability, disclosed: Dict[str, Any], subject: Dict[str, str]) -> Judgment:
-        raw = self._adapter.recommend(capability, dict(disclosed), dict(subject))
-        rec = parse_recommendation(raw, capability)
+        raw: Any = None
+        rec: Optional[Recommendation] = None
+        try:
+            raw = self._adapter.recommend(capability, dict(disclosed), dict(subject))
+            rec = parse_recommendation(raw, capability)
+            judgment = self._decide(capability, disclosed, subject, rec)
+        except Exception as exc:
+            if self._observer is not None:
+                self._observer(raw, rec, None, exc)  # what was asked, what came back, and why it was refused
+            raise
+        if self._observer is not None:
+            self._observer(raw, rec, judgment, None)
+        return judgment
+
+    def _decide(self, capability: Capability, disclosed: Dict[str, Any], subject: Dict[str, str],
+                rec: Recommendation) -> Judgment:
         rec = self._policy(capability, dict(disclosed), dict(subject), rec)
         if not isinstance(rec, Recommendation) or rec.verdict not in VERDICTS:
             raise _bad("the policy returned something that is not a recommendation")

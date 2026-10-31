@@ -112,3 +112,23 @@ production configuration of `synchronous_standby_names` is correct. `require_syn
 the timeout behavior above; it is not a proof of the server's replication.
 
 Existing test edited (rule 5): the import allow-list in `test_uai_vectors.py` also permits `psycopg` in `ledger_postgres.py`.
+
+## Provider boundary (D, in place of live keys)
+
+Additive: `cns_interop/providers.py` (Anthropic Messages and Google Gemini `generateContent` clients on the standard library, a
+`ProvenanceLog`), `AdapterJudge(observer=)`, and `interop/live_providers.py`.
+
+**Nothing in this repository has called a live model provider.** There is no API key in the environment, `api.openai.com` and the
+model hosts (Hugging Face, Ollama) are unreachable from the sandbox, and no model runtime could be installed, so a real local model
+was not possible either. What is real and was executed: both clients against local servers that speak each provider's actual wire
+format (labeled STUB in `test_providers.py`, 45 tests): timeouts, HTTP 401/429/500, non-JSON and oversized answers, truncated or
+filtered or multi-block or tool-call answers, redirects (not followed, so a key cannot be sent elsewhere), the key kept in a
+header only and absent from every URL, body, record and error, and a provenance record per call (provider, model requested and
+reported, request and response digests, latency, finish reason, accepted or rejected and why). Hostile outputs (a stated human
+approval, a confidence offered as authority, an unsupported action request, an instruction to the receiver, prose around the
+object, an unsupported evidence kind) are refused by the strict reader and signed as a failure; a model fooled into a pass cannot
+override the decider's policy, and an escalation stays a retry.
+
+`interop/live_providers.py` runs one real exchange per provider that has `*_API_KEY` and `*_MODEL` set, writes the evidence, and
+otherwise prints `NOT EXECUTED` and exits 3, so it cannot be mistaken for a pass. `ProviderInfo.live` is never set by library code.
+**Provider interoperability stays UNEXECUTED until someone supplies a key and runs it.**
