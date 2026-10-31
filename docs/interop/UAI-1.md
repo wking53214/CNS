@@ -38,7 +38,7 @@ Every message is one JSON object with exactly these fields:
 | field | value |
 |---|---|
 | `v` | `"uai/1"`. A receiver refuses any other value; it never guesses at a dialect. |
-| `kind` | one of `manifest`, `endorsement`, `request`, `offer`, `accept`, `refuse`, `decision` |
+| `kind` | one of `manifest`, `endorsement`, `request`, `offer`, `accept`, `refuse`, `decision`, `revocation` (added in revision 2, see section 3) |
 | `id` | 32 lowercase hex digits, random, unique per message |
 | `from` | the sender's identity (section 3) |
 | `to` | the one identity it is addressed to, or `""` for a broadcast |
@@ -84,6 +84,16 @@ Whether to **deal** with an identity is the receiver's decision alone. Two ways 
 - **Endorsed**: an `endorsement` envelope, body exactly `{"subject": <identity>, "domain": <text>}`, `to` the
   subject, signed by an authority the receiver recognises **for that domain**, with an `expires_at` (one without
   expiry is refused). Endorsement is one level deep.
+
+- **Revocation and rotation statements** (revision 2): a `revocation` envelope, body exactly `{"subject", "action",
+  "successor", "reason", "effective_at"}`. `subject` is an identity or an endorsement id; `action` is `revoke` or
+  `rotate`; `successor` is `""` for a revoke and another identity for a rotate. The subject may sign either; a
+  receiver-listed authority may sign `revoke`; nobody else is heard. A revoke only reduces trust. A rotate can add it,
+  so a receiver follows one only if it chose to (`follow_rotation`) and only from a pinned predecessor, and an
+  authority's revoke of a key that already rotated withdraws the successor. There is no un-revoke. The receiver stores
+  statements itself (`cns_interop.revocation.RevocationStore`) and may bound their staleness: past
+  `max_staleness_ms`, or never refreshed, it refuses as `unavailable`. An implementation that does not know the
+  `revocation` kind refuses it as `malformed`, which fails closed. See `docs/migrations/uai-1-revision-2.md`.
 
 A receiver may revoke identities and endorsement ids; revocation beats every yes. A receiver admits an endorsed
 sender once, when it reads that sender's manifest, and remembers the admission until the endorsement lapses; a sender
@@ -191,8 +201,8 @@ UAI-1 is a foundation, not the whole interface. Not specified or implemented her
 
 - **Confidentiality and sessions.** Envelopes are authenticated, not encrypted. Run them over TLS or another
   confidential channel. There is no key agreement or session layer.
-- **Federation beyond one level.** No endorsement chains, delegation, published revocation lists or key rotation
-  statements. The Node implementation pins only.
+- **Federation beyond one level.** No endorsement chains, delegation or published revocation lists (statements are
+  signed and stored by each receiver; how they reach it is its own business). The Node implementation pins only.
 - **A shared ledger across hosts.** Single use holds per audience on one host (`FileLedger`, `SqliteLedger`);
   several hosts acting for one identity need `CoordinatedLedger` over a linearizable store the receiver owns, and
   refuse (`unavailable`) when that store gives no definite answer. No real store adapter ships: the in-memory

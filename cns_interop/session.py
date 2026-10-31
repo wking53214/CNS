@@ -85,12 +85,12 @@ class Decider:
                        endorsements=self._endorsements, ttl_ms=24 * 3600 * 1000, now=self._clock())
 
     def _admit(self, agent: str, now: int) -> None:
-        if agent in self._trust.revoked:
+        if self._trust.is_revoked(agent, now=now):
             self._admitted.pop(agent, None)
             raise Refused("untrusted", "this receiver has revoked that identity")
         cached = self._admitted.get(agent)
-        if cached is not None and (cached.expires_at is None or now < cached.expires_at) and \
-                cached.authority not in self._trust.revoked and cached.endorsement not in self._trust.revoked:
+        if cached is not None and (cached.expires_at is None or now < cached.expires_at) and not (
+                self._trust.is_revoked(cached.authority, now=now) or self._trust.is_revoked(cached.endorsement, now=now)):
             return
         self._admitted.pop(agent, None)
         self._trust.admit(agent, now=now)  # pinned, or refused

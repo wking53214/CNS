@@ -9,7 +9,7 @@ expired one. Without that, "interoperable" meant "imports the same Python packag
 An envelope is a small, fixed set of fields around a free-form `body`:
 
     v            "uai/1", the protocol version. Anything else is refused, never guessed at.
-    kind         what the message is (KINDS).
+    kind         what the message is (KINDS; `revocation` was added after the first release, see docs/migrations).
     id           32 random hex digits, unique per message; a receiver's ledger refuses a second use.
     from         the sender's identity (identity.py). The signature must verify as this key.
     to           the one identity it is addressed to, or "" for a broadcast such as a manifest.
@@ -62,6 +62,7 @@ KINDS: FrozenSet[str] = frozenset({
     "accept",       # the requester agreeing to those terms, with what it discloses
     "refuse",       # either side declining, with reasons
     "decision",     # the agent's signed verdict (decision.py)
+    "revocation",   # a signed statement that an identity or endorsement is no longer trusted, or was replaced
 })
 FIELDS: FrozenSet[str] = frozenset({"v", "kind", "id", "from", "to", "conversation", "in_reply_to", "issued_at",
                                     "expires_at", "body", "sig"})

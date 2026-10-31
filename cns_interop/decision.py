@@ -278,7 +278,9 @@ class RemoteDecisionGuard:
             raise ValueError("revoke takes an agent identity")
         with self._lock:
             t = self._trust
-            self._trust = TrustPolicy(pinned=t.pinned, authorities=t.authorities, revoked=t.revoked | {agent})
+            self._trust = TrustPolicy(pinned=t.pinned, authorities=t.authorities, revoked=t.revoked | {agent},
+                                      revocations=t.revocations, max_staleness_ms=t.max_staleness_ms,
+                                      follow_rotation=t.follow_rotation)
 
     def __call__(self, artifact: object) -> bool:
         try:
@@ -288,7 +290,10 @@ class RemoteDecisionGuard:
         with self._lock:  # check and spend as one step, so concurrent callers cannot all pass the check
             if self._approved is None or self._spent:
                 return False
-            if self._decider in self._trust.revoked:  # trust was checked at authorize; revocation can come after it
+            try:  # trust was checked at authorize; revocation can come after it, and a store that cannot answer closes it
+                if self._decider is None or self._trust.is_revoked(self._decider, now=self._clock()):
+                    return False
+            except Exception:
                 return False
             if self._expires_at is not None and self._clock() >= self._expires_at:
                 return False
