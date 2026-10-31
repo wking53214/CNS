@@ -426,3 +426,52 @@ def test_many_callers_at_once_get_exactly_one_yes_from_a_one_use_permission():
         [t.start() for t in threads]
         [t.join() for t in threads]
         assert answers.count(True) == 1 and g.spent
+
+
+# -- commit and abort: a write that fails can give the permission back, one that finished cannot ------------------------
+
+def test_a_committed_permission_stays_used():
+    g = guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True and not g.committed
+    g.commit()
+    assert g.committed and g.spent
+    g.abort()  # too late: the write it permitted happened
+    assert g.spent and g(("doc-1", "abc")) is False
+
+
+def test_an_aborted_permission_is_given_back_and_opens_once_more():
+    g = guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True
+    g.abort()
+    assert not g.spent and not g.committed
+    assert g(("doc-1", "abc")) is True and g.spent
+    g.commit()
+    assert g(("doc-1", "abc")) is False
+
+
+def test_an_abort_with_no_yes_outstanding_changes_nothing():
+    g = guard()
+    g.abort()
+    g.authorize(decision())
+    g.abort()
+    assert g.authorized and not g.spent
+    assert g(("doc-1", "abc")) is True
+
+
+def test_an_abort_gives_back_only_the_permission_for_the_same_object():
+    g = seat_guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc", "a different object")) is False
+    assert g(("doc-1", "abc")) is True
+    g.abort()
+    assert g(("doc-1", "abc", "a different object")) is False
+    assert g(("doc-1", "abc")) is True
+
+
+def test_while_a_yes_is_outstanding_nobody_else_gets_one():
+    g = guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True
+    assert g(("doc-1", "abc")) is False  # reserved: neither committed nor given back yet

@@ -17,6 +17,10 @@ this process. When the kernel then asks about an artifact, the guard answers Tru
   - the decision has not expired, and
   - the artifact reads, through `subject_of`, as exactly the identity and content digest the decision approved.
 
+A yes is outstanding until it is settled. The code that did the write may report how it ended: `commit()` keeps the
+permission used, `abort()` gives it back so that an honest retry of the same call is not refused for a write that never
+happened. A hook that never calls either leaves the permission used, as before.
+
 One decision opens one action: every decision carries a nonce, and the first guard authorized with it spends the nonce
 for the whole process. A second guard handed the same decision, however fresh, is refused. That is in-process only:
 the spent set lives in this module, so two processes can each spend the same decision.
@@ -100,6 +104,7 @@ class DecisionGuard:
         self._expires_at: Optional[float] = None
         self._approved: Optional[Judged] = None
         self._spent = False
+        self._committed = False
 
     @property
     def authorized(self) -> bool:
@@ -108,6 +113,27 @@ class DecisionGuard:
     @property
     def spent(self) -> bool:
         return self._spent
+
+    @property
+    def committed(self) -> bool:
+        """Whether the write this guard permitted was reported finished. A committed permission is used for good."""
+        return self._committed
+
+    def commit(self) -> None:
+        """Report that the write the last yes permitted has happened. The permission stays used, and `abort` can no
+        longer give it back. Nothing happens if no yes is outstanding."""
+        with self._lock:
+            if self._spent:
+                self._committed = True
+
+    def abort(self) -> None:
+        """Report that the write the last yes permitted failed before it changed anything, and give the permission back:
+        the guard opens again for the same object, once. Nothing happens if no yes is outstanding or the write was
+        already reported finished. Only the caller that holds the write can know it changed nothing, so only the native
+        hook that performed it should call this (the kernel's ledger and CCC do, on a guard that offers it)."""
+        with self._lock:
+            if self._spent and not self._committed:
+                self._spent = False
 
     def authorize(self, decision: Decision) -> None:
         """Open the guard for the document `decision` approved. Raises ValueError, leaving the guard closed, unless
