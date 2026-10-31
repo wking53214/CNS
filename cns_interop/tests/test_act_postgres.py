@@ -37,8 +37,9 @@ def cluster():
 def act(tmp, cluster, job, prefix, *, extra=(), env_extra=None, dsn=None, diagnostics=False):
     args = [sys.executable, str(ACT_PY), "--acting-for", REQ.agent, "--capability", "income-screen", "--capability-version", "1",
             "--trust", DEC.agent, "--ledger-backend", "postgres", "--ledger-dsn-env", "RECEIVER_DSN", "--ledger-prefix", prefix,
-            "--grants", str(grants_file(tmp / "grants.json")), "--grant-store", str(tmp / "grants.db"),
-            "--action", "release-funds", "--audit", str(tmp / "audit.jsonl"), *extra]
+            "--grants", str(grants_file(tmp / "grants.json")), "--action", "release-funds", *extra]
+    if "--policy-backend" not in extra:
+        args += ["--grant-store", str(tmp / "grants.db"), "--audit", str(tmp / "audit.jsonl")]
     if diagnostics:
         args.append("--diagnostics")
     env = {"PYTHONPATH": ROOT, "PATH": "/usr/bin:/bin", "RECEIVER_DSN": cluster.dsn if dsn is None else dsn, **(env_extra or {})}
@@ -93,11 +94,12 @@ def test_the_production_profile_refuses_the_single_host_file_backend(tmp_path):
 
 
 def test_diagnostics_name_the_backend_in_force_connect_for_real_and_never_print_the_dsn(cluster, tmp_path):
-    done = act(tmp_path, cluster, {}, prefix(), diagnostics=True,
+    done = act(tmp_path, cluster, {}, prefix(), diagnostics=True, extra=["--policy-backend", "postgres"],
                env_extra={"UAI_PROFILE": "production", "UAI_CRYPTO_BACKEND": "cryptography"})
     assert done.returncode == 0, done.stdout + done.stderr
     d = json.loads(done.stdout)
     assert d["ledger_backend"] == "postgres" and d["decision_ledger"] == "PostgresLedger" and d["permit_ledger"] == "PostgresLedger"
+    assert d["policy_backend"] == "postgres"
     assert d["crypto"]["backend"] == "cryptography" and d["crypto"]["profile"] == "production" and d["crypto"]["frozen"] is True
     assert cluster.dsn not in done.stdout and str(cluster.port) not in done.stdout
     down = Cluster()  # never started: nothing listens on its port
