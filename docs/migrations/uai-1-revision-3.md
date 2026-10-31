@@ -86,3 +86,29 @@ expected set was updated in the same reviewed change. Executed here against the 
 (Governance_Gateway 771952c, DGK 8d8d25f, DIT c801374, URE 0e5751c, interconnected_* afda263/59ab926/811c2f2/931c097,
 Ecology 3e90010, HERALD d08c36f, TIE 9d86041, Conservation_Kernel bf0e49b, ccc 84ffa5d): `full_chain`, `spine_run` and
 `ecology_answer` pass unchanged, and `evidence_spine` exits 0 with 38 scenarios ok, including the `act.py` grants-mode path.
+
+## Tier 1 (real coordinator): `PostgresLedger` (T1-3)
+
+Additive. `cns_interop/ledger_postgres.py`, optional extra `cns[postgres]` (`psycopg[binary]>=3.1`, imported only inside it; the
+core still has no dependencies; `dev` includes it so CI exercises it). CI gains one step that makes the PostgreSQL server
+binaries explicit: the ledger tests start real throwaway clusters with `initdb` and `pg_ctl`, never a mock, and FAIL (not skip)
+if they are missing.
+
+Executed against real PostgreSQL 16.15 clusters started by the tests (17 tests): the shared conformance properties; exactly one
+winner among 16 processes; leases judged by the server's clock (a lying caller clock gains nothing); fences that grow; a business
+write and the spend in one transaction, and a client killed mid-transaction leaving neither (exactly one effect after the retry);
+a message that survives a hard server stop, and `unavailable` while the server is down; a network partition behind a proxy that
+drops traffic (refusal in bounded time, nothing granted); and a primary with a real synchronous standby, the standby partitioned,
+the primary killed and the standby promoted: the commit the standby could not confirm was refused, the acknowledged reservation
+survived the failover, and the one unacknowledged request could be granted again.
+
+Findings made on the way, both kept as tests: `statement_timeout` does NOT interrupt a COMMIT that is waiting for the standby (the
+backend stays in `SyncRep`), so a client-side cancel timer is required; and a cancelled wait is answered with SUCCESS plus the
+notice "canceling wait for synchronous replication", which the ledger now refuses as `unavailable`. Taking that success at face
+value is the acknowledged-write-lost failure measured with Redis.
+
+What this does NOT show: a multi-host deployment (one machine), the behavior of a managed PostgreSQL service, or that a given
+production configuration of `synchronous_standby_names` is correct. `require_sync_replication=True` is a configuration check plus
+the timeout behavior above; it is not a proof of the server's replication.
+
+Existing test edited (rule 5): the import allow-list in `test_uai_vectors.py` also permits `psycopg` in `ledger_postgres.py`.

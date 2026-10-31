@@ -35,6 +35,14 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
+      - name: PostgreSQL server binaries (the ledger tests start real throwaway clusters, they do not mock the database)
+        # The runner image ships PostgreSQL; this makes the dependency explicit and installs it when it is missing. The tests
+        # FAIL, never skip, if initdb and pg_ctl cannot be found.
+        run: |
+          if ! ls /usr/lib/postgresql/*/bin/pg_ctl >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y postgresql
+          fi
+          ls /usr/lib/postgresql/*/bin/pg_ctl
       - name: Tests, including the public-shape snapshot
         run: python -m pytest -q
       - name: Type check the package it claims to type
