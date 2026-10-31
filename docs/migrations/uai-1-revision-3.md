@@ -73,3 +73,16 @@ Existing tests edited (CLAUDE.md rule 5; each assertion changed only as the step
 - `interop/node/agent.test.mjs`: the test I added in S6 that expected a signed refusal for an unadmitted sender now asserts the
   unsigned error and that nothing is signed.
 - `test_uai_vectors.py`: the expected Node pass count is 24.
+
+## Chains workflow repaired (found by running the spine against the sibling repositories at their default branches)
+
+The `chains` workflow was red on `main` before any revision 3 work. Cause: CCC #51 ("single write funnel") made `ingest`
+refuse a conclusion (`CCC-EPISTEMIC-001`) and made CCC ask its write permission before seventeen more doors. The spine
+ingested HERALD's reading as INFERENCE and did not name those doors, so its own check (`ccc_doors_all_named`) went red, as
+designed. Fixes in `chains/evidence_spine.py`: `ccc_ingest` takes the document in as `UNKNOWN` (CCC accepts that from a model;
+a conclusion is made later by `derive`, `infer` or `interpret`); the seventeen doors are named in `WRITES_NO_DOCUMENT`, with the
+reason, so under the roster's permission they stay shut. `tests/test_chains.py` pins that policy list on purpose, so its
+expected set was updated in the same reviewed change. Executed here against the siblings at their default branches
+(Governance_Gateway 771952c, DGK 8d8d25f, DIT c801374, URE 0e5751c, interconnected_* afda263/59ab926/811c2f2/931c097,
+Ecology 3e90010, HERALD d08c36f, TIE 9d86041, Conservation_Kernel bf0e49b, ccc 84ffa5d): `full_chain`, `spine_run` and
+`ecology_answer` pass unchanged, and `evidence_spine` exits 0 with 38 scenarios ok, including the `act.py` grants-mode path.
