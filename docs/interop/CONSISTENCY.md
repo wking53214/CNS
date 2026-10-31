@@ -65,3 +65,16 @@ high-availability claim needs a real standby and the failure tests in the plan. 
 3. Where the target can, check `Reservation.fence` (`FencedTarget`) in the target's own transaction.
 4. `commit` when done, `release` when the action did not happen. If the process dies, the lease lapses and a retry is safe only
    because of step 2 or 3.
+
+
+## Receiver policy and audit across hosts (revision 4)
+
+A host-local lock is not multi-host coordination. For several receiver hosts, `cns_interop/policy_postgres.py` keeps
+withdrawals, a compare-and-set policy version and one hash-chained audit record in the receiver's own PostgreSQL. Withdrawals
+are visible to the next check on every host; a host whose grants differ from the published policy refuses to start; two
+operators cannot publish the same version; concurrent permit attempts yield one permit; any edit or middle removal in the
+chain is detected. It is the same trust and availability as the one primary: not consensus, asynchronous standbys can lose a
+write, a cut-off tail of the chain is not detected (anchor the head digest elsewhere), and a database administrator is inside
+the boundary. Tested on one machine with processes standing in for hosts. A crash after a permit and before completion
+leaves the decision refused until the lease lapses and then offered again under the same idempotency key (at-least-once):
+the target must deduplicate on that key.
