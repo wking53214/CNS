@@ -1,6 +1,7 @@
 """live_providers.py: run ONE real exchange through each provider that has a key, and write the evidence.
 
-    ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=...  GEMINI_API_KEY=... GEMINI_MODEL=...  python interop/live_providers.py --out evidence.json
+    ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=...  GEMINI_API_KEY=... GEMINI_MODEL=...
+    OPENAI_API_KEY=... OPENAI_MODEL=...  GITHUB_MODELS_TOKEN=... COPILOT_MODEL=openai/gpt-4.1  python interop/live_providers.py --out evidence.json
 
 A provider with no key is reported as NOT EXECUTED and is never counted. If NOTHING was executed the exit status is 3, so a
 script or a CI job cannot mistake "no keys" for "passed". Nothing here is a stub: the base URLs are the providers' own, and
@@ -21,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cns_interop.adapter import AdapterJudge, PromptedModelAdapter, ProviderInfo, Recommendation  # noqa: E402
 from cns_interop.manifest import Capability  # noqa: E402
-from cns_interop.providers import ProvenanceLog, anthropic_complete, gemini_complete  # noqa: E402
+from cns_interop.providers import ProvenanceLog, anthropic_complete, copilot_complete, gemini_complete, openai_complete  # noqa: E402
 
 CAP = Capability(name="income-screen", version=1, summary="monthly income at or above 450000 cents",
                  accepts=("doc_type", "monthly_income_cents"), requires=("doc_type", "monthly_income_cents"),
@@ -53,7 +54,9 @@ def run_one(name: str, complete: Any, log: ProvenanceLog, model: str) -> Dict[st
 def main(argv: List[str]) -> int:
     results: List[Dict[str, Any]] = []
     for name, key_var, model_var, make in (("anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", anthropic_complete),
-                                           ("google", "GEMINI_API_KEY", "GEMINI_MODEL", gemini_complete)):
+                                           ("google", "GEMINI_API_KEY", "GEMINI_MODEL", gemini_complete),
+                                           ("openai", "OPENAI_API_KEY", "OPENAI_MODEL", openai_complete),
+                                           ("copilot-github-models", "GITHUB_MODELS_TOKEN", "COPILOT_MODEL", copilot_complete)):
         key, model = os.environ.get(key_var, ""), os.environ.get(model_var, "")
         if not key or not model:
             print(f"NOT EXECUTED: {name} (set {key_var} and {model_var})")

@@ -24,7 +24,7 @@ from test_session import CAP, DEC, REQ, Clock, doc  # type: ignore[import-not-fo
 
 from cns_interop.adapter import AdapterJudge, PromptedModelAdapter, ProviderInfo  # noqa: E402
 from cns_interop.envelope import Refused  # noqa: E402
-from cns_interop.providers import ProvenanceLog, anthropic_complete, gemini_complete  # noqa: E402
+from cns_interop.providers import ProvenanceLog, anthropic_complete, copilot_complete, gemini_complete, openai_complete  # noqa: E402
 from cns_interop.session import Decider, Requester  # noqa: E402
 from cns_interop.trust import TrustPolicy  # noqa: E402
 
@@ -75,18 +75,40 @@ def gemini_ok(text):
             "modelVersion": "gemini-test-reported"}
 
 
+def openai_ok(text):
+    return {"id": "c1", "object": "chat.completion", "model": "gpt-test-reported",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": text, "refusal": None}, "finish_reason": "stop"}]}
+
+
 def prompt_of(provider, body):
-    return body["messages"][0]["content"] if provider == "anthropic" else body["contents"][0]["parts"][0]["text"]
+    if provider == "gemini":
+        return body["contents"][0]["parts"][0]["text"]
+    return body["messages"][0]["content"]
+
+
+PROVIDER_NAME = {"anthropic": "anthropic", "gemini": "google", "openai": "openai", "copilot": "copilot-github-models",
+                 "copilot-azure": "copilot-azure-openai"}
+FINISH = {"anthropic": "end_turn", "gemini": "STOP", "openai": "stop", "copilot": "stop", "copilot-azure": "stop"}
+KEY_HEADER = {"anthropic": "x-api-key", "gemini": "x-goog-api-key", "openai": "authorization", "copilot": "authorization",
+              "copilot-azure": "api-key"}
 
 
 def make(provider, stub, log, **kw):
-    fn = anthropic_complete if provider == "anthropic" else gemini_complete
+    if provider == "copilot":
+        return copilot_complete(KEY, "model-x", log, base_url=stub.url, **kw)
+    if provider == "copilot-azure":
+        return copilot_complete(KEY, "model-x", log, route="azure-openai", base_url=stub.url, **kw)
+    fn = {"anthropic": anthropic_complete, "gemini": gemini_complete, "openai": openai_complete}[provider]
     return fn(KEY, "model-x", log, base_url=stub.url, **kw)
+
+
+def wrapper(provider):
+    return {"anthropic": anthropic_ok, "gemini": gemini_ok}.get(provider, openai_ok)
 
 
 def serving(provider, reply):
     """A stub that answers every request with `reply(prompt) -> text`, in the provider's envelope."""
-    wrap = anthropic_ok if provider == "anthropic" else gemini_ok
+    wrap = wrapper(provider)
     return Stub(lambda path, h, body: (200, {"content-type": "application/json"},
                                        json.dumps(wrap(reply(prompt_of(provider, body)))).encode()))
 
@@ -106,7 +128,7 @@ def exchange(complete, log, income=512_000, observer=True):
     return req.on_reply(dec.handle(accept.to_wire()).to_wire())
 
 
-PROVIDERS = ["anthropic", "gemini"]
+PROVIDERS = ["anthropic", "gemini", "openai", "copilot", "copilot-azure"]
 
 
 @pytest.mark.parametrize("provider", PROVIDERS)
@@ -116,10 +138,10 @@ def test_an_honest_answer_flows_through_the_strict_reader_and_the_policy_and_is_
         got = exchange(make(provider, stub, log), log)
         assert got.allowed and got.verdict == "pass"
         (rec,) = log.records
-        assert rec.provider == ("anthropic" if provider == "anthropic" else "google") and rec.call == "ok"
+        assert rec.provider == PROVIDER_NAME[provider] and rec.call == "ok"
         assert rec.model_requested == "model-x" and rec.model_reported.endswith("-reported")
         assert len(rec.request_sha256) == 64 and len(rec.response_sha256) == 64
-        assert rec.finish_reason in ("end_turn", "STOP") and rec.outcome == "accepted" and "pass" in rec.reason
+        assert rec.finish_reason == FINISH[provider] and rec.outcome == "accepted" and "pass" in rec.reason
         low = exchange(make(provider, stub, log), log, income=100_000)
         assert low.verdict == "retry" and log.records[-1].outcome == "accepted"
     finally:
@@ -133,15 +155,17 @@ def test_the_key_goes_in_a_header_only_and_never_appears_in_a_url_a_body_a_recor
         exchange(make(provider, stub, log), log)
         sent = stub.requests[0]
         assert KEY not in sent["path"] and KEY not in json.dumps(sent["body"])
-        header = "x-api-key" if provider == "anthropic" else "x-goog-api-key"
-        assert {k.lower(): v for k, v in sent["headers"].items()}.get(header) == KEY   # urllib re-cases header names
+        header = KEY_HEADER[provider]
+        sent_value = {k.lower(): v for k, v in sent["headers"].items()}.get(header)   # urllib re-cases header names
+        assert sent_value in (KEY, "Bearer " + KEY)
+        assert KEY not in sent["path"]
         assert KEY not in json.dumps([r.__dict__ for r in log.records])
     finally:
         stub.close()
 
 
 def failing(provider, mode):
-    wrap = anthropic_ok if provider == "anthropic" else gemini_ok
+    wrap = wrapper(provider)
     good = json.dumps(wrap("{}")).encode()
     j = {"content-type": "application/json"}
     if mode == "http-500":
@@ -165,25 +189,35 @@ def failing(provider, mode):
         out = wrap('{"verdict":"pass"')
         if provider == "anthropic":
             out["stop_reason"] = "max_tokens"
-        else:
+        elif provider == "gemini":
             out["candidates"][0]["finishReason"] = "MAX_TOKENS"
+        else:
+            out["choices"][0]["finish_reason"] = "length"
         return lambda p, h, b: (200, j, json.dumps(out).encode())
     if mode == "filtered":
-        out = {"content": [], "stop_reason": "refusal", "model": "m"} if provider == "anthropic" else {"promptFeedback": {"blockReason": "SAFETY"}}
+        out = {"anthropic": {"content": [], "stop_reason": "refusal", "model": "m"},
+               "gemini": {"promptFeedback": {"blockReason": "SAFETY"}}}.get(
+            provider, {"choices": [{"index": 0, "message": {"role": "assistant", "content": None, "refusal": "no"},
+                                    "finish_reason": "content_filter"}]})
         return lambda p, h, b: (200, j, json.dumps(out).encode())
     if mode == "two-blocks":
         out = wrap("a")
         if provider == "anthropic":
             out["content"].append({"type": "text", "text": "b"})
-        else:
+        elif provider == "gemini":
             out["candidates"][0]["content"]["parts"].append({"text": "b"})
+        else:
+            out["choices"].append(out["choices"][0])
         return lambda p, h, b: (200, j, json.dumps(out).encode())
     if mode == "tool-call":
         out = wrap("a")
         if provider == "anthropic":
             out["content"] = [{"type": "tool_use", "id": "t", "name": "run", "input": {"cmd": "rm -rf /"}}]
-        else:
+        elif provider == "gemini":
             out["candidates"][0]["content"]["parts"] = [{"functionCall": {"name": "run", "args": {"cmd": "rm -rf /"}}}]
+        else:
+            out["choices"][0]["message"]["tool_calls"] = [{"id": "t", "type": "function",
+                                                           "function": {"name": "run", "arguments": "{}"}}]
         return lambda p, h, b: (200, j, json.dumps(out).encode())
     raise AssertionError(mode)
 
@@ -287,8 +321,27 @@ def test_a_missing_key_or_a_bad_model_name_is_a_caller_error():
 def test_the_live_runner_says_not_executed_and_exits_nonzero_without_keys_so_it_cannot_be_mistaken_for_a_pass():
     import os
     import subprocess
-    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_MODEL", "GEMINI_MODEL")}
+    env = {k: v for k, v in os.environ.items() if k not in (
+        "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_MODEL", "GEMINI_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL",
+        "GITHUB_MODELS_TOKEN", "COPILOT_MODEL")}
     done = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[2] / "interop" / "live_providers.py")],
                           capture_output=True, text=True, env=env, timeout=60)
     assert done.returncode == 3
-    assert done.stdout.count("NOT EXECUTED") == 2 and "EXECUTED:" not in done.stdout.replace("NOT EXECUTED", "")
+    assert done.stdout.count("NOT EXECUTED") == 4 and "EXECUTED:" not in done.stdout.replace("NOT EXECUTED", "")
+
+
+def test_copilot_routes_are_explicit_and_the_azure_route_addresses_the_callers_own_deployment():
+    with pytest.raises(ValueError):
+        copilot_complete(KEY, "m", ProvenanceLog(), route="m365")                      # no such public route: refused, not guessed
+    with pytest.raises(ValueError):
+        copilot_complete(KEY, "m", ProvenanceLog(), route="azure-openai")              # needs the caller's own resource
+    with pytest.raises(ValueError):
+        openai_complete("", "m", ProvenanceLog())
+    stub, log = serving("copilot-azure", honest_model), ProvenanceLog()
+    try:
+        exchange(make("copilot-azure", stub, log), log)
+        sent = stub.requests[0]
+        assert sent["path"].startswith("/openai/deployments/model-x/chat/completions?api-version=")
+        assert "model" not in sent["body"]            # the deployment in the path names the model on this route
+    finally:
+        stub.close()
