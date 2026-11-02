@@ -73,10 +73,7 @@ Validation is not judgment. Integrity is not truth. Identity is not permission. 
 shapes so a system outside the process, in any language, can exchange requests, terms, selective disclosures and
 decisions. AI models and independent agents connect through **adapters**: an adapter turns a provider's answer into a
 `recommendation`, read by a strict parser that refuses anything beyond verdict, reasons, evidence and an escalation flag.
-The decider's own policy may lower the recommendation, a grant decides whether anything may be done, and a person may
-have to approve. Provider clients exist for Anthropic, Google Gemini, OpenAI (ChatGPT models) and Copilot (through GitHub
-Models or Azure OpenAI). **No live provider has ever been called in this repository** (no keys); every client is tested
-against local servers that speak the provider's wire format, and the live runner prints `NOT EXECUTED` without a key.
+The decider's own policy may lower the recommendation, a grant decides whether anything may be done, and a person may have to approve. UAI-1 provider clients exist for Anthropic, Google Gemini, OpenAI (ChatGPT models) and Copilot (through GitHub Models or Azure OpenAI). Their local wire-format tests do not establish live interoperability. The separate Anthropic composition-layer adapter documented below has been exercised with one explicitly authorized live request. That result does not establish live interoperability for the UAI-1 clients or other providers.
 
 ### Where it sits in STACK
 
@@ -445,6 +442,79 @@ package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and rec
 works, but a tag says which contract you are joining on. The newest tag, `v2.3.0`, is the release a consumer pins; `main` has moved on
 since (see Unreleased in `CHANGELOG.md`), and what 2.3.0 adds is in `CHANGELOG.md`, and
 `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
+
+## Anthropic model-provider adapter
+
+CNS now includes an optional Anthropic adapter in
+`cns_composition.providers.anthropic`. It translates the provider-neutral
+CNS `ModelRequest` and `ModelResponse` contract to and from the Anthropic
+Messages API.
+
+This is a composition-layer adapter, separate from the UAI-1 signed-message
+protocol described above. It does not make provider-selection, routing,
+authorization, governance, policy, or orchestration decisions. The host
+application supplies the SDK client and remains responsible for credentials.
+
+### Install and configure
+
+The Anthropic SDK is optional. The base CNS installation does not install it:
+
+    python -m pip install ".[anthropic]"
+
+For an interactive shell, enter the key without displaying it or putting the
+secret itself in shell history:
+
+    read -rsp "Anthropic API key: " ANTHROPIC_API_KEY; echo
+    export ANTHROPIC_API_KEY
+
+For deployed applications, supply the key through the deployment's approved
+secret manager or environment configuration. Do not commit API keys, place
+them in source files, log them, or store them in CNS request records.
+
+### Use from an application
+
+The official SDK reads `ANTHROPIC_API_KEY` when the client is constructed
+without an explicit `api_key`. The application injects that client into CNS:
+
+    import anthropic
+
+    from cns_composition.providers.protocol import ModelRequest
+    from cns_composition.providers.anthropic import AnthropicProvider
+
+    client = anthropic.Anthropic(max_retries=0)
+    provider = AnthropicProvider(client)
+
+    request = ModelRequest(
+        model="claude-haiku-4-5-20251001",
+        system_instruction="Be concise.",
+        user_messages=("Explain what CNS does in one sentence.",),
+        max_output_tokens=100,
+        generation_settings={},
+    )
+    response = provider.generate(request)
+    print(response.content)
+
+The adapter does not load credentials or create the SDK client itself.
+The adapter does not implement retries. The injected SDK client controls
+retry behavior and timeouts. Hosts requiring a single attempt must set
+`max_retries=0` when constructing the SDK client.
+
+### Verify connectivity
+
+A safe-mode check makes no API request:
+
+    python scripts/anthropic_smoke_test.py
+
+To authorize one short live request, run:
+
+    python scripts/anthropic_smoke_test.py --execute
+
+The script asks for explicit confirmation and reads the key through a hidden
+prompt. A live request can incur provider charges. Ordinary tests use
+controlled clients and do not require a live key.
+
+See [the adapter architecture note](docs/architecture/MODEL_PROVIDER_ADAPTERS.md)
+for the contract boundary and current limitations.
 
 ## Versioning
 

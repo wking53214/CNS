@@ -12,6 +12,12 @@ from cns_composition.adapters import GhostToolsAdapter, SwizzleAdapter, WizzleAd
 from cns_composition.compose_library import LibraryComposer
 from cns_composition.herald_passthrough import GhostToolsStatus, SwizzleVerdict
 
+def legacy_composer():
+    """Construct the retired composer while explicitly asserting its warning."""
+    with pytest.warns(DeprecationWarning, match="SuperGate"):
+        return LibraryComposer()
+
+
 SUBJECT = {"repo": "r", "commit": "c"}
 
 
@@ -71,7 +77,7 @@ def test_an_exception_from_the_run_is_not_turned_into_an_outcome():
 
 
 def test_the_composer_runs_a_wired_path_and_canonicalizes_the_last_outcome():
-    composer = LibraryComposer()
+    composer = legacy_composer()
     composer.register_adapter(SwizzleAdapter(lambda s, p: "banished"))
     seen = []
     composer.register_adapter(GhostToolsAdapter(lambda s, p: seen.append(p) or "confirmed"))
@@ -82,7 +88,7 @@ def test_the_composer_runs_a_wired_path_and_canonicalizes_the_last_outcome():
 
 
 def test_an_unwired_adapter_in_a_path_still_stops_the_composition():
-    composer = LibraryComposer()
+    composer = legacy_composer()
     composer.register_adapter(SwizzleAdapter(lambda s, p: "banished"))
     composer.register_adapter(GhostToolsAdapter())
     with pytest.raises(NotImplementedError):

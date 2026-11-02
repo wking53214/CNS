@@ -17,6 +17,12 @@ from cns_composition.adapters import (
 )
 
 
+def legacy_composer():
+    """Construct the retired composer while explicitly asserting its warning."""
+    with pytest.warns(DeprecationWarning, match="SuperGate"):
+        return LibraryComposer()
+
+
 class TestAdapterRegistration:
     """Verify adapters register correctly with LibraryComposer."""
 
@@ -49,7 +55,7 @@ class TestLibraryComposerIntegration:
     @pytest.fixture
     def composer(self):
         """Set up composer with core adapters and translation rules."""
-        c = LibraryComposer()
+        c = legacy_composer()
         register_core_adapters(c)
         register_core_translation_rules(c)
         return c
@@ -96,7 +102,7 @@ class TestCompositionExecution:
 
     @pytest.fixture
     def composer(self):
-        c = LibraryComposer()
+        c = legacy_composer()
         register_core_adapters(c)
         register_core_translation_rules(c)
         return c
@@ -154,7 +160,7 @@ class TestAdaptersSurviveComposition:
 
     @pytest.fixture
     def composer(self):
-        c = LibraryComposer()
+        c = legacy_composer()
         register_core_adapters(c)
         register_core_translation_rules(c)
         return c
@@ -203,7 +209,7 @@ class TestTranslationHappensBeforeInvoke:
             def invoke(self, subject, input_outcome=None):
                 return "pass" if input_outcome == "rejected" else "retry"
 
-        composer = LibraryComposer()
+        composer = legacy_composer()
         composer.register_adapter(Emitter())
         composer.register_adapter(Judge())
         composer.register_translation(
@@ -226,7 +232,7 @@ class TestTranslationRules:
 
     @pytest.fixture
     def composer(self):
-        c = LibraryComposer()
+        c = legacy_composer()
         register_core_adapters(c)
         register_core_translation_rules(c)
         return c
@@ -244,7 +250,7 @@ class TestCompositionBuilder:
 
     @pytest.fixture
     def composer(self):
-        c = LibraryComposer()
+        c = legacy_composer()
         register_core_adapters(c)
         register_core_translation_rules(c)
         return c
