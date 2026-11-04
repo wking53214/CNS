@@ -11,6 +11,7 @@ from cns_composition import digest_vectors as V
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMITTED = ROOT / "contracts" / "digest-vectors.json"
+DIFFERENTIAL = ROOT / "contracts" / "digest-differential.json"
 
 
 def test_the_committed_file_is_exactly_what_subject_digest_produces_now():
@@ -52,6 +53,10 @@ def stack(tmp_path: Path) -> Path:
         path = tmp_path / repo / rel
         path.parent.mkdir(parents=True)
         path.write_text(COMMITTED.read_text(encoding="utf-8"), encoding="utf-8")
+    for repo, rel in V.VENDORED_DIFFERENTIAL.items():
+        path = tmp_path / repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(DIFFERENTIAL.read_text(encoding="utf-8"), encoding="utf-8")
     return tmp_path
 
 
@@ -99,6 +104,10 @@ def test_a_symlinked_stack_folder_is_compared_like_any_other(tmp_path):
         path = real / repo / rel
         path.parent.mkdir(parents=True)
         path.write_text(COMMITTED.read_text(encoding="utf-8"), encoding="utf-8")
+    for repo, rel in V.VENDORED_DIFFERENTIAL.items():
+        path = real / repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(DIFFERENTIAL.read_text(encoding="utf-8"), encoding="utf-8")
     stack = tmp_path / "stack"
     stack.mkdir()
     for repo in V.VENDORED:

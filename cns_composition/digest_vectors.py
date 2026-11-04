@@ -30,8 +30,9 @@ every one; CNS's own tests check that Python raises `TypeError` for each.
 
 THE FILE
 
-    python -m cns_composition.digest_vectors --write   regenerate contracts/digest-vectors.json
-    python -m cns_composition.digest_vectors           check that the file is up to date
+    python -m cns_composition.digest_vectors --write   regenerate contracts/digest-vectors.json and
+                                                       contracts/digest-differential.json
+    python -m cns_composition.digest_vectors           check that both files are up to date
     python -m cns_composition.digest_vectors --stack D also check each registered repository's vendored copy
 """
 
@@ -46,7 +47,8 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from cns.gate import _canonical, subject_digest
 from cns_composition import delivery, repin
 
-__all__ = ["CASES", "DIGEST_VERSION", "DOMAIN", "REFUSALS", "RESTRICTED_V1_MAX_DEPTH", "VENDORED", "build",
+__all__ = ["CASES", "DIGEST_VERSION", "DOMAIN", "REFUSALS", "RESTRICTED_V1_MAX_DEPTH", "VENDORED",
+           "VENDORED_DIFFERENTIAL", "build",
            "container_depth", "drift", "main", "restricted_v1"]
 
 SCHEMA = "cns-digest-vectors/2"
@@ -64,6 +66,11 @@ _SAFE = 2 ** 53 - 1
 #: repository -> where its vendored copy of the vectors lives.
 VENDORED: Mapping[str, str] = {
     "STACK-Kernel": "crates/stack-sentinel/tests/fixtures/cns-digest-vectors.json",
+}
+
+#: repository -> where its vendored copy of the differential corpus (`digest_differential`) lives.
+VENDORED_DIFFERENTIAL: Mapping[str, str] = {
+    "STACK-Kernel": "crates/stack-sentinel/tests/fixtures/digest-differential.json",
 }
 
 #: (name, content). Every content is a JSON object: that is what a verdict binds to, and what a JSON file can carry.
@@ -265,27 +272,38 @@ def _default_path() -> Path:
     return Path(__file__).resolve().parents[1] / "contracts" / "digest-vectors.json"
 
 
+def _differential_path(vectors: Path) -> Path:
+    """The differential corpus sits beside the vectors file, so a test that moves one moves both."""
+    return vectors.with_name("digest-differential.json")
+
+
 def drift(stack: Path, committed: Optional[Path] = None) -> List[str]:
-    """Where a repository's vendored copy of the vectors differs from the committed file."""
-    want = json.loads((committed or _default_path()).read_text(encoding="utf-8"))
+    """Where a repository's vendored copy of the vectors, or of the differential corpus, differs from the committed
+    file. Each copy is compared whole, as parsed JSON."""
+    vectors = committed or _default_path()
+    out = _drift_one(Path(stack), vectors, VENDORED, "vectors")
+    return out + _drift_one(Path(stack), _differential_path(vectors), VENDORED_DIFFERENTIAL, "differential corpus")
+
+
+def _drift_one(stack: Path, committed: Path, vendored: Mapping[str, str], what: str) -> List[str]:
+    want = json.loads(committed.read_text(encoding="utf-8"))
     out: List[str] = []
-    stack = Path(stack)
-    for repo, rel in VENDORED.items():
+    for repo, rel in vendored.items():
         folder = next((p for p in repin.stack_folders(stack) if p.name.casefold() == repo.casefold()), None)
         if folder is None:
             out.append(f"{repo} is registered but has no checkout in {str(stack)!r}")
             continue
         path = folder / rel
         if not path.is_file() or path.is_symlink():
-            out.append(f"{repo} has no vendored vectors at {rel}")
+            out.append(f"{repo} has no vendored {what} at {rel}")
             continue
         try:
             have = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            out.append(f"{repo}'s vendored vectors at {rel} are not readable JSON")
+            out.append(f"{repo}'s vendored {what} at {rel} are not readable JSON")
             continue
         if have != want:
-            out.append(f"{repo}'s vendored vectors at {rel} differ from CNS's contracts/digest-vectors.json; "
+            out.append(f"{repo}'s vendored {what} at {rel} differ from CNS's contracts/{committed.name}; "
                        "copy the committed file over it and make its tests pass")
     return out
 
@@ -297,27 +315,31 @@ def _main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--write", action="store_true", help="regenerate the file")
     parser.add_argument("--stack", type=Path, default=None, help="a folder with one checkout per repository")
     args = parser.parse_args(argv)
+    from cns_composition import digest_differential  # imports this module, so it is imported here
+
     path = _default_path()
-    text = _render(build())
+    files = ((path, _render(build())), (_differential_path(path), digest_differential.render(digest_differential.build())))
     if args.write:
+        for target, text in files:
+            try:
+                delivery.write_file(target, text)
+            except delivery.DeliveryError as err:
+                print(f"digest_vectors: {err}", file=sys.stderr)
+                return 2
+            print(f"digest_vectors: wrote {target}")
+        return 0
+    problems: List[str] = []
+    for target, text in files:
         try:
-            delivery.write_file(path, text)
+            committed = delivery.read_text(target)
         except delivery.DeliveryError as err:
             print(f"digest_vectors: {err}", file=sys.stderr)
             return 2
-        print(f"digest_vectors: wrote {path}")
-        return 0
-    problems: List[str] = []
-    try:
-        committed = delivery.read_text(path)
-    except delivery.DeliveryError as err:
-        print(f"digest_vectors: {err}", file=sys.stderr)
-        return 2
-    except OSError:
-        committed = ""
-    if committed != text:
-        problems.append("contracts/digest-vectors.json is not what cns.gate.subject_digest produces now; "
-                        "run with --write")
+        except OSError:
+            committed = ""
+        if committed != text:
+            problems.append(f"contracts/{target.name} is not what cns.gate.subject_digest produces now; "
+                            "run with --write")
     if args.stack is not None:
         if not args.stack.is_dir():
             print(f"digest_vectors: the stack folder {str(args.stack)!r} does not exist", file=sys.stderr)
@@ -327,7 +349,8 @@ def _main(argv: Optional[List[str]] = None) -> int:
     for line in problems:
         print(f"digest_vectors: {line}", file=sys.stderr)
     if not problems:
-        print(f"digest_vectors: up to date ({len(CASES)} vectors, {len(VENDORED)} vendored copies)")
+        print(f"digest_vectors: up to date ({len(CASES)} vectors, {digest_differential.COUNT} differential cases, "
+              f"{len(VENDORED) + len(VENDORED_DIFFERENTIAL)} vendored copies)")
     return 1 if problems else 0
 
 
