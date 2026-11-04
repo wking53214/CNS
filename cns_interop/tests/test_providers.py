@@ -468,3 +468,29 @@ def test_a_refused_key_never_reaches_the_network():
         assert stub.requests == []
     finally:
         stub.close()
+
+
+def test_the_live_runner_gives_every_provider_120_seconds_so_thinking_is_not_recorded_as_a_failure(monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("live_providers", Path(__file__).resolve().parents[2] / "interop" / "live_providers.py")
+    live = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(live)
+    seen = {}
+
+    def fake_for(name):
+        def fake(key, model, log, **kw):
+            seen[name] = kw.get("timeout_s")
+            def complete(prompt):
+                raise Refused("provider", "offline")
+            return complete
+        return fake
+    for fn, key_var, model_var in (("anthropic_complete", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"),
+                                   ("gemini_complete", "GEMINI_API_KEY", "GEMINI_MODEL"),
+                                   ("openai_complete", "OPENAI_API_KEY", "OPENAI_MODEL"),
+                                   ("copilot_complete", "GITHUB_MODELS_TOKEN", "COPILOT_MODEL")):
+        monkeypatch.setattr(live, fn, fake_for(fn))
+        monkeypatch.setenv(key_var, KEY)
+        monkeypatch.setenv(model_var, "model-x")
+    assert live.main([]) == 0
+    assert live.LIVE_TIMEOUT_S == 120.0
+    assert seen == {fn: 120.0 for fn in ("anthropic_complete", "gemini_complete", "openai_complete", "copilot_complete")}

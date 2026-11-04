@@ -28,6 +28,9 @@ CAP = Capability(name="income-screen", version=1, summary="monthly income at or 
                  accepts=("doc_type", "monthly_income_cents"), requires=("doc_type", "monthly_income_cents"),
                  evidence=("threshold-check",), max_ttl_ms=120_000)
 
+# A live call waits up to this long. Current models think before answering, and a slow Opus answer is not a provider failure.
+LIVE_TIMEOUT_S = 120.0
+
 
 def policy(cap: Any, disclosed: Dict[str, Any], subject: Any, rec: Recommendation) -> Recommendation:
     clears = disclosed.get("doc_type") in ("paystub", "tax-return") and disclosed.get("monthly_income_cents", 0) >= 450_000
@@ -63,7 +66,7 @@ def main(argv: List[str]) -> int:
             results.append({"provider": name, "executed": False})
             continue
         log = ProvenanceLog()
-        results.append(run_one(name, make(key, model, log), log, model))
+        results.append(run_one(name, make(key, model, log, timeout_s=LIVE_TIMEOUT_S), log, model))
         print(f"EXECUTED: {name} live={results[-1]['live']} clears={results[-1].get('clears')}")
     if "--out" in argv:
         Path(argv[argv.index("--out") + 1]).write_text(json.dumps(results, indent=1, sort_keys=True) + "\n")
