@@ -50,6 +50,7 @@ went to `https://api.anthropic.com` through `cns_interop`'s own standard-library
 | Wrong key | `malformed.c_wrong_key` (well formed, not valid) | HTTP 401, refused; the key is not in the record |
 | Prose answer | `malformed.d_prose_answer` (Haiku) | end_turn, then refused by the strict reader as not one JSON object |
 | Timeout | `timeout` (Opus, timeout_s 1.0) | `TimeoutError` after 1023 ms, refused and recorded as a provider failure |
+| Whole repository after the run | `python -m pytest -q`; `ruff check .`; `python -m mypy cns_interop` | 2305 passed, 0 failed, 0 skipped (225 s); clean; no issues in 56 files |
 
 What it shows. A real provider was reached on three current models; provenance (model as reported, stop reason, latency,
 request and response digests) was recorded for every call; every real failure mode tried was refused, none was repaired, and no
