@@ -23,6 +23,18 @@ not a release.
 
 ### Added
 
+- Strict verification of the decision spine in `cns_composition/spine_trace.py` (`strict_problems`, `strict_root`,
+  `context_problems`, `CONTEXT_SCHEMA`, `TRACE_SCHEMA`). `problems` takes digests and summaries a caller read off the
+  objects and cannot tell a run from a fabricated account of one. The strict check takes each stage's content (as the
+  connectors of `interconnected_alpha`, `_zeta`, `_beta` and `_delta` produce it with a pipeline context), recomputes
+  every digest itself, and requires one subject, event and run across the four stages, each stage naming the digest of
+  the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
+  entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
+  are unchanged. The `cns` package is untouched.
+- `chains/spine_run.py` gains twenty strict scenarios beside its seven lenient ones: the real objects through the real
+  attacks (another subject, event or run, an altered stage, a stale replay, a repeat, a truncated ledger, a missing
+  context, a fabricated run), each stating the problem the boundary that should refuse it must name, and one that holds
+  the four connectors' own copies of the context check to `context_problems`.
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
   endorsements, revocation), capability manifests, terms negotiation, salted selective disclosure, portable decisions
