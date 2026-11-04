@@ -48,6 +48,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
+from cns_composition import delivery
 from cns_composition.spine_trace import SPINE
 
 __all__ = ["DEFAULT_MANIFEST", "EXPECTED_RUNTIME", "SCHEMA", "check", "declared", "main", "manifest_problems", "load"]
@@ -258,8 +259,9 @@ def _main(argv: Optional[Sequence[str]]) -> int:
     return 0
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    return _main(argv)
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.run(_main, argv, "spine_manifest")
 
 
 if __name__ == "__main__":
