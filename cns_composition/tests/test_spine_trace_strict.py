@@ -304,3 +304,103 @@ def test_inputs_are_not_modified():
     before = copy.deepcopy(parts)
     problems_of(parts)
     assert parts == before
+
+
+# --- hardening from an independent adversarial review ------------------------------------------------------------
+
+def test_a_lock_result_zeta_refused_as_stale_cannot_be_rested_on():
+    parts = build()
+    parts["zeta"]["sepsis_lock"]["stale"] = True
+    relink(parts)
+    has(problems_of(parts), "zeta lock sepsis_lock was refused as stale")
+
+
+def test_a_lock_result_filed_under_another_locks_id_is_named():
+    parts = build()
+    z = parts["zeta"]
+    z["sepsis_lock"], z["abnormal_vitals_lock"] = z["abnormal_vitals_lock"], z["sepsis_lock"]
+    relink(parts)
+    has(problems_of(parts), "zeta lock sepsis_lock carries lock_id 'abnormal_vitals_lock'")
+
+
+def test_a_present_name_alpha_does_not_hold_as_a_present_key_is_named():
+    parts = build()
+    parts["alpha"]["present_names"] = ["septic_shock", "invented_key"]
+    relink(parts)
+    has(problems_of(parts), "alpha lists present_names that its own keys do not hold as present: invented_key")
+    parts = build()
+    parts["alpha"]["present_names"] = ["fever"]  # fever is in the keys, but present is False
+    relink(parts)
+    has(problems_of(parts), "alpha lists present_names that its own keys do not hold as present: fever")
+
+
+def test_alpha_keys_that_are_not_a_list_of_named_keys_are_named_not_raised():
+    parts = build()
+    parts["alpha"]["keys"] = [{"present": True}, "text"]
+    relink(parts)
+    has(problems_of(parts), "alpha keys are not a list of named keys")
+
+
+def test_a_decision_naming_newly_triggered_locks_zeta_never_evaluated_is_named():
+    parts = build()
+    for part in (parts["beta"], parts["delta"]["decision"]):
+        part["newly_triggered_locks"] = ["sepsis_lock", "ghost_lock"]
+    relink(parts)
+    has(problems_of(parts), "the Decision names newly triggered lock(s) zeta never evaluated: ghost_lock")
+
+
+@pytest.mark.parametrize("a, b", [(True, 1.0), (1, 1.0), (1.0, True), (0, False), (0.0, False)])
+def test_values_python_calls_equal_but_cns_tells_apart_are_drift(a, b):
+    parts = build()
+    parts["beta"]["confidence"] = a
+    parts["delta"]["decision"]["confidence"] = b
+    relink(parts)
+    has(problems_of(parts), "the Decision delta recorded differs from beta's in: confidence")
+
+
+def test_a_mapping_that_answers_differently_each_time_it_is_read_cannot_get_a_root():
+    class Shifty(dict):
+        reads = 0
+
+        def get(self, key, default=None):
+            return super().get(key, default)
+
+        def items(self):
+            Shifty.reads += 1
+            data = dict(super().items())
+            if Shifty.reads > 1:
+                data["instructions"] = "changed after it was checked"
+            return data.items()
+
+    parts = build()
+    parts["beta"] = Shifty(parts["beta"])
+    parts["delta"]["decision_digest"] = subject_digest(dict(parts["beta"]))
+    args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+    try:
+        root = strict_root(*args)
+    except ValueError:
+        return  # refused: fine
+    # accepted: then the root must be over exactly what was checked, i.e. the first reading
+    first = build()
+    assert root == strict_root(first["alpha"], first["zeta"], first["beta"], first["delta"])
+
+
+def test_a_mapping_that_raises_when_read_is_named_not_raised():
+    class Hostile(dict):
+        def items(self):
+            raise RuntimeError("no")
+
+    parts = build()
+    parts["alpha"] = Hostile(parts["alpha"])
+    has(problems_of(parts), "alpha content could not be read")
+
+
+def test_a_lenient_record_whose_digest_ends_in_a_newline_is_not_a_full_sha256():
+    from cns_composition.spine_trace import SpineRecord, problems
+
+    d = subject_digest({"x": 1})
+    rec = SpineRecord(entity_id="p1", keyset_digest=d + "\n", keys_present=(), lock_result_digests={"l": subject_digest({"x": 2})},
+                      open_locks=(), decision_entity_id="p1", decision_keys=(), decision_locks=("l",),
+                      decision_digest=subject_digest({"x": 3}), ledger_decision_digest=subject_digest({"x": 3}),
+                      entry_digest=subject_digest({"x": 4}))
+    has(problems(rec), "alpha keyset digest is not a full SHA-256")

@@ -85,7 +85,7 @@ SPINE: Mapping[str, str] = {
     "interconnected_delta": "delta",
 }
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 @dataclass(frozen=True)
@@ -121,7 +121,7 @@ def problems(record: SpineRecord) -> List[str]:
     for lock_id, digest in record.lock_result_digests.items():
         digests[f"zeta lock {lock_id}"] = digest
     for name, digest in digests.items():
-        if not isinstance(digest, str) or not _SHA256.match(digest):
+        if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
             out.append(f"{name} digest is not a full SHA-256")
     if not record.lock_result_digests:
         out.append("zeta evaluated no lock, so the Decision has nothing to rest on")
@@ -202,11 +202,27 @@ def _digest(content: Mapping[str, Any], who: str, out: List[str]) -> Optional[st
         return None
 
 
+def _same(a: Any, b: Any) -> bool:
+    """Whether two values are the same content as CNS binds it. Python calls True, 1 and 1.0 equal; CNS does not."""
+    try:
+        return subject_digest({"v": a}) == subject_digest({"v": b})
+    except (TypeError, ValueError):
+        return False
+
+
 def _differing(a: Mapping[str, Any], b: Mapping[str, Any]) -> List[str]:
-    return sorted(k for k in set(a) | set(b) if a.get(k, _MISSING) != b.get(k, _MISSING))
+    return sorted(k for k in set(a) | set(b) if k not in a or k not in b or not _same(a[k], b[k]))
 
 
-_MISSING = object()
+def _plain(value: Any) -> Any:
+    """A copy made by reading each mapping and sequence exactly once, so what is checked is what is hashed."""
+    if isinstance(value, Mapping):
+        return {k: _plain(v) for k, v in list(value.items())}
+    if isinstance(value, list):
+        return [_plain(v) for v in list(value)]
+    if isinstance(value, tuple):
+        return tuple(_plain(v) for v in value)
+    return value
 
 
 def _strings(value: object) -> Optional[List[str]]:
@@ -228,6 +244,26 @@ def strict_problems(
     context=..., keyset_digest=..., lock_result_digests=...)` and `delta` is `entry_content(entry, context=...,
     decision_digest=...)`. Nothing is taken from the caller but those four contents; every digest is recomputed here.
     """
+    snap, unread = _snapshot(alpha, zeta, beta, delta)
+    if unread:
+        return unread
+    return _strict_problems(*snap)
+
+
+def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, Any, Any, Any], List[str]]:
+    """Read each stage once into plain copies. A stage that cannot be read is a problem, not an exception."""
+    unread: List[str] = []
+    copies: List[Any] = []
+    for name, content in (("alpha", alpha), ("zeta", zeta), ("beta", beta), ("delta", delta)):
+        try:
+            copies.append(_plain(content))
+        except Exception as exc:  # noqa: BLE001 - any failure to read is a failure to verify
+            unread.append(f"{name} content could not be read: {type(exc).__name__}: {exc}")
+            copies.append(None)
+    return (copies[0], copies[1], copies[2], copies[3]), unread
+
+
+def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any) -> List[str]:
     out: List[str] = []
     stages = {"alpha": alpha, "beta": beta, "delta": delta}
     for name, content in stages.items():
@@ -276,6 +312,11 @@ def strict_problems(
             dz[lock_id] = digest
     db = _digest(beta, "beta", out)
     dd = _digest(delta, "delta", out)
+    for lock_id, content in zeta.items():
+        if content.get("stale"):
+            out.append(f"zeta lock {lock_id} was refused as stale; a Decision cannot rest on an observation zeta declined to apply")
+        if "lock_id" in content and content["lock_id"] != lock_id:
+            out.append(f"zeta lock {lock_id} carries lock_id {content['lock_id']!r}; a result is filed under its own lock id")
     if da is not None:
         for lock_id, content in zeta.items():
             if "keyset_digest" not in content:
@@ -326,9 +367,19 @@ def strict_problems(
             elif delta[field] != run[field]:
                 out.append(f"delta's entry was recorded under {field} {delta[field]!r} but the run is {run[field]!r}")
     present = _strings(alpha.get("present_names"))
+    keys = alpha.get("keys")
+    held: Optional[set] = None
+    if isinstance(keys, list) and all(isinstance(k, Mapping) and isinstance(k.get("name"), str) for k in keys):
+        held = {k["name"] for k in keys if k.get("present") is True}
+    else:
+        out.append("alpha keys are not a list of named keys")
     if present is None:
         out.append("alpha lists no present_names, so what the Decision cites cannot be checked")
     else:
+        if held is not None:
+            unheld = sorted(set(present) - held)
+            if unheld:
+                out.append(f"alpha lists present_names that its own keys do not hold as present: {', '.join(unheld)}")
         cited_keys = _strings(beta.get("triggered_by_keys"))
         if cited_keys is None:
             out.append("beta's Decision lists no triggered_by_keys")
@@ -343,6 +394,13 @@ def strict_problems(
         unevaluated = sorted(set(cited_locks) - set(zeta))
         if unevaluated:
             out.append(f"the Decision cites lock(s) zeta never evaluated: {', '.join(unevaluated)}")
+    newly = _strings(beta.get("newly_triggered_locks"))
+    if newly is None:
+        out.append("beta's Decision lists no newly_triggered_locks")
+    else:
+        unseen_new = sorted(set(newly) - set(zeta))
+        if unseen_new:
+            out.append(f"the Decision names newly triggered lock(s) zeta never evaluated: {', '.join(unseen_new)}")
     stage_digests = [d for d in (da, db, dd) if d is not None]
     if len(set(stage_digests)) != len(stage_digests):
         out.append("two stages are bound to the same digest; each stage must be bound to its own output")
@@ -356,7 +414,8 @@ def strict_root(
     delta: Mapping[str, Any],
 ) -> str:
     """One digest over the whole run, from the contents. Raises ValueError if the stages do not hold together."""
-    found = strict_problems(alpha, zeta, beta, delta)
+    (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
+    found = unread or _strict_problems(alpha, zeta, beta, delta)
     if found:
         raise ValueError("the spine run does not hold together: " + "; ".join(found))
     context = alpha["context"]
