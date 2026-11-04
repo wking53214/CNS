@@ -24,6 +24,20 @@ not a release.
 
 ### Added
 
+- Strict verification of the decision spine in `cns_composition/spine_trace.py` (`strict_problems`, `strict_root`,
+  `context_problems`, `CONTEXT_SCHEMA`, `TRACE_SCHEMA`). `problems` takes digests and summaries a caller read off the
+  objects and cannot tell a run from a fabricated account of one. The strict check takes each stage's content (as the
+  connectors of `interconnected_alpha`, `_zeta`, `_beta` and `_delta` produce it with a pipeline context), recomputes
+  every digest itself, and requires one subject, event and run across the four stages, each stage naming the digest of
+  the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
+  entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
+  are unchanged. The `cns` package is untouched.
+- `chains/spine_run.py` gains twenty-five strict scenarios beside its seven lenient ones: the real objects through the
+  real attacks (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale replay, a
+  repeat, a truncated ledger, a missing context, a made-up run), each stating the problem the boundary that should refuse
+  it must name; one that holds the four connectors' own copies of the context check to `context_problems`; and two
+  marked GAP that record what the strict check does not catch (it verifies agreement, not authorship, and zeta never
+  sees the KeySet a result is bound to) as facts that go red the day they close.
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
   endorsements, revocation), capability manifests, terms negotiation, salted selective disclosure, portable decisions
@@ -49,12 +63,6 @@ not a release.
   None so a test can assert it was set. `SuperGate.decide(..., context={...})` binds a context into the root (only when
   given, so every existing root is unchanged) and the proof. `Decision.context_digest`, `Decision.strict_binding` and
   `Decision.partial` expose what a guard asks. A name on a roster is still not the code behind it; a recorded GAP test says so.
-- `spine_trace.verify`, `verified_root` and `SpineContents`: the seam check with each stage's own content in hand. Every
-  digest is recomputed from the content, the facts are read off the content and not off the caller, each lock result
-  must name the entity, the ledger entry must hold exactly the Decision beta decided, a stale lock result and an
-  unchecked ledger chain are named, and `expected_locks` holds the run to the lock registry the application owns.
-  `problems` and `root` are unchanged and `verified_root` equals `root` for a run that verifies. Twelve real-object
-  scenarios and three GAPs in `chains/spine_run.py` (22 in all).
 - `consumers.drift(..., expect=...)` names a repository the ledger says is connected that imports CNS and is not in
   `REQUIRED`. The command passes the ledger's repositories, so the registry can no longer miss a consumer nobody listed.
 - `chains/full_chain.py` seats `CNS:same_subject` over the gateway and DGK's perimeter, so one cannot judge a request the
@@ -66,8 +74,7 @@ not a release.
   least one seat and one verdict; before, a decision missing a seat's verdict, or with none, could read `allowed` once
   its root was recomputed over what was left (it was never `issued`). `cns.gate.resolve` and `run_chain` treat a verdict
   whose outcome is not a `GateOutcome` member as a breach; the text "terminal_breach" equals the member but is not it,
-  and a set holding one resolved to PASS. `spine_trace.problems` refuses a bare string where names belong and counts
-  lock digests among the digests that may not coincide. `Decision.reasons()` says when a roster is partial. No
+  and a set holding one resolved to PASS. `Decision.reasons()` says when a roster is partial. No
   signature changed and no existing root moved. `PASS`, `RETRY`, `TERMINAL_BREACH` and ALPHA/OMEGA mean what they meant.
 - `consumers.REQUIRED` lists the sixteen repositories that imported CNS and were not registered (ASSAY, BURNISH, CCC,
   Conservation_Kernel, DIT, DRAFTER, GEMS, Governance_Gateway, HERALD, JUDGE, PERCEIVE, SWIZZLE, WARDEN, WATCHER_MCU,

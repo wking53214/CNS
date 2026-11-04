@@ -21,7 +21,7 @@ attack succeeds, the test asserts that it does: a recorded gap is an assertion, 
 | 12 | Sender or requester approves | grant naming a party as its own approver | cannot be built | refused at load in both languages (`config`) | No | parity test; `grants.py`, `grants.mjs` | none |
 | 13 | Approval for another decision, action, or document | cross-bound approvals | `approval` | `approval` | No | `test_act_policy.py`, parity test | none |
 | 14 | Expired approval | clock past the approval's expiry | `approval` | `approval` | No | parity test, `test_adversarial_r4.py` | none |
-| 15 | Clock manipulation | receiver clock set back one hour | refuse the expired decision | the expired decision is accepted | **Yes** | `test_adversarial_r4.py` | DEPLOY: the receiver's clock must be trustworthy. PostgreSQL leases use the server clock, envelope lifetimes do not |
+| 15 | Clock manipulation | receiver clock set back one hour | refuse the expired decision | the expired decision is accepted | **Yes**, unless the receiver checks its clock | `test_adversarial_r4.py`, `test_clock_trust.py` | DEPLOY: the receiver's clock must be trustworthy. PostgreSQL leases use the server clock, envelope lifetimes do not. With the PostgreSQL backend, `--max-clock-skew-ms` refuses to act when the receiver's clock disagrees with the database's (tested end to end in Python and Node) |
 | 16 | Ledger failure | database stopped | nothing permitted | `unavailable`; recovers after restart, replay still refused | No | `test_act_postgres.py` | none |
 | 17 | Database partition and failover | proxy-cut standby, promotion | fail closed; no acknowledged write lost under quorum commit | as designed; asynchronous standbys can lose a write | Partly (async standby) | `test_ledger_postgres.py`, `CONSISTENCY.md` | DEPLOY |
 | 18 | Crash during reservation | client killed mid-transaction | no half-spent message | none | No | `test_ledger_postgres.py` | none |
@@ -40,4 +40,5 @@ attack succeeds, the test asserts that it does: a recorded gap is an assertion, 
 ## Not covered
 
 Live provider behaviour (no keys), a multi-machine deployment (everything ran on one machine, with processes standing in for
-hosts), a third-party implementation, and Node under PostgreSQL (Node has none). Each of these caps a score; see the assessment.
+hosts), and a third-party implementation. Node under PostgreSQL was added later and tested on one machine. Each of these caps a
+score; see the assessment.

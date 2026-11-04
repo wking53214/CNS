@@ -7,7 +7,8 @@ command line and files, never from the job:
                           --trust <decider identity>[,...] --ledger <decision ledger file>
                           --grants <grants.json> --grant-store <state.db> --action <name> --audit <audit.jsonl>
                           [--permit-ledger <file>] [--lease-ms <ms>]
-                          [--ledger-backend postgres --ledger-dsn-env <ENV VAR> [--require-sync-replication]]
+                          [--ledger-backend postgres --ledger-dsn-env <ENV VAR> [--require-sync-replication]
+                           [--max-clock-skew-ms <ms>]]
                           [--policy-backend postgres [--publish-policy <version>]]  [--diagnostics]
 
 The job comes on stdin, one JSON object, and can only narrow what is accepted, never widen it:
@@ -27,7 +28,9 @@ LEDGER BACKEND (the receiver's choice, never the job's). The default is files, w
 shares. `--ledger-backend postgres` keeps decisions and permits in PostgreSQL (tables `<prefix>_decisions` and `<prefix>_permits`), so
 processes on any number of hosts share them. The connection string is read from the environment variable NAMED by
 `--ledger-dsn-env`, so it is never on a command line. If the database cannot be reached the program refuses (exit 2): there
-is no fallback to files. Under UAI_PROFILE=production the file backend is refused outright. `--diagnostics` connects, then
+is no fallback to files. Under UAI_PROFILE=production the file backend is refused outright. `--max-clock-skew-ms` makes the
+receiver compare its clock with the database's before reading a job, and refuse (exit 2, code `clock_skew`) when they differ
+by more: the receiver judges message lifetimes by its own clock, so a clock set back would otherwise accept an expired one. `--diagnostics` connects, then
 prints the backends actually in force (the DSN is never printed) and exits without reading a job.
 
 POLICY BACKEND. By default the grant store (withdrawals) is a SQLite file and the audit record a file, both safe for one
@@ -122,6 +125,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--ledger-prefix", default="uai", help="table name prefix for the postgres backend")
     p.add_argument("--require-sync-replication", action="store_true",
                    help="postgres: refuse to write unless the server demands quorum-durable commit")
+    p.add_argument("--max-clock-skew-ms", type=int, metavar="MS",
+                   help="postgres: refuse to act when this host's clock and the database's differ by more than MS")
     p.add_argument("--policy-backend", choices=("local", "postgres"), default="local",
                    help="where withdrawals and the audit record live; local is one host, postgres is shared by every host")
     p.add_argument("--publish-policy", type=int, metavar="VERSION",
@@ -153,8 +158,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif not all(policy_args):
         return _refuse("config", "act.py acts only under the receiver's policy: give --grants, --grant-store, --action "
                                  "and --audit, or --decision-only to accept that a signature alone opens the action", 2)
+    if cfg.max_clock_skew_ms is not None and (cfg.ledger_backend != "postgres" or cfg.max_clock_skew_ms < 0):
+        return _refuse("config", "--max-clock-skew-ms is a non-negative number of ms, for the postgres backend", 2)
     try:
         decisions, permits = _ledgers(cfg)
+        if cfg.max_clock_skew_ms is not None:
+            decisions.check_clock(cfg.max_clock_skew_ms)  # type: ignore[attr-defined]
     except (ValueError, OSError, RuntimeError) as exc:
         return _refuse("config", str(exc), 2)
     except Refused as exc:

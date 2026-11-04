@@ -87,6 +87,7 @@ verdicts means.
 from __future__ import annotations
 
 import hashlib
+from array import array
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Protocol, Sequence, Tuple, runtime_checkable
 
@@ -261,6 +262,19 @@ def _canonical(value: Any) -> str:
     differently), and NaN and the infinities are refused, because they are
     not values a verdict can meaningfully be bound to and JSON cannot
     render them without leaving the standard.
+
+    Every refusal is a `TypeError`, as `subject_digest` promises. Two inputs
+    used to escape that and are pinned here. A string holding a
+    lone surrogate (U+D800 to U+DFFF not paired) is not Unicode text, has no
+    UTF-8 encoding, and used to fail later with `UnicodeEncodeError`; it is
+    refused here, in a value or a key. Bytes-like objects (`bytes`,
+    `bytearray`, `memoryview`, `array.array`) are refused: `bytes` always
+    was, but the other three are registered as sequences and used to digest
+    silently as a list of integers, so `bytearray(b"ab")` and `[97, 98]`
+    were one subject. Binary content has no rendering here; a consumer that
+    needs it encodes it as text first (hex, base64) and binds to that.
+    Any other sequence that is not text renders as a list, exactly like a
+    `list` or `tuple` of the same items.
     """
     if value is None:
         return "n:"
@@ -277,6 +291,13 @@ def _canonical(value: Any) -> str:
             value = 0.0  # collapses -0.0, which compares equal to it
         return f"f:{value!r}:"
     if isinstance(value, str):
+        if not value.isascii():
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError:
+                raise TypeError(
+                    "cannot bind a verdict to text holding a lone surrogate; "
+                    "it is not Unicode and has no UTF-8 encoding") from None
         return f"s:{len(value)}:{value}"
     if isinstance(value, Mapping):
         if any(not isinstance(k, str) for k in value.keys()):
@@ -289,7 +310,8 @@ def _canonical(value: Any) -> str:
         body = "".join(_canonical(k) + _canonical(value[k]) for k in items)
         return f"d:{len(items)}:{body}"
     if isinstance(value, (list, tuple)) or (
-            isinstance(value, Sequence) and not isinstance(value, (str, bytes))):
+            isinstance(value, Sequence)
+            and not isinstance(value, (str, bytes, bytearray, memoryview, array))):
         body = "".join(_canonical(v) for v in value)
         return f"l:{len(value)}:{body}"
     raise TypeError(

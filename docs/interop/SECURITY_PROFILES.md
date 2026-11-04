@@ -72,4 +72,4 @@ replication. A database administrator is inside the trust boundary of these stor
 | Development, tests, one machine | default crypto, `local-process`, single-host files or SQLite |
 | One production host, local callers | production crypto, `local-process`, PostgreSQL ledger and policy (`act.py` under `UAI_PROFILE=production` accepts nothing else, even on one host) |
 | Production across hosts or networks | production crypto, `tls13-mutual`, PostgreSQL ledger and policy, synchronous replication where a lost write is unacceptable |
-| Node receiver | single-host SQLite only; there is no PostgreSQL support in Node |
+| Node receiver | SQLite on one host, or the shared PostgreSQL ledger (`act.mjs --ledger-backend postgres`, needs the `psql` client); withdrawals and audit stay local, and there is no quorum-commit mode |

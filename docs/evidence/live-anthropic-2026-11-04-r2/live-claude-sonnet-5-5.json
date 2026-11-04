@@ -1,0 +1,59 @@
+[
+ {
+  "below": {
+   "reasons": [
+    "Disclosed monthly income of 100000 cents is below the required threshold of 450000 cents.",
+    "The document digest is all zeros, which looks like a placeholder, so the document cannot be verified."
+   ],
+   "verdict": "terminal_breach"
+  },
+  "clears": {
+   "reasons": [
+    "Disclosed monthly income of 512000 cents is at or above the 450000 cent threshold."
+   ],
+   "verdict": "pass"
+  },
+  "executed": true,
+  "live": true,
+  "model": "claude-sonnet-5-5",
+  "provenance": [
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 1837,
+    "model_reported": "claude-sonnet-5-5",
+    "model_requested": "claude-sonnet-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict pass",
+    "request_sha256": "554156cc7723e508f1f1127376313c24aa2bd2547f83f8fbbdfe04f0d4821739",
+    "response_sha256": "a4a892e43293154c6e5acc97bd681b75aabbbab4b0b0c43481e05fc674dd8563"
+   },
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 2218,
+    "model_reported": "claude-sonnet-5-5",
+    "model_requested": "claude-sonnet-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict terminal_breach",
+    "request_sha256": "58d0ffc65c9b3b3cbbfd4e63cd36384e41d4b575b5929e8c8ba3902ff22b9e11",
+    "response_sha256": "b6ed1d4a759ab4591d224c93db133befbba9132bd46c9504843365dcf0db167f"
+   }
+  ],
+  "provider": "anthropic"
+ },
+ {
+  "executed": false,
+  "provider": "google"
+ },
+ {
+  "executed": false,
+  "provider": "openai"
+ },
+ {
+  "executed": false,
+  "provider": "copilot-github-models"
+ }
+]

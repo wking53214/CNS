@@ -12,7 +12,7 @@ import inspect
 from cns_composition.decision_guard import DecisionGuard
 from cns_composition.gate_chain import ChainRun, Lazy, run_chain
 from cns_composition.repo_gates import run_repo_chain
-from cns_composition.spine_trace import SpineContents, SpineRecord, problems, root, verified_root, verify
+from cns_composition.spine_trace import SpineRecord, problems, root, strict_problems, strict_root
 from cns_composition.super_gate import Decision, Judged, SuperGate, digest_context
 
 P = inspect.Parameter
@@ -69,15 +69,14 @@ def test_the_chain_runners_keep_their_signatures():
     assert shape(run_repo_chain) == [("steps", POS, False), ("require_complete", KW, True)]
 
 
-def test_the_spine_record_keeps_its_eleven_fields_and_the_new_check_is_a_separate_function():
+def test_the_spine_record_keeps_its_eleven_fields_and_the_strict_check_is_a_separate_function():
     assert [n for n, _ in fields(SpineRecord)] == [
         "entity_id", "keyset_digest", "keys_present", "lock_result_digests", "open_locks", "decision_entity_id",
         "decision_keys", "decision_locks", "decision_digest", "ledger_decision_digest", "entry_digest"]
     assert all(not has_default for _, has_default in fields(SpineRecord))
     assert shape(problems) == [("record", POS, False)] and shape(root) == [("record", POS, False)]
-    assert shape(verify) == [("record", POS, False), ("contents", POS, False), ("expected_locks", KW, True)]
-    assert shape(verified_root) == shape(verify)
-    assert [n for n, _ in fields(SpineContents)] == ["keyset", "lock_results", "decision", "entry", "ledger_chain_verified"]
+    four = [("alpha", POS, False), ("zeta", POS, False), ("beta", POS, False), ("delta", POS, False)]
+    assert shape(strict_problems) == four and shape(strict_root) == four
 
 
 def test_digest_context_takes_one_optional_mapping():

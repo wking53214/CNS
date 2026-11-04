@@ -25,8 +25,10 @@ PR #36's recomputed root is intact: a stored root cannot stand in for the verdic
 3. `cns.gate.resolve` read a verdict whose outcome was the *text* "terminal_breach" as no objection, and the chain
    reported PASS. A refusal read as a go. Fixed in `resolve` and in the chain runner.
 4. `spine_trace` compared values the caller typed. 22 of 24 adversarial scenarios against the real
-   alpha/zeta/beta/delta went undetected. A new `verify` recomputes digests from the stages' own content and catches the
-   ones that are the seam's to catch; the rest are stage matters and are recorded as GAP scenarios.
+   alpha/zeta/beta/delta went undetected (auditor, EXECUTED). I built a `verify` for it; before merge, `main` gained a stronger
+   `strict_problems` / `strict_root` (stages carry a shared pipeline context and name the digest of the input they consumed),
+   so I dropped mine and kept `main`'s. The 22 scenarios were run against the stage checkouts as they were at `7195144`, not
+   against the stage versions `main` now expects, so which of them `strict_problems` closes is UNKNOWN here.
 5. The consumer registry listed 20 repositories while 36 import CNS, so a rename in CNS could break 16 of them with no test
    saying so. The registry is complete and `drift` now names any importer that is missing.
 6. `chains/full_chain.py` let the gateway judge one request while DGK judged another. `same_subject` now binds them.
@@ -61,7 +63,7 @@ Regression tests: each row's test failed before the change (RED counts in D) and
 | C4 | `Decision.partial`, `reasons()` | A partial run read PASS with empty reasons | Partial read as an assessment of everything | `partial` property; `reasons()` names it | ADAPT | `test_roster_enforcement.py`, `test_chain_fail_closed.py` | Pass |
 | C5 | `Decision.strict_binding`, `DecisionGuard(require_strict_binding=)` | Strict binding invisible after `decide` | Guard could not tell if seats were checked against their own candidates | Field covered by the proof, not the root; guard can require it | INTEGRATE | `test_decision_evidence_binding.py` | Pass; no root moves |
 | C6 | `cns.gate.resolve`; `gate_chain._check` | String outcome "terminal_breach" resolved to PASS; `run_repo_chain` PASS, complete, bound | A refusal read as a go | Non-member outcome is a breach in both | ADAPT | `tests/test_gate_fail_closed.py`, `test_chain_fail_closed.py` | Pass; `mypy --strict cns/` clean |
-| C7 | `spine_trace.verify`, `verified_root`, `SpineContents`; `problems` | Facts typed by the caller; digests shape-checked only | Forged facts beside genuine digests got the genuine root; wrong entity, missing stage, unchecked chain undetected | Recompute digests, read facts off content, require entity in lock content, entry equals the decision, stale and chain flagged, `expected_locks`. `problems` also refuses bare strings and counts lock digests in the distinctness check | ADAPT | `test_spine_trace_verified.py` (24) and 15 new scenarios in `chains/spine_run.py` | Pass; `root` unchanged |
+| C7 | `spine_trace.verify` (withdrawn) | Facts typed by the caller | Forged facts beside genuine digests got the genuine root | Built and tested, then removed when merging `main`, which already carries `strict_problems` and `strict_root` for the same purpose. Not part of this PR | n/a | n/a | Superseded by `main` |
 | C8 | `consumers.REQUIRED`, `consumers.drift(expect=)` | 20 registered; unregistered importers never found; observe-perceive's `super_gate`, `decision_guard` missing | CNS rename could break 16 repos silently; `consumers --stack` exited 1 | 16 repositories and 2 observe-perceive modules added from source; `drift` names unregistered importers | INTEGRATE | `test_consumers_unregistered.py` | `consumers --stack` exit 1 to 0 (EXECUTED); registry 20 to 36 repositories |
 | C9 | `chains/full_chain.py` | No `same_subject` | Gateway and DGK could judge different requests, `allowed=True` (auditor F03) | Seat `CNS:same_subject` over the two; scenario | INTEGRATE | `chains/full_chain.py` scenario 7 | 9 of 9 ok against real repos |
 | C10 | `chains/evidence_spine.py` guards | Unpinned | Chain's own guards accepted any roster | Pinned to its `REQUIRED_SEATS` | INTEGRATE | existing 39 scenarios | rc 0, 43 ok, 0 FAIL |
@@ -180,18 +182,18 @@ default path of its own.** WARDEN's circuit calls the shapes of DRAFTER, BURNISH
 |---|---|---|
 | Baseline, before any change | `python -m pytest -q -p no:cacheprovider` | **2305 passed**, 0 failed, 0 skipped, 201s |
 | Mid-point, after C1 to C8 | same | **2399 passed**, 0 failed |
-| Final (all changes, including the UAI-1 partial-export test) | same | **2452 passed**, 0 failed, 0 skipped, 188s (+147 over baseline) |
+| Final, after merging `main` (PRs #86, #89, #90) | same | **2580 passed, 1 failed**, 0 skipped, 198s. The failure, `test_delivery.py::test_every_command_in_the_package_ends_with_deliver` ("spine_manifest is a command this test does not know"), **also fails on a clean `origin/main`** (EXECUTED); it is `main`'s unfinished Step 6, not this PR. Before the merge, on this branch alone: 2452 passed, 0 failed |
 | Types | `python -m mypy --strict cns/` ; `python -m mypy cns_composition` | clean (16 and 70 files) |
 | Lint | `ruff check .` | clean |
 | bandit on changed modules | `bandit -q -r ...` | 1 Low, `cns/gate.py:128 PASS = 'pass'` (B105, false positive, identical at baseline) |
 | Ledger | `python -m cns_composition.link_ledger --stack /home/user` | 4 exempt, 1 hub, 37 two_way, exit 0 |
 | Consumers | `python -m cns_composition.consumers --stack /home/user` | baseline **exit 1** (2 lines); after C8 **exit 0**, 36 repositories, 96 items |
 | Versions | `python -m cns_composition.cns_versions --stack /home/user` | exit 0; notes: 8 repositories pin 1.9.0 (the floor) |
-| Real chains | `chains/full_chain.py`, `spine_run.py`, `ecology_answer.py`, `evidence_spine.py` | rc 0 each; `full_chain` 9 ok, `spine_run` 22 ok, `evidence_spine` 43 ok, 0 FAIL (`ecology_answer`: rc 0, not counted) |
+| Real chains | `chains/full_chain.py`, `ecology_answer.py`, `evidence_spine.py` (before the merge, against local checkouts) | rc 0 each; `full_chain` 9 ok, `evidence_spine` 43 ok, 0 FAIL. `spine_run.py` is now `main`'s version and needs newer stage repositories than these checkouts: not re-run (UNKNOWN) |
 
 RED before GREEN (new tests, run against unmodified source): roster 30 failed / 11 passed; evidence binding 6 / 23;
-fail-closed 19 / 2; consumers 7 / 0; spine verify collection error (names absent). After: 41, 29, 21, 7, 24 passed.
-New test files: 8, **131** test cases (the 8th is `cns_interop/tests/test_partial_decision_export.py`).
+fail-closed 19 / 2; consumers 7 / 0. After: 41, 29, 21, 7 passed. New test files: 7, **107** test cases (41 + 29 + 9 + 7 + 8 + 12 under `cns_composition/tests` and `tests/`, and 1 in
+`cns_interop/tests/test_partial_decision_export.py`).
 
 **EXECUTED by sub-agents (read-only, reported as text):** alpha 114, zeta 146, beta 102, delta 196 passed; Governance_Gateway
 432, DGK 247 (+1 xfail), DIT 176, URE 342 passed; PERCEIVE 141 passed; observe-perceive 1008 passed against its pinned

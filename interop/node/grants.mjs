@@ -5,8 +5,9 @@
 // other. A signature never opens an action here: only a permit does, and only the receiver's own grants make one.
 //
 // Scope and honest limits (the same as the Python single-host stores):
-//   * SQLite stores are for processes on ONE host. Node has no PostgreSQL driver in its standard library, so a Node
-//     receiver cannot use the shared PostgreSQL policy, audit or ledger; a multi-host deployment uses the Python receiver.
+//   * SQLite stores are for processes on ONE host. A Node receiver on several hosts shares the decision and permit LEDGERS
+//     in PostgreSQL through pg.mjs (act.mjs --ledger-backend postgres); the shared PostgreSQL policy and audit stores are
+//     Python only, so Node's withdrawals and audit record stay in these local files.
 //   * The audit file is chained like Python's, but Node serialises writers with an exclusive lock FILE and Python with flock.
 //     Do not point both languages at one audit file: each language's lock is invisible to the other.
 //   * node:sqlite is experimental in Node 22; Node prints a warning. Nothing here is a claim that it is stable.

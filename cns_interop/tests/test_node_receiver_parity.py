@@ -4,7 +4,7 @@ Both programs (interop/act.py and interop/node/act.mjs) are run as real processe
 changes ONE thing. The outcome is the permit or the refusal code; the two must be identical, and each must equal the code the
 scenario expects (so the two cannot agree on something wrong). The programs also share SQLite files, so a decision spent or a
 grant withdrawn through one is seen by the other. Not shown: any difference that depends on a multi-host deployment (the
-Node receiver has no PostgreSQL support; see interop/node/grants.mjs)."""
+shared PostgreSQL ledger is tested in test_node_act_postgres.py)."""
 
 from __future__ import annotations
 
