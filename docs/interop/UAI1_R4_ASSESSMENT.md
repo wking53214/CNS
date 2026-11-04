@@ -17,7 +17,7 @@ what was executed, not from file counts. Planned functionality and unrun tests e
 | TLS | `test_transport.py` | 10 passed; four injected defects (min version, CRL flag, hostname check, identity binding) each made it fail |
 
 NOT EXECUTED: any call to a live AI provider other than Anthropic (Gemini, OpenAI and Copilot have no keys here;
-`interop/live_providers.py` prints `NOT EXECUTED` for each; the Anthropic run of 2026-11-04 is recorded below), any
+`interop/live_providers.py` prints `NOT EXECUTED` for each; the two Anthropic runs of 2026-11-04 are recorded below), any
 multi-machine deployment, any implementation written outside this project, Node against PostgreSQL (it has no support).
 CI on the pull request is REPORTED by GitHub, not by this document.
 
@@ -66,6 +66,43 @@ runner reads: `test_the_live_runner_says_not_executed_and_exits_nonzero_without_
 `test_the_live_runner_strips_whitespace_from_a_pasted_key` each remove that variable from their environment. Nothing else in
 either changed.
 
+## Live Anthropic run, second run (r2) (EXECUTED 2026-11-04)
+
+Branch `claude/uai1-live-anthropic-r2`, after `render_prompt` was changed to state the strict reader's whole answer contract:
+raw JSON only (no fences, no prose), exactly the four keys, the verdicts, the reason limits, every evidence value a mapping,
+only the capability's own evidence kinds (`threshold-check`), integer numbers. `parse_recommendation` was not changed; offline
+tests show fenced, prose-wrapped, scalar-evidence and wrong-kind answers are still refused. Evidence, copied unaltered, in
+`docs/evidence/live-anthropic-2026-11-04-r2/`. Same client, same endpoint, same models, same runner, same checks script (its
+docstring aside). The key is in no file.
+
+| What | Command | Result |
+|---|---|---|
+| Key present | `key_check.py key_check.json` | `UAI_ANTHROPIC_API_KEY` set and non-empty; booleans only, no request sent |
+| Live runner, Opus | `ANTHROPIC_MODEL=claude-opus-5-5 python interop/live_providers.py --out live-claude-opus-5-5.json` | `live=True`; both end_turn (2.4 s, 5.6 s); both ACCEPTED. Income 512000: `pass`; 100000: `terminal_breach` |
+| Live runner, Sonnet | same, `claude-sonnet-5-5` | `live=True`; both end_turn (1.8 s, 2.2 s); both ACCEPTED. 512000: `pass`; 100000: `terminal_breach` |
+| Live runner, Haiku | same, `claude-haiku-5-5` | `live=True`; both end_turn (1.8 s, 3.0 s); both ACCEPTED. 512000: `pass`; 100000: escalated, so `retry` |
+| Raw text, one per model | `checks.py checks.json`, section `raw` | 3 of 3 ACCEPTED, all `pass`, unfenced, evidence `{"threshold-check": {...}}` |
+| Truncated answer | `malformed.a_max_tokens_16` (Opus, max_tokens 16) | stop_reason `max_tokens`, refused as possibly cut off |
+| Unknown model | `malformed.b_unknown_model` | HTTP 404, refused |
+| Wrong key | `malformed.c_wrong_key` | HTTP 401, refused; the key is not in the record |
+| Prose answer | `malformed.d_prose_answer` (Haiku) | end_turn, then refused by the strict reader as not one JSON object |
+| Timeout | `timeout` (Opus, timeout_s 1.0) | `TimeoutError` after 1018 ms, refused and recorded as a provider failure |
+
+Accepted by the strict reader, per model: Opus 3 of 3, Sonnet 3 of 3, Haiku 3 of 3 (runner 6 of 6, raw 3 of 3). The first run,
+above, stays as recorded: 0 of 6 in the runner, 0 of 3 raw.
+
+What it shows. With the contract stated, every real answer from three current Anthropic models met the strict reader
+unrepaired, and each went on through the decider's policy as a judgment; every failure mode tried was still refused. So the
+first run's 0 of 6 was the prompt, as diagnosed, and not the reader or the provider. What it does not show. The runner stops at
+a `Judgment`: no decision was signed from a live answer. The policy never had to lower a pass (no model passed the low income),
+so that path is shown only offline. The models disagree on the low income: Opus and Sonnet say `terminal_breach`, Haiku asks
+for a person; the reader checks shape, not which verdict is right. Three answers per model in one run is a small sample: it
+shows the contract can be met, not how often. Not exercised: HTTP 429, an answer over the size cap, a hostile document, and any
+provider other than Anthropic. Spend is not measured (the client records no usage); 11 billed calls plus the timeout call, with
+a ceiling of about $1.81 if every call had hit its 16000-token output cap at current list prices.
+
+No pre-existing test was edited on this branch.
+
 ## Scorecard
 
 | Dimension | Score | Evidence, and what holds it down |
@@ -76,7 +113,7 @@ either changed.
 | Receiver authorization | 7.5 | Enforced on the real action path in both languages with the same outcomes over 14 differential scenarios and shared files; fail-closed. Held down: Node is single-host; a valid decision still depends on the receiver's grants being right |
 | Replay and distributed consistency | 6.5 | PostgreSQL on the real action path, server-clock leases, fences, concurrent and crash tests, shared policy and audit. Held down: never run on more than one machine; one primary, not consensus; asynchronous standbys can lose a write; a cut-off audit tail is undetected |
 | Cross-language interoperability | 7.0 | Both pass the conformance suite; receivers agree and share SQLite ledgers; Python verifies Node's audit chain. Held down: Node cannot join the PostgreSQL path; Python and Node must not share an audit file |
-| AI-provider interoperability | 4.0 | Four clients with strict reading, provenance and failure-mode tests, and since 2026-11-04 one of them run live: three Anthropic models reached, provenance recorded, truncation, 404, 401, prose and timeout refused against the real service. Held down: 0 of 6 real answers accepted, because the prompt does not state the contract the strict reader enforces, so the positive path does not work with any current Anthropic model; Gemini, OpenAI and Copilot never called; 429 and oversize not exercised |
+| AI-provider interoperability | 5.0 | Four clients with strict reading, provenance and failure-mode tests, and one of them run live twice on 2026-11-04: three Anthropic models reached, provenance recorded, truncation, 404, 401, prose and timeout refused against the real service. The first run accepted 0 of 6 real answers; after the prompt stated the reader's contract the second accepted 9 of 9 (3 per model), unrepaired, through the decider's policy. Held down: Gemini, OpenAI and Copilot never called; no decision signed from a live answer; one small run, with the models disagreeing on the low-income verdict; 429, oversize and a hostile document not exercised |
 | Human authority and approval | 6.5 | Approvals bound to decision, action and document; never the decider or requester; expiry; audited. Held down: no approver tooling or key custody, approver identity enrolment is out of scope |
 | Operational resilience | 6.0 | Outage, restart, partition, and crash-after-permit tested on real PostgreSQL; clear failure behaviour. Held down: single machine; at-least-once needs a deduplicating target; a wrong receiver clock accepts expired messages (asserted, not fixed) |
 | Independent validation | 1.5 | A stand-alone runner and package exist and the runner is shown to fail bad implementations. Held down: no implementation from outside the project has been run, so almost nothing is demonstrated |
@@ -89,12 +126,18 @@ The rise is for the cap that the run removed (a live call with a recorded proven
 against the real service). It is held at 4.0 because the run also showed the end-to-end path rejecting every real answer, and
 three of the four providers remain uncalled. No other dimension was re-scored.
 
+**Re-scored 2026-11-04, AI-provider interoperability only, from the second live Anthropic run (r2) above: 4.0 to 5.0. Mean 6.0
+of 10.** The rise is for the cap that run removed for Anthropic: real answers accepted by the unchanged strict reader and
+policy-checked (9 of 9, against 0 of 6 in the first run, which stays in the record). It is held at 5.0 because three of the
+four providers remain uncalled, the live path stops before a signed decision, and one run of three answers per model is a small
+sample. No other dimension was re-scored.
+
 ## What caps the score, and what removes each cap
 
 | Cap | Dimensions | What removes it |
 |---|---|---|
 | No live provider call | AI-provider interoperability | Removed for Anthropic on 2026-11-04. Still open for Gemini, OpenAI and Copilot: one bounded real request per provider with a key and a recorded provenance log (`live_providers.py`); malformed and timeout cases against the real service |
-| No real answer accepted | AI-provider interoperability | `render_prompt` states the reader's contract (evidence values are mappings, the capability's evidence kinds, no fence), and a live run shows real answers accepted and policy-checked |
+| No real answer accepted | AI-provider interoperability | Removed for Anthropic on 2026-11-04 (r2): `render_prompt` states the reader's contract and 9 of 9 real answers were accepted and policy-checked. Still open for Gemini, OpenAI and Copilot, which have never been called |
 | No independent implementation | Independent validation, protocol correctness | A team outside this project runs `run_conformance.py` against its own code and the disagreements are resolved |
 | One machine | Replay and distributed consistency, resilience | The PostgreSQL tests repeated on at least two hosts with a real standby and a failover |
 | Node single-host | Receiver authorization, cross-language | A Node PostgreSQL driver path, or an explicit decision to keep Node single-host |
