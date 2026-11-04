@@ -24,6 +24,12 @@ from cns_composition.herald_passthrough import (
     translate_ghost_tools_to_canonical,
 )
 
+def legacy_composer():
+    """Construct the retired composer while explicitly asserting its warning."""
+    with pytest.warns(DeprecationWarning, match="SuperGate"):
+        return LibraryComposer()
+
+
 GHOST_TOOLS_OWN_TABLE = {
     "confirmed": GateOutcome.PASS,
     "confirmed_by_review": GateOutcome.PASS,
@@ -46,7 +52,7 @@ def test_the_herald_table_agrees_with_ghost_tools(status, expected):
 def test_the_library_composer_agrees_with_ghost_tools(status, expected):
     step = CompositionStep(system_name="ghost_tools", output_outcome=status,
                            output_model=SystemModel.GHOST_TOOLS_STATUS)
-    assert LibraryComposer()._canonicalize(step) is expected
+    assert legacy_composer()._canonicalize(step) is expected
 
 
 @pytest.mark.parametrize("status,expected", sorted(GHOST_TOOLS_OWN_TABLE.items()))
