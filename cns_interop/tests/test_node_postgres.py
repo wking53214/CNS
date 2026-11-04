@@ -51,8 +51,9 @@ def table() -> str:
     return "t_" + uuid.uuid4().hex[:12]
 
 
-def run(dsn: str, tbl: str, ops: list, *, psql: str | None = None) -> list:
-    job = {"dsn_env": "LEDGER_DSN", "table": tbl, "ops": ops, **({"psql": psql} if psql else {})}
+def run(dsn: str, tbl: str, ops: list, *, psql: str | None = None, allow_caller_time: bool = False) -> list:
+    job = {"dsn_env": "LEDGER_DSN", "table": tbl, "ops": ops, **({"psql": psql} if psql else {}),
+           **({"allow_caller_time": True} if allow_caller_time else {})}
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LEDGER_DSN": dsn}
     done = subprocess.run([node(), str(DRIVER)], input=json.dumps(job), capture_output=True, text=True, env=env, timeout=120)
     assert done.returncode == 0, done.stderr

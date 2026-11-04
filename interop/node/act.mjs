@@ -11,7 +11,10 @@
 //        [--permit-ledger <sqlite file>] [--lease-ms <ms>] | --decision-only
 //   the shared backend: --ledger-backend postgres --ledger-dsn-env <ENV VAR> [--ledger-prefix <prefix>] in place of --ledger
 //   [--max-clock-skew-ms <ms>]: compare this host's clock with the database's first, and refuse (exit 2, clock_skew) if
-//   they differ by more, since message lifetimes are judged by this host's clock
+//   they differ by more; then judge every lifetime by the DATABASE's time carried on this host's monotonic clock
+//   (pg.mjs TrustedClock), never by this host's wall clock. The tolerance must be strictly below the ledger's retention
+//   window (120 s), or the start is refused as config. Without the flag (the development opt-out) lifetimes are judged by
+//   this host's clock, and the PostgreSQL ledger still refuses a message expired by its own clock.
 
 import { readFileSync } from "node:fs";
 import * as U from "./uai.mjs";
@@ -70,10 +73,11 @@ function main() {
         permitLedger: ledgerFor("permits"), permitLeaseMs: Number(cfg["lease-ms"] ?? 30000) });
     }
     const decisions = ledgerFor("decisions");
-    if (maxSkew !== null) decisions.checkClock(maxSkew);
+    let clock = Date.now;   // this host's clock, unless the receiver asked for the database's
+    if (maxSkew !== null) { const trusted = new P.TrustedClock(decisions, maxSkew, { keepMs: decisions.keepMs }); trusted.sync(); clock = trusted.asClock(); }
     guard = new U.RemoteDecisionGuard((a) => { if (!Array.isArray(a) || a.length !== 2 || !a.every((x) => typeof x === "string")) throw new Error("an artifact here is [identity, digest]"); return a; }, {
       actingFor: cfg["acting-for"], capability: [cfg.capability, Number(cfg["capability-version"])],
-      trust: new U.PinnedTrust(cfg.trust.split(",").filter(Boolean)), ledger: decisions,
+      trust: new U.PinnedTrust(cfg.trust.split(",").filter(Boolean)), ledger: decisions, clock,
       grants: table, action: cfg["decision-only"] ? null : cfg.action });
   } catch (e) { return e instanceof U.Refused ? refuse(e.code, e.reason, 2) : refuse("config", e.message, 2); }
   let job;

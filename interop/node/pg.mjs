@@ -8,7 +8,9 @@
 //     checked identifiers, as in Python.
 //   * The connection string never appears on a command line: it is split into libpq's PG* environment variables for the
 //     child alone (a password lands in PGPASSWORD, which only the same user can read from /proc).
-//   * Time is the DATABASE's (clock_timestamp()), as in Python. A host with a wrong clock cannot shorten anyone's lease.
+//   * Time is the DATABASE's (clock_timestamp()), as in Python. A host with a wrong clock cannot shorten anyone's lease, and a
+//     message that has expired by the database's clock is refused ('expired') by spend and reserve, never granted: a row the
+//     ledger forgot keepMs after expiry is one no receiver can spend again whatever its own clock says (RACE-02 R2-C-01).
 //   * Failure is refusal: psql missing at call time, a connection that cannot be made, a statement or lock timeout, a
 //     child that runs past its bound, any error: Refused('unavailable'). An ambiguous commit is 'unavailable' too, and the
 //     row may then stay held until its lease lapses, the documented model (docs/interop/CONSISTENCY.md).
@@ -89,15 +91,44 @@ export class PgGuard {
   // The database's clock, in ms: the clock every lease is judged by.
   serverNowMs() { return Number(this._run(`SELECT ${NOW_MS};`)[0][0]); }
 
-  // As Python's PgGuard.check_clock: refuse ('clock_skew') when this host's clock and the database's disagree by more than
-  // maxSkewMs plus half the round trip. Returns the measured skew, host minus server.
-  checkClock(maxSkewMs, { clock = Date.now } = {}) {
+  // [skew, server]: this host's clock minus the database's, and the database's time. Refuses ('clock_skew') when the skew
+  // exceeds maxSkewMs plus half the round trip, which bounds what the measurement cannot know. As Python's PgGuard._measure.
+  _measure(maxSkewMs, clock) {
     if (!Number.isSafeInteger(maxSkewMs) || maxSkewMs < 0) throw new RangeError("maxSkewMs is a non-negative integer");
     const t0 = clock(), server = this.serverNowMs(), t1 = clock();
     const skew = Math.round((t0 + t1) / 2 - server), slack = Math.ceil(Math.abs(t1 - t0) / 2);
     if (Math.abs(skew) > maxSkewMs + slack) throw new Refused("clock_skew", `this host's clock differs from the ledger database's by ${skew} ms, more than the ${maxSkewMs} ms allowed, so message lifetimes cannot be judged`);
+    return [skew, server];
+  }
+
+  // As Python's PgGuard.check_clock: refuse ('clock_skew') when this host's clock and the database's disagree by more than
+  // maxSkewMs plus half the round trip. Returns the measured skew, host minus server.
+  checkClock(maxSkewMs, { clock = Date.now } = {}) { return this._measure(maxSkewMs, clock)[0]; }
+}
+
+// The Node twin of cns_interop.ledger_postgres.TrustedClock: the database's time, carried between readings by this host's
+// MONOTONIC clock (performance.now), for a receiver that judges lifetimes by the database's time and not by its wall clock.
+// sync() reads the database and refuses ('clock_skew', or 'unavailable' when the database gives no usable answer); the
+// tolerance must be strictly below the ledger's retention window keepMs (RangeError, the runner's 'config'), or a row the
+// ledger forgot could still be live for a receiver within tolerance. now() never touches the database and never throws.
+// A RemoteDecisionGuard whose clock function carries a sync() calls it on every authorize: the check is per decision.
+export class TrustedClock {
+  constructor(guard, maxSkewMs, { keepMs, wall = Date.now } = {}) {
+    if (!Number.isSafeInteger(maxSkewMs) || maxSkewMs < 0) throw new RangeError("maxSkewMs is a non-negative integer");
+    if (!Number.isSafeInteger(keepMs) || maxSkewMs >= keepMs) throw new RangeError(`the clock-skew tolerance (${maxSkewMs} ms) must be strictly below the ledger's retention window keepMs (${keepMs} ms): a row the ledger has forgotten must already be expired for every receiver within tolerance`);
+    this._guard = guard; this._max = maxSkewMs; this._wall = wall; this._server = null; this._mono = 0;
+  }
+  sync() {
+    const [skew, server] = this._guard._measure(this._max, this._wall);
+    this._server = server; this._mono = performance.now();
     return skew;
   }
+  now() {
+    if (this._server === null) throw new RangeError("a TrustedClock answers only after sync()");
+    return this._server + Math.floor(performance.now() - this._mono);
+  }
+  // A clock function for RemoteDecisionGuard, carrying sync so the guard re-reads the database for every decision.
+  asClock() { const f = () => this.now(); f.sync = () => this.sync(); return f; }
 }
 
 export class PostgresLedger extends PgGuard {
@@ -111,14 +142,22 @@ CREATE INDEX IF NOT EXISTS ${table}_exp ON ${table} (expires_at);
 CREATE SEQUENCE IF NOT EXISTS ${table}_fence;`);
   }
 
+  // How long after its expiry a message's row is kept; a receiver's clock-skew tolerance must stay below it.
+  get keepMs() { return this._keep; }
+
   _grant(sender, id, expiresAt, state, token, leaseMs, now) {
     const t = this._callerTime && now !== undefined && now !== null ? ":'now'::bigint" : NOW_MS, T = this._t;
     const lease = state === "leased" ? `${t} + :'lease'::bigint` : "NULL";
-    const rows = this._run(`DELETE FROM ${T} WHERE expires_at IS NOT NULL AND expires_at <= ${t} - :'keep'::bigint;
-INSERT INTO ${T} (sender, id, state, token, lease_until, expires_at, fence) VALUES (:'sender', :'id', :'state', NULLIF(:'token', ''), ${lease}, NULLIF(:'exp', '')::bigint, nextval('${T}_fence'))
+    // The first row says whether the message has already expired by the ledger's clock ('t' or 'f'); then nothing is written
+    // for an expired one (as Python refuses before its writes), and the rest is the grant.
+    const expired = `COALESCE(${t} >= NULLIF(:'exp', '')::bigint, false)`;
+    const [[isExpired], ...rows] = this._run(`SELECT ${expired};
+DELETE FROM ${T} WHERE expires_at IS NOT NULL AND expires_at <= ${t} - :'keep'::bigint;
+INSERT INTO ${T} (sender, id, state, token, lease_until, expires_at, fence) SELECT :'sender', :'id', :'state', NULLIF(:'token', ''), ${lease}, NULLIF(:'exp', '')::bigint, nextval('${T}_fence') WHERE NOT ${expired}
 ON CONFLICT (sender, id) DO UPDATE SET state = EXCLUDED.state, token = EXCLUDED.token, lease_until = EXCLUDED.lease_until, expires_at = EXCLUDED.expires_at, fence = EXCLUDED.fence
 WHERE ${T}.state = 'leased' AND ${T}.lease_until <= ${t} RETURNING fence, lease_until;`,
     { sender, id, state, token, lease: leaseMs, exp: expiresAt, now, keep: this._keep });
+    if (isExpired === "t") throw new Refused("expired", "the message has expired by the ledger database's clock, so it is not spent");
     if (rows.length === 0) throw new Refused("replayed", "this message was already accepted once or is being redeemed right now");
     return rows[0];
   }

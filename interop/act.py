@@ -30,8 +30,11 @@ processes on any number of hosts share them. The connection string is read from 
 `--ledger-dsn-env`, so it is never on a command line. If the database cannot be reached the program refuses (exit 2): there
 is no fallback to files. Under UAI_PROFILE=production the file backend is refused outright. `--max-clock-skew-ms` makes the
 receiver compare its clock with the database's before reading a job, and refuse (exit 2, code `clock_skew`) when they differ
-by more: the receiver judges message lifetimes by its own clock, so a clock set back would otherwise accept an expired one. `--diagnostics` connects, then
-prints the backends actually in force (the DSN is never printed) and exits without reading a job.
+by more; with it, every message lifetime, grant expiry and approval expiry is judged by the DATABASE's time, carried on this
+host's monotonic clock (`TrustedClock`), not by this host's wall clock, and the tolerance must be strictly below the ledger's
+retention window (120 s), or the start is refused as `config`. Without it (the development opt-out, outside the production
+profile) lifetimes are judged by this host's clock; the PostgreSQL ledger still refuses a message expired by its own clock.
+`--diagnostics` connects, then prints the backends actually in force (the DSN is never printed) and exits without reading a job.
 
 POLICY BACKEND. By default the grant store (withdrawals) is a SQLite file and the audit record a file, both safe for one
 host. `--policy-backend postgres` (same DSN variable) keeps withdrawals and ONE hash-chained audit record in PostgreSQL for
@@ -55,7 +58,7 @@ from typing import List, Optional, Tuple
 
 from cns_interop import crypto_backend
 from cns_interop.decision import RemoteDecisionGuard
-from cns_interop.envelope import Refused
+from cns_interop.envelope import Refused, now_ms
 from cns_interop.grants import Approval, GrantStore, GrantTable, load_grants
 from cns_interop.ledger import FileLedger, SqliteLedger
 from cns_interop.policy_postgres import policy_digest
@@ -160,10 +163,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                                  "and --audit, or --decision-only to accept that a signature alone opens the action", 2)
     if cfg.max_clock_skew_ms is not None and (cfg.ledger_backend != "postgres" or cfg.max_clock_skew_ms < 0):
         return _refuse("config", "--max-clock-skew-ms is a non-negative number of ms, for the postgres backend", 2)
+    clock = now_ms  # this host's clock, unless the receiver asked for the database's
     try:
         decisions, permits = _ledgers(cfg)
         if cfg.max_clock_skew_ms is not None:
-            decisions.check_clock(cfg.max_clock_skew_ms)  # type: ignore[attr-defined]
+            from cns_interop.ledger_postgres import TrustedClock
+            clock = TrustedClock(decisions, cfg.max_clock_skew_ms, keep_ms=decisions.keep_ms)  # type: ignore[attr-defined,assignment]
+            clock.sync()  # type: ignore[attr-defined]
     except (ValueError, OSError, RuntimeError) as exc:
         return _refuse("config", str(exc), 2)
     except Refused as exc:
@@ -198,7 +204,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         guard = RemoteDecisionGuard(_identity_and_digest, acting_for=cfg.acting_for,
                                     capability=(cfg.capability, cfg.capability_version),
                                     trust=TrustPolicy(pinned=frozenset(filter(None, cfg.trust.split(",")))),
-                                    ledger=decisions, grants=table,
+                                    ledger=decisions, grants=table, clock=clock,
                                     action=None if cfg.decision_only else cfg.action)
     except (ValueError, OSError) as exc:
         return _refuse("config", str(exc), 2)
