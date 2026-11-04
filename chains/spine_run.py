@@ -216,12 +216,14 @@ def decision_that_ignores_its_rule() -> List[str]:
     return verify(record, contents, expected_locks=LOCK_IDS)
 
 
-def basis_changed_after_the_digest() -> List[str]:
-    """`confidence_basis` is not in beta's content, so changing it moves no digest."""
-    _, ledger, keys, results, decision, entry = run()
-    record, contents = verified(keys, results, decision, entry, ledger)
-    altered = dataclasses.replace(decision, confidence_basis="made up")
-    return [] if beta_cns.decision_digest(altered) == record.decision_digest else ["its digest moved"]
+def basis_contradicting_the_keys() -> List[str]:
+    """beta derives `confidence_basis` from the Keys and refuses a value that contradicts them, at construction."""
+    _, _, _, _, decision, _ = run()
+    try:
+        dataclasses.replace(decision, confidence_basis="made up")
+    except ValueError as refusal:
+        return [str(refusal)]
+    return []
 
 
 #: (name, how to run it, text every problem must contain, or "" if there must be none)
@@ -256,7 +258,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
      downstream_fed_another_patients_vitals, ""),
     ("GAP: a Decision rewritten against beta's rule is invisible; the rule is not in the Decision's content",
      decision_that_ignores_its_rule, ""),
-    ("GAP: beta's confidence_basis is not bound, so changing it moves no digest", basis_changed_after_the_digest, ""),
+    ("VERIFIED: beta refuses a confidence_basis that contradicts its Keys", basis_contradicting_the_keys,
+     "confidence_basis is 'made up'"),
 ]
 
 
