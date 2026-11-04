@@ -95,6 +95,29 @@ class PgGuard:
         except OSError as exc:
             raise Refused("unavailable", f"the ledger database is unreachable ({type(exc).__name__})") from None
 
+    def server_now_ms(self) -> int:
+        """The database's clock, in ms: the clock every lease is judged by."""
+        return int(self._guard(lambda db: db.execute(f"SELECT {_NOW_MS}").fetchone()[0]))
+
+    def check_clock(self, max_skew_ms: int, *, clock: Optional[Callable[[], int]] = None) -> int:
+        """Refuse ('clock_skew') when this host's clock and the database's disagree by more than `max_skew_ms`, plus half
+        the round trip, which bounds what the measurement cannot know. A receiver calls this before judging message
+        lifetimes by its own clock, so a host clock set back or forward is caught instead of trusted. Returns the measured
+        skew, host minus server. It compares with ONE reference: a database whose own clock is wrong passes or fails a
+        correct host, so the database's clock must be disciplined too."""
+        if isinstance(max_skew_ms, bool) or not isinstance(max_skew_ms, int) or max_skew_ms < 0:
+            raise ValueError("max_skew_ms is a non-negative integer")
+        from .envelope import now_ms
+        read = clock or now_ms
+        t0 = read()
+        server = self.server_now_ms()
+        t1 = read()
+        skew, slack = round((t0 + t1) / 2 - server), -(-abs(t1 - t0) // 2)
+        if abs(skew) > max_skew_ms + slack:
+            raise Refused("clock_skew", f"this host's clock differs from the ledger database's by {skew} ms, more than the "
+                                        f"{max_skew_ms} ms allowed, so message lifetimes cannot be judged")
+        return skew
+
     def _require_quorum(self, db: Any) -> None:
         names = db.execute("SHOW synchronous_standby_names").fetchone()[0]
         mode = db.execute("SHOW synchronous_commit").fetchone()[0]

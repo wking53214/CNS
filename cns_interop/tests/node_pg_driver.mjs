@@ -18,6 +18,7 @@ for (const [i, [op, ...a]] of job.ops.entries()) {
     else if (op === "release") { L.release(a[1] ? { ...held[a[0]], token: "f".repeat(32) } : held[a[0]]); out.push({ ok: true }); }
     else if (op === "sleep") { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a[0]); out.push({ ok: true }); }
     else if (op === "server_now") { out.push({ ok: L.serverNowMs() }); }
+    else if (op === "check_clock") { out.push({ ok: L.checkClock(a[0], { clock: () => Date.now() + (a[1] ?? 0) }) }); }
     else throw new Error(`unknown op ${op}`);
   } catch (e) { out.push({ code: e.code ?? "error", reason: e.reason ?? e.message }); }
 }

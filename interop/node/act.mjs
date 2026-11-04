@@ -10,6 +10,8 @@
 //        --ledger <sqlite file> --grants <grants.json> --grant-store <sqlite file> --action <name> --audit <file>
 //        [--permit-ledger <sqlite file>] [--lease-ms <ms>] | --decision-only
 //   the shared backend: --ledger-backend postgres --ledger-dsn-env <ENV VAR> [--ledger-prefix <prefix>] in place of --ledger
+//   [--max-clock-skew-ms <ms>]: compare this host's clock with the database's first, and refuse (exit 2, clock_skew) if
+//   they differ by more, since message lifetimes are judged by this host's clock
 
 import { readFileSync } from "node:fs";
 import * as U from "./uai.mjs";
@@ -49,6 +51,8 @@ function main() {
     if (cfg["ledger-dsn-env"] || cfg["ledger-prefix"]) return refuse("config", "--ledger-dsn-env and --ledger-prefix belong to the postgres backend", 2);
     ledgerFor = (kind) => new G.SqliteLedger(kind === "decisions" ? cfg.ledger : (cfg["permit-ledger"] ?? cfg.ledger + ".permits"));
   } else return refuse("config", "--ledger-backend is sqlite or postgres", 2);
+  const maxSkew = cfg["max-clock-skew-ms"] === undefined ? null : Number(cfg["max-clock-skew-ms"]);
+  if (maxSkew !== null && (backend !== "postgres" || !Number.isSafeInteger(maxSkew) || maxSkew < 0)) return refuse("config", "--max-clock-skew-ms is a non-negative number of ms, for the postgres backend", 2);
   const policy = ["grants", "grant-store", "action", "audit"].map((k) => cfg[k]);
   if (cfg["decision-only"]) {
     if (policy.some(Boolean) || cfg["permit-ledger"]) return refuse("config", "--decision-only cannot be combined with receiver policy options", 2);
@@ -65,9 +69,11 @@ function main() {
         auditPath: cfg.audit, store: new G.GrantStore(cfg["grant-store"]),
         permitLedger: ledgerFor("permits"), permitLeaseMs: Number(cfg["lease-ms"] ?? 30000) });
     }
+    const decisions = ledgerFor("decisions");
+    if (maxSkew !== null) decisions.checkClock(maxSkew);
     guard = new U.RemoteDecisionGuard((a) => { if (!Array.isArray(a) || a.length !== 2 || !a.every((x) => typeof x === "string")) throw new Error("an artifact here is [identity, digest]"); return a; }, {
       actingFor: cfg["acting-for"], capability: [cfg.capability, Number(cfg["capability-version"])],
-      trust: new U.PinnedTrust(cfg.trust.split(",").filter(Boolean)), ledger: ledgerFor("decisions"),
+      trust: new U.PinnedTrust(cfg.trust.split(",").filter(Boolean)), ledger: decisions,
       grants: table, action: cfg["decision-only"] ? null : cfg.action });
   } catch (e) { return e instanceof U.Refused ? refuse(e.code, e.reason, 2) : refuse("config", e.message, 2); }
   let job;

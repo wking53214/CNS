@@ -88,6 +88,16 @@ export class PgGuard {
 
   // The database's clock, in ms: the clock every lease is judged by.
   serverNowMs() { return Number(this._run(`SELECT ${NOW_MS};`)[0][0]); }
+
+  // As Python's PgGuard.check_clock: refuse ('clock_skew') when this host's clock and the database's disagree by more than
+  // maxSkewMs plus half the round trip. Returns the measured skew, host minus server.
+  checkClock(maxSkewMs, { clock = Date.now } = {}) {
+    if (!Number.isSafeInteger(maxSkewMs) || maxSkewMs < 0) throw new RangeError("maxSkewMs is a non-negative integer");
+    const t0 = clock(), server = this.serverNowMs(), t1 = clock();
+    const skew = Math.round((t0 + t1) / 2 - server), slack = Math.ceil(Math.abs(t1 - t0) / 2);
+    if (Math.abs(skew) > maxSkewMs + slack) throw new Refused("clock_skew", `this host's clock differs from the ledger database's by ${skew} ms, more than the ${maxSkewMs} ms allowed, so message lifetimes cannot be judged`);
+    return skew;
+  }
 }
 
 export class PostgresLedger extends PgGuard {
