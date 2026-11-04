@@ -57,7 +57,7 @@ def main(argv: List[str]) -> int:
                                            ("google", "GEMINI_API_KEY", "GEMINI_MODEL", gemini_complete),
                                            ("openai", "OPENAI_API_KEY", "OPENAI_MODEL", openai_complete),
                                            ("copilot-github-models", "GITHUB_MODELS_TOKEN", "COPILOT_MODEL", copilot_complete)):
-        key, model = os.environ.get(key_var, ""), os.environ.get(model_var, "")
+        key, model = os.environ.get(key_var, "").strip(), os.environ.get(model_var, "")  # a pasted key often ends in a newline
         if not key or not model:
             print(f"NOT EXECUTED: {name} (set {key_var} and {model_var})")
             results.append({"provider": name, "executed": False})

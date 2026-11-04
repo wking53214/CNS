@@ -345,3 +345,96 @@ def test_copilot_routes_are_explicit_and_the_azure_route_addresses_the_callers_o
         assert "model" not in sent["body"]            # the deployment in the path names the model on this route
     finally:
         stub.close()
+
+
+# Current Anthropic models think before they answer. STUB servers below return the shapes the Messages API documents for that.
+
+def anthropic_stub(out):
+    return Stub(lambda p, h, b: (200, {"content-type": "application/json"}, json.dumps(out).encode()))
+
+
+@pytest.mark.parametrize("thinking", [
+    [{"type": "thinking", "thinking": "", "signature": "sig"}],
+    [{"type": "redacted_thinking", "data": "opaque"}],
+    [{"type": "thinking", "thinking": "summary", "signature": "s"}, {"type": "redacted_thinking", "data": "x"}],
+])
+def test_anthropic_thinking_blocks_are_skipped_and_the_one_text_block_is_the_answer(thinking):
+    out = anthropic_ok("the answer")
+    out["content"] = thinking + out["content"]
+    stub, log = anthropic_stub(out), ProvenanceLog()
+    try:
+        assert make("anthropic", stub, log)("q") == "the answer"
+        assert log.records[-1].call == "ok"
+    finally:
+        stub.close()
+
+
+@pytest.mark.parametrize("content", [
+    [{"type": "thinking", "thinking": "", "signature": "s"}],                                            # thought, no answer
+    [{"type": "thinking", "thinking": "", "signature": "s"}, {"type": "text", "text": "a"}, {"type": "text", "text": "b"}],
+    [{"type": "thinking", "thinking": "", "signature": "s"}, {"type": "tool_use", "id": "t", "name": "run", "input": {}}],
+    [{"type": "thinking", "thinking": "", "signature": "s"}, "text"],                                    # not a block at all
+])
+def test_anthropic_still_requires_exactly_one_text_block_once_thinking_is_set_aside(content):
+    out = anthropic_ok("x")
+    out["content"] = content
+    stub, log = anthropic_stub(out), ProvenanceLog()
+    try:
+        with pytest.raises(Refused) as e:
+            make("anthropic", stub, log)("q")
+        assert e.value.code == "provider" and e.value.reason == "the answer is not exactly one text block"
+        assert log.records[-1].outcome == "rejected"
+    finally:
+        stub.close()
+
+
+@pytest.mark.parametrize("details,label", [
+    ({"type": "refusal", "category": "cyber", "explanation": "declined"}, "'cyber'"),
+    ({"type": "refusal", "category": None, "explanation": None}, "'unspecified'"),
+    (None, "'unspecified'"),
+])
+def test_anthropic_refusal_stop_reason_is_named_as_a_decline_not_a_truncation_and_never_read(details, label):
+    out = anthropic_ok('{"verdict":"pass","reasons":[],"evidence":{},"escalate":false}')   # text present: still not read
+    out["stop_reason"], out["stop_details"] = "refusal", details
+    stub, log = anthropic_stub(out), ProvenanceLog()
+    try:
+        with pytest.raises(Refused) as e:
+            make("anthropic", stub, log)("q")
+        assert e.value.code == "provider" and "declined" in e.value.reason and label in e.value.reason
+        assert "cut off" not in e.value.reason
+        rec = log.records[-1]
+        assert rec.finish_reason == "refusal" and rec.outcome == "rejected" and "declined" in rec.call
+    finally:
+        stub.close()
+
+
+def test_anthropic_default_max_tokens_leaves_room_for_thinking():
+    stub, log = serving("anthropic", honest_model), ProvenanceLog()
+    try:
+        exchange(make("anthropic", stub, log), log)
+        assert stub.requests[-1]["body"]["max_tokens"] >= 8_000
+        assert "thinking" not in stub.requests[-1]["body"]          # the model's own default; budget_tokens is a 400 now
+    finally:
+        stub.close()
+
+
+def test_the_live_runner_strips_whitespace_from_a_pasted_key(monkeypatch, capsys):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("live_providers", Path(__file__).resolve().parents[2] / "interop" / "live_providers.py")
+    live = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(live)
+    seen = []
+
+    def fake(key, model, log, **kw):
+        seen.append(key)
+        def complete(prompt):
+            raise Refused("provider", "offline")
+        return complete
+    monkeypatch.setattr(live, "anthropic_complete", fake)
+    for var in ("GEMINI_API_KEY", "OPENAI_API_KEY", "GITHUB_MODELS_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "  " + KEY + "\n")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "model-x")
+    assert live.main([]) == 0
+    assert seen == [KEY]
+    assert KEY not in capsys.readouterr().out

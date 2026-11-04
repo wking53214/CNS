@@ -146,10 +146,17 @@ def _client(name: str, model: str, log: ProvenanceLog, call: Callable[[str, Prov
     return complete
 
 
+_THINKING_BLOCKS = ("thinking", "redacted_thinking")  # reasoning, never an answer: skipped, not read
+
+
 def anthropic_complete(api_key: str, model: str, log: ProvenanceLog, *, base_url: str = "https://api.anthropic.com",
-                       timeout_s: float = 30.0, max_tokens: int = 512,
+                       timeout_s: float = 30.0, max_tokens: int = 16_000,
                        max_response_bytes: int = MAX_RESPONSE_BYTES) -> Callable[[str], str]:
-    """`complete(prompt)` over the Anthropic Messages API. The key lives only in this closure."""
+    """`complete(prompt)` over the Anthropic Messages API. The key lives only in this closure.
+
+    Current models think by default, and thinking spends output tokens before the answer, so `max_tokens` leaves room for it.
+    Thinking blocks (`thinking`, `redacted_thinking`) carry no answer and are skipped; what remains must be exactly one text
+    block. A `refusal` stop reason is the provider declining the request and is refused as such, never read as an answer."""
     if not api_key or not model:
         raise ValueError("an API key and a model name are needed")
 
@@ -162,12 +169,20 @@ def anthropic_complete(api_key: str, model: str, log: ProvenanceLog, *, base_url
         out = _read_json(status, raw, max_response_bytes)
         rec.model_reported, rec.finish_reason = str(out.get("model", "")), str(out.get("stop_reason", ""))
         blocks = out.get("content")
+        if rec.finish_reason == "refusal":
+            details = out.get("stop_details")
+            category = details.get("category") if isinstance(details, dict) else None
+            label = str(category)[:40] if isinstance(category, str) and category else "unspecified"
+            raise Refused("provider", f"the provider declined the request (stop_reason 'refusal', category {label!r}): no answer")
         if rec.finish_reason != "end_turn":
             raise Refused("provider", f"the answer did not end normally (stop_reason {rec.finish_reason!r}): it may be cut off")
-        if not isinstance(blocks, list) or len(blocks) != 1 or not isinstance(blocks[0], dict) or blocks[0].get("type") != "text" \
-                or not isinstance(blocks[0].get("text"), str):
+        if not isinstance(blocks, list):
             raise Refused("provider", "the answer is not exactly one text block")
-        return str(blocks[0]["text"])
+        rest = [b for b in blocks if not (isinstance(b, dict) and b.get("type") in _THINKING_BLOCKS)]
+        if len(rest) != 1 or not isinstance(rest[0], dict) or rest[0].get("type") != "text" \
+                or not isinstance(rest[0].get("text"), str):
+            raise Refused("provider", "the answer is not exactly one text block")
+        return str(rest[0]["text"])
     return _client("anthropic", model, log, call)
 
 
