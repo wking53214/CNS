@@ -17,7 +17,8 @@ entry says so.
 
 ## [Unreleased]
 
-Work after the `v2.3.0` tag (`41592fb`). It adds a package and changes no existing behaviour; which version it
+Work after the `v2.3.0` tag (`41592fb`). It adds a package and tightens a few checks for input that was already wrong
+(see Changed; no signature, root or outcome meaning moved); which version it
 ships in is the owner's decision, so `pyproject.toml` still says 2.3.0 and `release --check` reads this heading as
 not a release.
 
@@ -55,9 +56,29 @@ not a release.
 - `RemoteDecisionGuard.revoke(agent)`: a running guard can be told to stop trusting a decider. Before, revocation only
   reached a guard if its frozen `TrustPolicy` was altered in place. A decider revoked before `authorize` is refused
   (`untrusted`), one revoked after closes the guard, and the policy the guard was built with is not changed.
+- Roster pinning at the point of action. `DecisionGuard(expected_seats=..., expected_context=..., require_strict_binding=...)`:
+  the party that acts holds a decision to the seats it needs (written by hand, never built from the roster being
+  checked), to the context it is for, and to a roster that checked each seat against its own candidate. A refusal names
+  the missing seats and does not spend the decision. Left out, each check is simply not made, and `expected_seats` is
+  None so a test can assert it was set. `SuperGate.decide(..., context={...})` binds a context into the root (only when
+  given, so every existing root is unchanged) and the proof. `Decision.context_digest`, `Decision.strict_binding` and
+  `Decision.partial` expose what a guard asks. A name on a roster is still not the code behind it; a recorded GAP test says so.
+- `consumers.drift(..., expect=...)` names a repository the ledger says is connected that imports CNS and is not in
+  `REQUIRED`. The command passes the ledger's repositories, so the registry can no longer miss a consumer nobody listed.
+- `chains/full_chain.py` seats `CNS:same_subject` over the gateway and DGK's perimeter, so one cannot judge a request the
+  other was not shown; a scenario holds it. `chains/evidence_spine.py` pins its two guards to its `REQUIRED_SEATS`.
 
 ### Changed
 
+- Tightened, for input that was already wrong: `Decision.allowed` also requires one verdict per seat (by gate name), at
+  least one seat and one verdict; before, a decision missing a seat's verdict, or with none, could read `allowed` once
+  its root was recomputed over what was left (it was never `issued`). `cns.gate.resolve` and `run_chain` treat a verdict
+  whose outcome is not a `GateOutcome` member as a breach; the text "terminal_breach" equals the member but is not it,
+  and a set holding one resolved to PASS. `Decision.reasons()` says when a roster is partial. No
+  signature changed and no existing root moved. `PASS`, `RETRY`, `TERMINAL_BREACH` and ALPHA/OMEGA mean what they meant.
+- `consumers.REQUIRED` lists the sixteen repositories that imported CNS and were not registered (ASSAY, BURNISH, CCC,
+  Conservation_Kernel, DIT, DRAFTER, GEMS, Governance_Gateway, HERALD, JUDGE, PERCEIVE, SWIZZLE, WARDEN, WATCHER_MCU,
+  fortress-kernel, ghost_tools), read from their source, and observe-perceive's use of `super_gate` and `decision_guard`.
 - Contract change in `cns_interop`: `RemoteDecisionGuard` takes a required keyword `capability=(name, version)` and
   `authorize` raises `Refused("terms")` when the terms name a different capability or version. Before, a decision
   negotiated for one capability (`ingest`, say) opened a guard protecting any other action on the same document. A
@@ -66,6 +87,9 @@ not a release.
 
 ### Fixed
 
+- `cns.gate.resolve` read a verdict whose outcome was the text "terminal_breach" as no objection at all, and
+  `run_repo_chain` reported such a chain PASS, complete and bound. It is a breach now.
+- `consumers --stack` exited 1 on observe-perceive's `super_gate` and `decision_guard` imports, which `REQUIRED` did not list.
 - `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)
   lost earlier entries and a spent decision was accepted again. It now appends one line and fsyncs, and when it drops
   expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.

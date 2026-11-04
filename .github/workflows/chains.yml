@@ -1,7 +1,8 @@
 # Runs the real chains: gates and stages from separate repositories, composed through CNS, on the default branches.
 #
 # chains/full_chain.py   Governance_Gateway and DGK at ALPHA, DIT and URE at OMEGA, through
-#                        cns_composition.super_gate. Seven scenarios, each with the outcome it must produce.
+#                        cns_composition.super_gate. Eight scenarios, each with the outcome it must produce, one a request the gateway and
+#                        DGK's perimeter are shown differently, which `same_subject` refuses.
 # chains/spine_run.py    interconnected alpha, zeta, beta and delta run for real, then checked at their seams by
 #                        cns_composition.spine_trace, leniently (seven scenarios) and strictly, from each stage's content with a
 #                        pipeline context (twenty-five: five checks that hold, eighteen real attacks each naming the problem that should

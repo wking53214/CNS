@@ -313,6 +313,20 @@ that every required seat is present in the configured gates; it cannot
 authenticate the source of the policy configuration. Existing callers must
 add the required keyword when constructing SuperGate.
 
+That is half of it. A caller who builds a smaller roster with a matching
+`required` gets a decision that is complete for the smaller roster, so the
+party that ACTS holds the decision to the roster it needs:
+`DecisionGuard(reads, expected_seats=REQUIRED_SEATS)` refuses, and names, a
+decision whose roster lacks a seat, and `expected_context` does the same for
+what the decision is for (`decide(..., context={...})`). A guard built without
+`expected_seats` accepts whatever roster its issuer chose; `guard.expected_seats`
+is None then, so a test can assert it was set. A roster binds the name of a seat,
+not the code behind it. A roster with one end (`require_complete=False`) is an
+assessment: its `outcome` can read PASS while `Decision.allowed` is False and
+`Decision.partial` is True. What a digest proves and does not, how a roster is
+established, and what each level of "connected" means:
+[docs/CONNECTION_INTEGRITY.md](docs/CONNECTION_INTEGRITY.md).
+
 ### The same subject
 
 Every verdict binds to what its own gate judged, and nothing else makes two
