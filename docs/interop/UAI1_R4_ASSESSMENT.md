@@ -18,7 +18,8 @@ what was executed, not from file counts. Planned functionality and unrun tests e
 
 NOT EXECUTED: any call to a live AI provider other than Anthropic (Gemini, OpenAI and Copilot have no keys here;
 `interop/live_providers.py` prints `NOT EXECUTED` for each; the two Anthropic runs of 2026-11-04 are recorded below), any
-multi-machine deployment, any implementation written outside this project, Node against PostgreSQL (it has no support).
+multi-machine deployment, any implementation written outside this project. Node against PostgreSQL ran on one machine only
+(recorded below).
 CI on the pull request is REPORTED by GitHub, not by this document.
 
 ## What changed against the baseline findings
@@ -104,6 +105,26 @@ a ceiling of about $1.81 if every call had hit its 16000-token output cap at cur
 
 No pre-existing test was edited on this branch.
 
+## Node on the shared PostgreSQL ledger, and clock trust (EXECUTED 2026-11-04)
+
+Branch `claude/node-postgres-ledger`. Node gained a PostgreSQL ledger (`interop/node/pg.mjs`): the same table and SQL as Python's
+`PostgresLedger`, run through the standard `psql` client (Node has no PostgreSQL client in its standard library and its receiver
+is synchronous), with no npm dependency, values passed only as psql-quoted variables and the DSN never on a command line.
+`act.mjs` takes the same `--ledger-backend postgres --ledger-dsn-env --ledger-prefix` options and tables as `act.py`. Both
+receivers can now check their clock against the database's (`--max-clock-skew-ms`). Every test starts a real PostgreSQL server.
+
+| What | Command | Result |
+|---|---|---|
+| Node ledger rules | `pytest cns_interop/tests/test_node_postgres.py` | 9 passed: spend and replay, reserve, commit, release, lease_lost, takeover on the server's clock with a growing fence, Python and Node on one table in both directions, exactly one winner among 8 Node and 8 Python processes, unreachable database refused, unmapped option refused, no secret on any command line (checked with a recording psql shim) |
+| Node receiver on PostgreSQL | `pytest cns_interop/tests/test_node_act_postgres.py` | 6 passed: rows in the shared `<prefix>_decisions` and `<prefix>_permits` tables; a decision redeemed by Python, then Node, or Node, then Python, or Node twice, is `replayed`; unreachable or unconfigured database refused with nothing written locally |
+| Clock trust | `pytest cns_interop/tests/test_clock_trust.py` | 6 passed: both checks refuse a host clock set back or forward one hour; end to end, `act.py` and `act.mjs` with the process clock set back two hours PERMIT an expired decision without the check (the gap, reproduced) and REFUSE with it (`clock_skew`, exit 2) |
+| Whole repository | `python -m pytest -q`; `ruff check .`; `python -m mypy cns_interop` | see the pull request; the new code `clock_skew` is registered in `contracts/uai1/errors.json` |
+
+What it does not show. One machine: separate processes stand in for hosts, so network delay and two real host clocks are
+untested. Node has no quorum-commit mode (`require_sync_replication` is Python only), and Node's withdrawals and audit record
+stay in local files. The clock check is opt-in, not required by the production profile, and compares with one reference: a
+database whose own clock is wrong is not detected. Gap 15 in ADVERSARIAL_R4 stays true for a receiver that does not check.
+
 ## Scorecard
 
 | Dimension | Score | Evidence, and what holds it down |
@@ -111,12 +132,12 @@ No pre-existing test was edited on this branch.
 | Protocol correctness | 6.5 | A schema, 32-code registry checked against both sources, 33-case suite, and a spec that two implementations satisfy. Held down: both implementations are from one team, so ambiguity a third party would hit is unmeasured; three suite cases are `reference` basis (not fixed by the text) |
 | Cryptographic integrity | 7.0 | Strict verification shared by Python (two backends) and Node, shared vectors, frozen production profile with diagnostics, downgrade tests. Held down: no timing measurement, no HSM or keystore implementation, Node reports its profile but has no switch to test |
 | Identity and trust | 6.5 | Pinned, endorsed and revocable identities; staleness bound; TLS certificates bound to identities and checked against the object signer. Held down: no key distribution or enrolment story, CRL freshness is the operator's, no OCSP |
-| Receiver authorization | 7.5 | Enforced on the real action path in both languages with the same outcomes over 14 differential scenarios and shared files; fail-closed. Held down: Node is single-host; a valid decision still depends on the receiver's grants being right |
+| Receiver authorization | 7.5 | Enforced on the real action path in both languages with the same outcomes over 14 differential scenarios and shared files; fail-closed; since 2026-11-04 a Node receiver spends decisions and permits in the shared PostgreSQL ledger. Held down: Node's withdrawals and audit are still host-local; a valid decision still depends on the receiver's grants being right |
 | Replay and distributed consistency | 6.5 | PostgreSQL on the real action path, server-clock leases, fences, concurrent and crash tests, shared policy and audit. Held down: never run on more than one machine; one primary, not consensus; asynchronous standbys can lose a write; a cut-off audit tail is undetected |
-| Cross-language interoperability | 7.0 | Both pass the conformance suite; receivers agree and share SQLite ledgers; Python verifies Node's audit chain. Held down: Node cannot join the PostgreSQL path; Python and Node must not share an audit file |
+| Cross-language interoperability | 7.5 | Both pass the conformance suite; receivers agree and share SQLite ledgers; Python verifies Node's audit chain; since 2026-11-04 Python and Node share one PostgreSQL ledger table, with replay refused across languages and exactly one winner in a mixed 16-process race. Held down: one machine; Node has no shared policy store or audit chain and no quorum-commit mode; Python and Node must not share an audit file |
 | AI-provider interoperability | 5.0 | Four clients with strict reading, provenance and failure-mode tests, and one of them run live twice on 2026-11-04: three Anthropic models reached, provenance recorded, truncation, 404, 401, prose and timeout refused against the real service. The first run accepted 0 of 6 real answers; after the prompt stated the reader's contract the second accepted 9 of 9 (3 per model), unrepaired, through the decider's policy. Held down: Gemini, OpenAI and Copilot never called; no decision signed from a live answer; one small run, with the models disagreeing on the low-income verdict; 429, oversize and a hostile document not exercised |
 | Human authority and approval | 6.5 | Approvals bound to decision, action and document; never the decider or requester; expiry; audited. Held down: no approver tooling or key custody, approver identity enrolment is out of scope |
-| Operational resilience | 6.0 | Outage, restart, partition, and crash-after-permit tested on real PostgreSQL; clear failure behaviour. Held down: single machine; at-least-once needs a deduplicating target; a wrong receiver clock accepts expired messages (asserted, not fixed) |
+| Operational resilience | 6.5 | Outage, restart, partition, and crash-after-permit tested on real PostgreSQL; clear failure behaviour; since 2026-11-04 a receiver can refuse to act when its clock disagrees with the database's (tested end to end in both languages). Held down: single machine; at-least-once needs a deduplicating target; the clock check is opt-in and has one reference, so a receiver that does not use it still accepts expired messages with a clock set back |
 | Independent validation | 1.5 | A stand-alone runner and package exist and the runner is shown to fail bad implementations. Held down: no implementation from outside the project has been run, so almost nothing is demonstrated |
 
 **Mean 5.8 of 10.** That is an improvement on the provisional 5.6 recorded at revision 3, and it is **not 8.0**. The evidence
@@ -133,6 +154,13 @@ policy-checked (9 of 9, against 0 of 6 in the first run, which stays in the reco
 four providers remain uncalled, the live path stops before a signed decision, and one run of three answers per model is a small
 sample. No other dimension was re-scored.
 
+**Re-scored 2026-11-04, from the Node PostgreSQL and clock-trust run above: cross-language interoperability 7.0 to 7.5,
+operational resilience 6.0 to 6.5. Mean 6.1 of 10.** Cross-language rises because Node joined the shared ledger and the two
+languages were shown to refuse each other's replays and to produce one winner in a mixed race. Resilience rises because the
+receiver-clock gap can now be closed and was shown closed end to end. Receiver authorization stays at 7.5 (the shared ledger
+helps; Node's policy and audit are still local). Replay and distributed consistency stays at 6.5: still one machine. No other
+dimension was re-scored.
+
 ## What caps the score, and what removes each cap
 
 | Cap | Dimensions | What removes it |
@@ -141,9 +169,9 @@ sample. No other dimension was re-scored.
 | No real answer accepted | AI-provider interoperability | Removed for Anthropic on 2026-11-04 (r2): `render_prompt` states the reader's contract and 9 of 9 real answers were accepted and policy-checked. Still open for Gemini, OpenAI and Copilot, which have never been called |
 | No independent implementation | Independent validation, protocol correctness | A team outside this project runs `run_conformance.py` against its own code and the disagreements are resolved |
 | One machine | Replay and distributed consistency, resilience | The PostgreSQL tests repeated on at least two hosts with a real standby and a failover |
-| Node single-host | Receiver authorization, cross-language | A Node PostgreSQL driver path, or an explicit decision to keep Node single-host |
+| Node single-host | Receiver authorization, cross-language | Removed for the ledgers on 2026-11-04 (`pg.mjs`, `act.mjs --ledger-backend postgres`). Still open: Node's withdrawals and audit record on PostgreSQL, and a quorum-commit mode |
 | No HSM or keystore | Cryptographic integrity | An executed `Signer.external` against a real keystore, plus a timing measurement if a constant-time claim is wanted |
-| Receiver clock trust | Resilience | A monotonic or externally synchronised time source requirement, tested |
+| Receiver clock trust | Resilience | Partly removed on 2026-11-04: `--max-clock-skew-ms` checks the receiver's clock against the database's, tested end to end. Still open: making it required in the production profile, and a second time reference so a wrong database clock is caught |
 
 ## Spine findings the READMEs surfaced (not fixed here, each in the sibling repository)
 
