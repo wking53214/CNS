@@ -103,7 +103,8 @@ def cites_a_lock_zeta_never_evaluated() -> List[str]:
 
 def ledger_recorded_another_decision() -> List[str]:
     engine, ledger, keys, results, decision, _ = run()
-    other = engine.decide("patient_1", observe(WELL), results, T0)
+    well = observe(WELL)  # another decision, made from keys and lock results that belong together
+    other = engine.decide("patient_1", well, LockEvaluator(build()[0]).evaluate_all("patient_1", well, T0), T0)
     return problems(facts(keys, results, decision, ledger.append(other)))
 
 
@@ -222,11 +223,30 @@ def decision_altered_after_delta_recorded_it() -> List[str]:
 
 
 def beta_decided_from_another_lock_result() -> List[str]:
-    """Beta's Decision comes from the well patient's lock results; zeta's contents and the KeySet are the sick patient's."""
+    """Beta's content names the well patient's lock results; zeta's contents and the KeySet are the sick patient's.
+
+    Beta itself now refuses to decide over lock results evaluated from another KeySet (see
+    `beta_refuses_lock_results_from_another_keyset`), so the content is edited here, as a beta that did not refuse
+    would have produced it: the trace must still name it, because it cannot know what beta refused."""
     locks, _ = build()
     well_results = LockEvaluator(locks).evaluate_all("patient_1", observe(WELL), T0)
-    p = stages(SICK, results_from=well_results)
+    p = stages(SICK)
+    p["beta"] = {**p["beta"], "lock_result_digests": {
+        lid: zeta_cns.lock_result_digest(r, context=CTX, keyset_digest=p["da"]) for lid, r in well_results.items()}}
     return check(p)
+
+
+def beta_refuses_lock_results_from_another_keyset() -> List[str]:
+    """The stage's own boundary: the problem the refusal names, or nothing if beta let it through."""
+    locks, _ = build()
+    well_results = LockEvaluator(locks).evaluate_all("patient_1", observe(WELL), T0)
+    try:
+        stages(SICK, results_from=well_results)
+    except Exception as exc:  # only beta's own refusal counts; anything else is a defect in this script
+        if type(exc).__name__ != "KeySetMismatchError":
+            raise
+        return [f"{type(exc).__name__}: {exc}"]
+    return []
 
 
 def delta_recorded_another_decision() -> List[str]:
@@ -426,6 +446,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
      "delta recorded a Decision other than the one beta produced"),
     ("strict: beta decided from another lock state's results", beta_decided_from_another_lock_result,
      "rests on a different lock result than zeta produced"),
+    ("strict: beta refuses to decide over lock results from another KeySet", beta_refuses_lock_results_from_another_keyset,
+     "evaluated from a different KeySet than the one given"),
     ("strict: delta recorded another Decision, quoting beta's digest", delta_recorded_another_decision,
      "the Decision delta recorded differs from beta's in:"),
     ("strict: beta refuses a Decision whose basis contradicts its keys", contradictory_basis_is_refused_by_beta,
