@@ -24,7 +24,7 @@ import zeta.cns_connector as zeta_cns
 from alpha import VitalsObservation, observe
 from beta import DecisionEngine, DecisionRule, DecisionRuleRegistry
 from cns.gate import subject_digest
-from cns_composition.spine_trace import SpineRecord, problems, root
+from cns_composition.spine_trace import SpineContents, SpineRecord, problems, root, verify
 from delta import DecisionLedger
 from zeta import Combination, LockEvaluator, LockRegistry, LockSpec
 
@@ -107,6 +107,123 @@ def two_runs_have_different_roots() -> List[str]:
     return [] if ra != rb else ["two different runs produced the same root"]
 
 
+#: The locks the application's own lock registry holds, written by hand and never read back from the run being checked.
+LOCK_IDS = ("sepsis_lock", "abnormal_vitals_lock")
+
+
+def verified(keys, results, decision, entry, ledger, entity="patient_1", digest_entity="patient_1"):
+    """The record AND the content each stage digested, so `verify` can recompute the digests and read the facts off the
+    content. `digest_entity` is what zeta was asked to bind (None: the run does not pass it, as `facts` does not)."""
+    contents = SpineContents(
+        keyset=alpha_cns.keyset_content(keys),
+        lock_results={lid: zeta_cns.lock_result_content(r, entity_id=digest_entity) for lid, r in results.items()},
+        decision=beta_cns.decision_content(decision), entry=delta_cns.entry_content(entry),
+        ledger_chain_verified=ledger.verify_chain_integrity() and ledger.chain_head == entry.immutable_hash)
+    record = dataclasses.replace(
+        facts(keys, results, decision, entry, entity),
+        lock_result_digests={lid: zeta_cns.lock_result_digest(r, entity_id=digest_entity) for lid, r in results.items()})
+    return record, contents
+
+
+def checked(vitals=SICK, **over) -> List[str]:
+    """Run the spine for real and `verify` it against the content its stages digested."""
+    _, ledger, keys, results, decision, entry = run(vitals)
+    record, contents = verified(keys, results, decision, entry, ledger)
+    return verify(dataclasses.replace(record, **over) if over else record, contents, expected_locks=LOCK_IDS)
+
+
+def forged_facts_with_genuine_digests() -> List[str]:
+    return checked(keys_present=("fever", "ghost_key", "septic_shock", "tachycardia", "warning_o2"),
+                   decision_keys=("ghost_key",))
+
+
+def zeta_evaluated_another_patient() -> List[str]:
+    engine, ledger, keys, _, _, _ = run()
+    results = LockEvaluator(build()[0]).evaluate_all("patient_2", keys, T0)
+    decision = engine.decide("patient_1", keys, results, T0)
+    record, contents = verified(keys, results, decision, ledger.append(decision), ledger, digest_entity="patient_2")
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def zeta_digest_carries_no_entity() -> List[str]:
+    _, ledger, keys, results, decision, entry = run()
+    record, contents = verified(keys, results, decision, entry, ledger, digest_entity=None)
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def delta_never_ran() -> List[str]:
+    return checked(entry_digest="a" * 64)
+
+
+def ledger_chain_broken() -> List[str]:
+    _, ledger, keys, results, decision, entry = run()
+    ledger.chain_head = "0" * 64
+    record, contents = verified(keys, results, decision, entry, ledger)
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def entry_is_no_longer_the_head() -> List[str]:
+    engine, ledger, keys, results, decision, entry = run()
+    ledger.append(engine.decide("patient_1", observe(WELL), results, T0))
+    record, contents = verified(keys, results, decision, entry, ledger)
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def entry_from_a_ledger_that_never_recorded_it() -> List[str]:
+    _, _, keys, results, decision, _ = run()
+    stranger, mine = DecisionLedger(), DecisionLedger()
+    entry = stranger.append(decision)
+    record, contents = verified(keys, results, decision, entry, mine)
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def lock_results_swapped_between_ids() -> List[str]:
+    _, ledger, keys, results, decision, entry = run()
+    record, contents = verified(keys, results, decision, entry, ledger)
+    swapped = {"sepsis_lock": contents.lock_results["abnormal_vitals_lock"],
+               "abnormal_vitals_lock": contents.lock_results["sepsis_lock"]}
+    return verify(record, dataclasses.replace(contents, lock_results=swapped), expected_locks=LOCK_IDS)
+
+
+def a_stale_lock_result() -> List[str]:
+    _, ledger, keys, results, decision, entry = run()
+    stale = {lid: dataclasses.replace(r, stale=True) for lid, r in results.items()}
+    record, contents = verified(keys, stale, decision, entry, ledger)
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def a_lock_dropped_from_the_run() -> List[str]:
+    _, ledger, keys, results, decision, entry = run()
+    record, contents = verified(keys, {"sepsis_lock": results["sepsis_lock"]}, decision, entry, ledger)
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def downstream_fed_another_patients_vitals() -> List[str]:
+    """alpha says SICK. zeta and beta are handed WELL keys, and every digest, fact and the chain are genuine."""
+    engine, ledger, sick, _, _, _ = run()
+    well = observe(WELL)
+    results = LockEvaluator(build()[0]).evaluate_all("patient_1", well, T0)
+    decision = engine.decide("patient_1", well, results, T0)
+    record, contents = verified(sick, results, decision, ledger.append(decision), ledger)
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def decision_that_ignores_its_rule() -> List[str]:
+    """beta's rule sends open sepsis to ESCALATE. The Decision is rewritten to DISCHARGE_SAFE and recorded."""
+    engine, ledger, keys, results, decision, _ = run()
+    rewritten = dataclasses.replace(decision, decision="DISCHARGE_SAFE")
+    record, contents = verified(keys, results, rewritten, ledger.append(rewritten), ledger)
+    return verify(record, contents, expected_locks=LOCK_IDS)
+
+
+def basis_changed_after_the_digest() -> List[str]:
+    """`confidence_basis` is not in beta's content, so changing it moves no digest."""
+    _, ledger, keys, results, decision, entry = run()
+    record, contents = verified(keys, results, decision, entry, ledger)
+    altered = dataclasses.replace(decision, confidence_basis="made up")
+    return [] if beta_cns.decision_digest(altered) == record.decision_digest else ["its digest moved"]
+
+
 #: (name, how to run it, text every problem must contain, or "" if there must be none)
 SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
     ("a sick patient, end to end", lambda: clean(SICK), ""),
@@ -116,6 +233,30 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
     ("the Decision cites a Lock zeta never evaluated", cites_a_lock_zeta_never_evaluated, "never evaluated: invented_lock"),
     ("the ledger recorded a different Decision", ledger_recorded_another_decision, "drifted apart"),
     ("the entity differs between the run and the Decision", wrong_entity, "the Decision is about 'patient_1'"),
+    ("VERIFIED: a sick patient, every digest recomputed from the stages' own content", lambda: checked(SICK), ""),
+    ("VERIFIED: a well patient, every digest recomputed from the stages' own content", lambda: checked(WELL), ""),
+    ("VERIFIED: facts forged beside genuine digests are named, though the facts agree with each other",
+     forged_facts_with_genuine_digests, "keys_present is not the keys alpha's content shows present"),
+    ("VERIFIED: zeta evaluated another patient than the one the Decision is about", zeta_evaluated_another_patient,
+     "evaluated for 'patient_2'"),
+    ("VERIFIED: a lock result digested without an entity cannot be tied to the run (what `facts` does)",
+     zeta_digest_carries_no_entity, "digested without an entity"),
+    ("VERIFIED: delta never ran, its digest is invented", delta_never_ran,
+     "delta: the digest is not the digest of the content"),
+    ("VERIFIED: the ledger chain does not verify", ledger_chain_broken, "ledger chain was not shown to verify"),
+    ("VERIFIED: the recorded entry is no longer the chain head", entry_is_no_longer_the_head,
+     "ledger chain was not shown to verify"),
+    ("VERIFIED: an entry from a ledger that never recorded it", entry_from_a_ledger_that_never_recorded_it,
+     "ledger chain was not shown to verify"),
+    ("VERIFIED: lock results swapped between ids", lock_results_swapped_between_ids, "the content names lock"),
+    ("VERIFIED: a lock result zeta marked stale", a_stale_lock_result, "stale"),
+    ("VERIFIED: a lock the registry holds was never evaluated", a_lock_dropped_from_the_run,
+     "zeta never evaluated abnormal_vitals_lock"),
+    ("GAP: zeta and beta were fed another patient's vitals than alpha's; nothing records the input a stage consumed",
+     downstream_fed_another_patients_vitals, ""),
+    ("GAP: a Decision rewritten against beta's rule is invisible; the rule is not in the Decision's content",
+     decision_that_ignores_its_rule, ""),
+    ("GAP: beta's confidence_basis is not bound, so changing it moves no digest", basis_changed_after_the_digest, ""),
 ]
 
 
