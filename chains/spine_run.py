@@ -13,8 +13,10 @@ Two groups. The first seven are the LENIENT check (`spine_trace.problems`), whic
 off the objects. The rest are STRICT: each stage's content is built with a pipeline context and the lineage digest
 of the stage before it, and `spine_trace.strict_problems` recomputes every digest from those contents. They run the
 real objects through the real attacks (another subject, another event, another run, an altered stage, a stale
-replay, a repeat, a truncated ledger, a missing context, a fabricated run) and require the boundary that should
-refuse each one to be the one that did, for the stated reason.
+replay, a repeat, a truncated ledger, a missing context, a fabricated run) and state the problem the boundary that
+should refuse each one must name. A scenario passes when one of its problems contains that text, so an extra,
+unrelated problem does not fail it. Two scenarios, marked GAP, record what the strict check does NOT catch as facts
+that expect no problem: they go red the day the gap closes and are then updated on purpose.
 """
 
 from __future__ import annotations
@@ -121,14 +123,18 @@ def two_runs_have_different_roots() -> List[str]:
 CTX = {"schema": CONTEXT_SCHEMA, "entity_id": "patient_1", "event_id": "event_1", "run_id": "run_1"}
 
 
-def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None) -> Dict[str, Any]:
+SICK_ELSEWHERE = VitalsObservation(heart_rate=149, oxygen_saturation=90.0, respiratory_rate=36, temperature=39.6, age_months=14)
+
+
+def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None) -> Dict[str, Any]:
     """Run the four stages for real, binding each to the context and to the digest of the stage before it."""
     locks, engine = build()
     ledger = DecisionLedger()
     entity = ctx["entity_id"]
     keys = observe(vitals)
     alpha = alpha_cns.keyset_content(keys, context=ctx)
-    da = subject_digest(alpha)
+    # zeta and beta are told which KeySet digest to name; nothing in either can check it against what they evaluated.
+    da = subject_digest(alpha if bind_keyset_of is None else alpha_cns.keyset_content(observe(bind_keyset_of), context=ctx))
     results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
     zeta = {lid: zeta_cns.lock_result_content(r, context=ctx, keyset_digest=da) for lid, r in results.items()}
     decided_on = results if results_from is None else results_from
@@ -268,8 +274,9 @@ def a_stage_carries_no_context() -> List[str]:
     return check(p)
 
 
-def a_run_fabricated_from_summaries() -> List[str]:
-    """What the lenient check accepts: four stages that agree with themselves and describe nothing."""
+def a_run_fabricated_with_digests_that_do_not_chain() -> List[str]:
+    """What the lenient check accepts: four stages that agree with themselves and describe nothing. Here the digests are
+    invented and do not chain; a fabricator who recomputes them passes (see the GAP scenario)."""
     d = lambda n: subject_digest({"fabricated": n})  # noqa: E731
     fake = {"alpha": {"context": dict(CTX), "present_names": ["anything"], "keys": [], "min_confidence": 0.0},
             "zeta": {"any_lock": {"context": dict(CTX), "entity_id": "patient_1", "keyset_digest": d(1)}},
@@ -292,6 +299,78 @@ def a_ledger_truncated_with_its_head_reset() -> List[str]:
     ledger.chain_head = ledger.entries[-1].immutable_hash
     assert ledger.verify_chain_integrity(), "the chain alone is expected to accept this: that is the gap"
     return [] if ledger.verify_against(held) else ["the ledger does not match the checkpoint held outside it"]
+
+
+def a_stale_lock_result_is_rested_on() -> List[str]:
+    """Zeta's contents say the observation was refused as stale; beta's Decision, made from fresh results, names them."""
+    locks, _ = build()
+    ev = LockEvaluator(locks)
+    ev.evaluate_all("patient_1", observe(WELL), T0)
+    stale = ev.evaluate_all("patient_1", observe(SICK), T0 - timedelta(hours=2))
+    p = stages(SICK)
+    p["zeta"] = {lid: zeta_cns.lock_result_content(r, context=CTX, keyset_digest=p["da"]) for lid, r in stale.items()}
+    p["beta"] = beta_cns.decision_content(
+        p["decision"], context=CTX, keyset_digest=p["da"],
+        lock_result_digests={lid: subject_digest(c) for lid, c in p["zeta"].items()})
+    p["delta"] = delta_cns.entry_content(p["ledger"].entries[0], context=CTX, decision_digest=subject_digest(p["beta"]))
+    return check(p)
+
+
+def a_lock_result_filed_under_another_locks_id() -> List[str]:
+    p = stages(SICK)
+    z = dict(p["zeta"])
+    z["sepsis_lock"], z["abnormal_vitals_lock"] = z["abnormal_vitals_lock"], z["sepsis_lock"]
+    p["zeta"] = z
+    p["beta"] = beta_cns.decision_content(
+        p["decision"], context=CTX, keyset_digest=p["da"],
+        lock_result_digests={lid: subject_digest(c) for lid, c in z.items()})
+    p["delta"] = delta_cns.entry_content(p["ledger"].entries[0], context=CTX, decision_digest=subject_digest(p["beta"]))
+    return check(p)
+
+
+def alpha_lists_a_key_it_does_not_hold_as_present() -> List[str]:
+    p = stages(SICK)
+    forged = dict(p["alpha"])
+    forged["present_names"] = sorted(set(forged["present_names"]) | {"invented_key"})
+    p["alpha"] = forged
+    da = subject_digest(forged)
+    p["zeta"] = {lid: zeta_cns.lock_result_content(r, context=CTX, keyset_digest=da) for lid, r in p["results"].items()}
+    p["beta"] = beta_cns.decision_content(
+        p["decision"], context=CTX, keyset_digest=da,
+        lock_result_digests={lid: subject_digest(c) for lid, c in p["zeta"].items()})
+    p["delta"] = delta_cns.entry_content(p["ledger"].entries[0], context=CTX, decision_digest=subject_digest(p["beta"]))
+    return check(p)
+
+
+def GAP_zeta_and_beta_named_the_digest_of_another_keyset() -> List[str]:
+    """KNOWN GAP, stated as a fact. Zeta and beta evaluated and decided on one set of readings and were bound with the
+    digest of a different KeySet that lists the same present Keys. Neither sees the other's KeySet, so keyset_digest is
+    asserted by whoever binds the result, and the strict check verifies that the supplied contents agree, not where they
+    came from. No problem is found. The day zeta records the KeySet it evaluated, this goes red and is updated on purpose."""
+    p = stages(SICK, bind_keyset_of=SICK_ELSEWHERE)
+    p["alpha"] = alpha_cns.keyset_content(observe(SICK_ELSEWHERE), context=CTX)
+    return check(p)
+
+
+def GAP_contents_fabricated_by_someone_who_recomputes_the_digests() -> List[str]:
+    """KNOWN GAP, stated as a fact. There is no key in this check: four contents that agree with each other and chain by
+    digest pass whether or not any component produced them. It verifies agreement, not authorship. No problem is found."""
+    ctx = dict(CTX)
+    alpha = {"min_confidence": 0.0, "keys": [{"name": "anything", "present": True, "confidence": 1.0, "reason": "made up"}],
+             "context": dict(ctx), "present_names": ["anything"]}
+    da = subject_digest(alpha)
+    zeta = {"any_lock": {"entity_id": "patient_1", "lock_id": "any_lock", "open": True, "changed": True, "forced": False,
+                         "reasons": ["made up"], "context": dict(ctx), "keyset_digest": da}}
+    core = {"entity_id": "patient_1", "decision_id": "d", "decision": "DISCHARGE_SAFE", "timestamp": "2026-10-01T08:00:00",
+            "confidence": 1.0, "triggered_by_locks": ["any_lock"], "triggered_by_keys": ["anything"],
+            "newly_triggered_locks": [], "decision_fingerprint": "0" * 64, "reasoning": "made up",
+            "reversal_conditions": [], "instructions": "made up"}
+    beta = {**core, "context": dict(ctx), "keyset_digest": da,
+            "lock_result_digests": {k: subject_digest(v) for k, v in zeta.items()}}
+    delta = {"audit_id": "0" * 16, "timestamp": "2026-10-01T08:00:00", "previous_hash": "0" * 64, "immutable_hash": "1" * 64,
+             "decision": dict(core), "run_id": ctx["run_id"], "event_id": ctx["event_id"], "context": dict(ctx),
+             "decision_digest": subject_digest(beta)}
+    return check({"alpha": alpha, "zeta": zeta, "beta": beta, "delta": delta})
 
 
 CONTEXT_CASES: List[Any] = [
@@ -358,9 +437,18 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
     ("strict: the same Decision recorded twice in one run", the_same_decision_is_recorded_twice_in_one_run,
      "already recorded a Decision"),
     ("strict: a stage carries no context", a_stage_carries_no_context, "delta carries no context"),
-    ("strict: a run fabricated from summaries", a_run_fabricated_from_summaries, "evaluated from a different KeySet"),
+    ("strict: a run fabricated with digests that do not chain", a_run_fabricated_with_digests_that_do_not_chain,
+     "evaluated from a different KeySet"),
     ("strict: a ledger truncated with its head reset", a_ledger_truncated_with_its_head_reset,
      "does not match the checkpoint held outside it"),
+    ("strict: a lock result zeta refused as stale is rested on", a_stale_lock_result_is_rested_on, "was refused as stale"),
+    ("strict: a lock result is filed under another lock's id", a_lock_result_filed_under_another_locks_id,
+     "carries lock_id 'abnormal_vitals_lock'"),
+    ("strict: alpha lists a present key its own keys do not hold", alpha_lists_a_key_it_does_not_hold_as_present,
+     "alpha lists present_names that its own keys do not hold as present: invented_key"),
+    ("strict: GAP, zeta and beta named the digest of another KeySet", GAP_zeta_and_beta_named_the_digest_of_another_keyset, ""),
+    ("strict: GAP, contents fabricated by someone who recomputes the digests",
+     GAP_contents_fabricated_by_someone_who_recomputes_the_digests, ""),
 ]
 
 

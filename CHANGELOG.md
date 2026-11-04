@@ -31,10 +31,12 @@ not a release.
   the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
   entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
   are unchanged. The `cns` package is untouched.
-- `chains/spine_run.py` gains twenty strict scenarios beside its seven lenient ones: the real objects through the real
-  attacks (another subject, event or run, an altered stage, a stale replay, a repeat, a truncated ledger, a missing
-  context, a fabricated run), each stating the problem the boundary that should refuse it must name, and one that holds
-  the four connectors' own copies of the context check to `context_problems`.
+- `chains/spine_run.py` gains twenty-five strict scenarios beside its seven lenient ones: the real objects through the
+  real attacks (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale replay, a
+  repeat, a truncated ledger, a missing context, a made-up run), each stating the problem the boundary that should refuse
+  it must name; one that holds the four connectors' own copies of the context check to `context_problems`; and two
+  marked GAP that record what the strict check does not catch (it verifies agreement, not authorship, and zeta never
+  sees the KeySet a result is bound to) as facts that go red the day they close.
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
   endorsements, revocation), capability manifests, terms negotiation, salted selective disclosure, portable decisions

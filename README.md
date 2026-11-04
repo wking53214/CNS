@@ -191,8 +191,12 @@ the Decision is right, and `present_names` is stated by alpha so CNS never re-im
 limits stay. A native stage can still compute a result from a foreign input in memory (zeta's KeySet and LockResult
 carry no identity), so the result is refused when it is bound, recorded or verified, not when it is computed. And
 delta's ledger is an in-memory reference ledger: a checkpoint held outside it is what detects truncation or a
-rewrite, and nothing survives a restart. The `chains` workflow runs the scenarios (seven lenient, twenty strict,
-each attack stating the problem the boundary that should refuse it must name).
+rewrite, and nothing survives a restart. Two more are recorded as facts, not hidden: the strict check verifies that
+contents agree and chain by digest, not who made them (there is no key, so contents made up by someone who
+recomputes the digests pass), and zeta never sees the KeySet a result is bound to, so a result evaluated from one
+KeySet and bound to another's digest passes. The `chains` workflow runs the scenarios (seven lenient, twenty-five
+strict: five checks that hold, eighteen attacks each stating the problem that should refuse it, and the two gaps above,
+which expect no problem and go red the day they close).
 
 ## The rule
 

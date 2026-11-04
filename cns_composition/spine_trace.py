@@ -50,7 +50,15 @@ requires:
     re-implements zeta's confidence rule) and only Locks zeta evaluated;
   - delta's entry was recorded under that run and event.
 
-A missing field is a problem, not a skip. Content that cannot be digested is a problem, not an exception. CNS
+A missing field is a problem, not a skip. Content that cannot be digested or read is a problem, not an exception.
+
+WHAT STRICT DOES NOT PROVE (recorded as facts in `chains/spine_run.py`, scenarios marked GAP)
+
+It verifies that the supplied contents AGREE with each other and chain by digest. It does not prove where they came
+from. There is no key in it, so four contents made up by someone who recomputes the digests pass. And zeta never
+sees the KeySet a result is bound to: `keyset_digest` is asserted by whoever binds it, so a result evaluated from
+one KeySet and bound to another's digest passes. Closing the second needs zeta to record the KeySet it evaluated.
+CNS
 reads fields by their documented names and applies no decision policy: it does not say which Key should be
 present, which Lock should open, or whether the Decision is right. `strict_root` is domain-separated
 (`TRACE_SCHEMA`), so it can never equal a lenient `root`, and it is never a native digest of any stage.
