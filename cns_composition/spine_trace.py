@@ -67,7 +67,6 @@ present, which Lock should open, or whether the Decision is right. `strict_root`
 from __future__ import annotations
 
 import re
-from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -233,6 +232,10 @@ def _plain(value: Any) -> Any:
     return value
 
 
+def _is_sha256(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
 def _strings(value: object) -> Optional[List[str]]:
     if isinstance(value, (list, tuple)) and all(isinstance(v, str) for v in value):
         return list(value)
@@ -244,18 +247,25 @@ def strict_problems(
     zeta: Mapping[str, Mapping[str, Any]],
     beta: Mapping[str, Any],
     delta: Mapping[str, Any],
+    *,
+    chain_verified: bool = False,
 ) -> List[str]:
     """Everything that does not hold together in four stages' contents. Empty when they describe one run.
 
     `alpha` is `keyset_content(keys, context=...)`, `zeta` maps each lock id to
     `lock_result_content(result, context=..., keyset_digest=...)`, `beta` is `decision_content(decision,
     context=..., keyset_digest=..., lock_result_digests=...)` and `delta` is `entry_content(entry, context=...,
-    decision_digest=...)`. Nothing is taken from the caller but those four contents; every digest is recomputed here.
+    decision_digest=...)`. Every digest is recomputed here.
+
+    `chain_verified` is the one fact the contents cannot carry: that delta's own `verify_chain_integrity()` held and
+    the recorded entry is a member of that chain. CNS imports no repository, so the caller (the integration runner,
+    which holds the real ledger) states it. It defaults to False, and anything but exactly True is a problem, so a
+    caller that never asked delta cannot get a clean result.
     """
     snap, unread = _snapshot(alpha, zeta, beta, delta)
     if unread:
         return unread
-    return _strict_problems(*snap)
+    return _strict_problems(*snap, chain_verified=chain_verified)
 
 
 def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, Any, Any, Any], List[str]]:
@@ -271,7 +281,7 @@ def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, 
     return (copies[0], copies[1], copies[2], copies[3]), unread
 
 
-def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any) -> List[str]:
+def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain_verified: Any = False) -> List[str]:
     out: List[str] = []
     stages = {"alpha": alpha, "beta": beta, "delta": delta}
     for name, content in stages.items():
@@ -300,16 +310,14 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any) -> List[str]:
             out += [f"{who} context: {issue}" for issue in issues]
             continue
         contexts[who] = content["context"]
-    run: Optional[Mapping[str, Any]] = None
-    if contexts:
-        counts = Counter(tuple(sorted(c.items())) for c in contexts.values())
-        best = max(counts.values())
-        first = next(c for c in contexts.values() if counts[tuple(sorted(c.items()))] == best)
-        run = first
+    # The run is alpha's context: alpha is the stage that holds the observation, so every other stage is judged against
+    # it. (A vote among stages named the honest stages when one outlier outnumbered them, e.g. a registry of many locks.)
+    run: Optional[Mapping[str, Any]] = contexts.get("alpha")
+    if run is not None:
         for who, c in contexts.items():
-            if dict(c) != dict(run):
+            if who != "alpha" and dict(c) != dict(run):
                 wrong = [f"{f} {c[f]!r} vs {run[f]!r}" for f in _CONTEXT_FIELDS if c[f] != run[f]]
-                out.append(f"{who} is bound to a different run: {', '.join(wrong)}")
+                out.append(f"{who} is bound to a different run than alpha's: {', '.join(wrong)}")
 
     # Lineage: each stage names the digest of the one before it, and CNS recomputes that digest from the content.
     da = _digest(alpha, "alpha", out)
@@ -409,6 +417,28 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any) -> List[str]:
         unseen_new = sorted(set(newly) - set(zeta))
         if unseen_new:
             out.append(f"the Decision names newly triggered lock(s) zeta never evaluated: {', '.join(unseen_new)}")
+    # Zeta's own record of the KeySet it evaluated, against the fingerprint alpha reports for the KeySet it produced.
+    # A digest a binder names can be made to chain; this is a fact each component computed about its own object.
+    fa = alpha.get("keyset_fingerprint")
+    if not _is_sha256(fa):
+        out.append("alpha carries no keyset_fingerprint (a full lowercase SHA-256), so a lock result cannot be matched to its KeySet")
+    else:
+        for lock_id, content in zeta.items():
+            fz = content.get("keyset_fingerprint")
+            if not _is_sha256(fz):
+                out.append(f"zeta lock {lock_id} carries no keyset_fingerprint, so it cannot be matched to alpha's KeySet")
+            elif fz != fa:
+                out.append(f"zeta lock {lock_id} was evaluated from a different KeySet than alpha produced "
+                           "(its recorded KeySet fingerprint differs from alpha's)")
+        fb = beta.get("keyset_fingerprint")
+        if not _is_sha256(fb):
+            out.append("beta carries no keyset_fingerprint, so its Decision cannot be matched to alpha's KeySet")
+        elif fb != fa:
+            out.append("beta's Decision was made from a different KeySet than alpha produced "
+                       "(its recorded KeySet fingerprint differs from alpha's)")
+    if chain_verified is not True:
+        out.append("the ledger chain was not shown to verify (delta's verify_chain_integrity, with the recorded entry "
+                   "as a member of that chain), so the entry may not belong to the chain")
     stage_digests = [d for d in (da, db, dd) if d is not None]
     if len(set(stage_digests)) != len(stage_digests):
         out.append("two stages are bound to the same digest; each stage must be bound to its own output")
@@ -420,10 +450,14 @@ def strict_root(
     zeta: Mapping[str, Mapping[str, Any]],
     beta: Mapping[str, Any],
     delta: Mapping[str, Any],
+    *,
+    chain_verified: bool = False,
 ) -> str:
-    """One digest over the whole run, from the contents. Raises ValueError if the stages do not hold together."""
+    """One digest over the whole run, from the contents. Raises ValueError if the stages do not hold together.
+
+    Without `chain_verified=True` (delta's chain shown to verify, see `strict_problems`) no root is issued."""
     (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
-    found = unread or _strict_problems(alpha, zeta, beta, delta)
+    found = unread or _strict_problems(alpha, zeta, beta, delta, chain_verified=chain_verified)
     if found:
         raise ValueError("the spine run does not hold together: " + "; ".join(found))
     context = alpha["context"]
