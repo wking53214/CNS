@@ -190,10 +190,22 @@ class MemoryLedger:
         self._mutate(reservation.sender, reservation.message_id, now, lambda cur, t: _release_step(cur, reservation))
 
 
+def _refuse_single_host_under_production(kind: str) -> None:
+    """Under the production profile a single-host ledger is refused at construction: a process that builds its own
+    file or database ledger would spend a decision the shared ledger never saw (the spine's recorded gap). Use the
+    shared PostgresLedger; this is the same rule interop/act.py applies to its command line."""
+    from . import crypto_backend
+
+    if crypto_backend.production():
+        raise RuntimeError(f"the production profile does not accept a single-host {kind}; "
+                           "use the shared PostgresLedger, so every process spends against one ledger")
+
+
 class FileLedger:
     """Shared by every process on this host that opens the same path. POSIX file locks; not for network filesystems."""
 
     def __init__(self, path: os.PathLike | str, *, keep_ms: int = 120_000) -> None:
+        _refuse_single_host_under_production("file ledger")
         try:
             import fcntl  # noqa: F401
         except ImportError:  # pragma: no cover - there is no POSIX lock to share
@@ -337,6 +349,7 @@ class SqliteLedger:
     Still one host: do not put the database on a network filesystem."""
 
     def __init__(self, path: os.PathLike | str, *, keep_ms: int = 120_000, busy_ms: int = 5_000) -> None:
+        _refuse_single_host_under_production("SQLite ledger")
         self._path, self._keep_ms, self._busy_ms = str(path), keep_ms, busy_ms
         Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         try:
