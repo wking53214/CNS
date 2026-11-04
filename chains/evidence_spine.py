@@ -421,14 +421,15 @@ READERS = {"HERALD:herald_source": reads_document, "Conservation_Kernel:root_adm
 
 
 def fresh_guard() -> DecisionGuard:
-    """A closed guard that will open, once, for the root the roster's decision judged. Policy, like READERS."""
-    return DecisionGuard(reads_root)
+    """A closed guard that will open, once, for the root the roster's decision judged. Policy, like READERS. It holds
+    the decision to REQUIRED_SEATS itself, so a roster someone else built smaller does not open it."""
+    return DecisionGuard(reads_root, expected_seats=REQUIRED_SEATS)
 
 
 def fresh_ccc_guard() -> DecisionGuard:
     """A closed guard to give CCC as its `write_permission`: it opens, once, for the document the roster's decision
-    judged. Policy, like READERS."""
-    return DecisionGuard(reads_write)
+    judged. Policy, like READERS. Pinned to REQUIRED_SEATS, as `fresh_guard` is."""
+    return DecisionGuard(reads_write, expected_seats=REQUIRED_SEATS)
 
 
 def refused_by_permission(call: Callable[[], object]) -> bool:
