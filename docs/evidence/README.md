@@ -16,6 +16,7 @@ independently written repos and is absent from ordinary software.
 | `falsifier-2026-10-28/` | The falsifier run: 20 real AI co-authored commits of ghost_tools replayed through the circuit as built and with throwaway rule changes, records copied unaltered. Its README says what it is not. |
 | `proof-2026-10-29/` | The proof run: three of those commits through the branch code, each ending HELD with a claim row that names the change, records copied unaltered. Its README lists the eight checks and the limits. |
 | `live-anthropic-2026-11-04/` | The first live AI-provider run: the UAI-1 runner and failure checks against the real Anthropic API on Opus, Sonnet and Haiku 5.5, outputs copied unaltered. Its README says what the run shows and what it does not. |
+| `live-anthropic-2026-11-04-r2/` | The second live Anthropic run, after the prompt was made to state the strict reader's answer contract: the same runner and failure checks on the same three models, outputs copied unaltered. 9 of 9 answers accepted; its README says what that does and does not show. |
 
 ## Why the collision inventory exists
 
