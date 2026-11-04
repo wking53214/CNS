@@ -22,8 +22,8 @@
 #                   seat the manifest does not name, a short, uppercase or wrong pin, a change hidden from git status
 #                   by an index flag or the caller's git configuration, a seat the manifest names that the folder lacks,
 #                   a Burnish or a Drafter checkout the manifest does not name, whether the change is claimed by commit or by diff, or
-#                   a seat is named with --drafter or --finisher) is refused, and a red target suite is not
-#                   accepted. At the pinned Warden all sixteen cases are refused, and each roster case also requires that
+#                   a seat is named with --drafter or --finisher, or a manifest that omits WARDEN) is refused, and a red target suite is not
+#                   accepted. At the pinned Warden all seventeen cases are refused, and each roster case also requires that
 #                   Warden's reason names the seat. A manifest at a Warden that does not
 #                   refuse one of them (0.13.7 did not refuse four) makes this step red, and the red is the finding.
 #
