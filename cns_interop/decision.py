@@ -270,6 +270,9 @@ class RemoteDecisionGuard:
                     terms.get("version")) is not int:
                 raise Refused("terms", "the decision was negotiated for a different capability or version than "
                               "this guard protects")
+            sync = getattr(self._clock, "sync", None)
+            if callable(sync):
+                sync()  # a trusted clock (ledger_postgres.TrustedClock) is re-read from its reference for EVERY decision
             now = self._clock()
             self._trust.admit(terms.get("decider", ""), now=now)
             if self._grants is not None and lease_ms is None:

@@ -32,9 +32,12 @@ is no fallback to files. Under UAI_PROFILE=production the file backend is refuse
 receiver compare its clock with the database's before reading a job, and refuse (exit 2, code `clock_skew`) when they differ
 by more; with it, every message lifetime, grant expiry and approval expiry is judged by the DATABASE's time, carried on this
 host's monotonic clock (`TrustedClock`), not by this host's wall clock, and the tolerance must be strictly below the ledger's
-retention window (120 s), or the start is refused as `config`. Without it (the development opt-out, outside the production
-profile) lifetimes are judged by this host's clock; the PostgreSQL ledger still refuses a message expired by its own clock.
-`--diagnostics` connects, then prints the backends actually in force (the DSN is never printed) and exits without reading a job.
+retention window (120 s), or the start is refused as `config`. Under UAI_PROFILE=production the flag is REQUIRED (refused as
+`config` without it), and the check runs at start-up and again for the decision itself. Without the flag, which only the
+default profile allows (the development and test opt-out: UAI_PROFILE unset), lifetimes are judged by this host's clock; the
+PostgreSQL ledger still refuses a message expired by its own clock. `--diagnostics` connects, then prints the backends and
+the clock source actually in force (the DSN is never printed) and exits without reading a job; it acts on nothing, so it
+runs without the flag and says so.
 
 POLICY BACKEND. By default the grant store (withdrawals) is a SQLite file and the audit record a file, both safe for one
 host. `--policy-backend postgres` (same DSN variable) keeps withdrawals and ONE hash-chained audit record in PostgreSQL for
@@ -163,6 +166,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                                  "and --audit, or --decision-only to accept that a signature alone opens the action", 2)
     if cfg.max_clock_skew_ms is not None and (cfg.ledger_backend != "postgres" or cfg.max_clock_skew_ms < 0):
         return _refuse("config", "--max-clock-skew-ms is a non-negative number of ms, for the postgres backend", 2)
+    if crypto_backend.production() and cfg.max_clock_skew_ms is None and not cfg.diagnostics:
+        return _refuse("config", "the production profile judges message lifetimes by the ledger database's clock: give "
+                                 "--max-clock-skew-ms (strictly below the ledger's 120000 ms retention window)", 2)
     clock = now_ms  # this host's clock, unless the receiver asked for the database's
     try:
         decisions, permits = _ledgers(cfg)
@@ -183,7 +189,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                           "permit_ledger": type(permits).__name__ if permits is not None else None,
                           "mode": "decision-only" if cfg.decision_only else "receiver-policy",
                           "policy_backend": "none" if cfg.decision_only else cfg.policy_backend,
-                          "sync_replication_required": bool(cfg.require_sync_replication), "crypto": crypto}, sort_keys=True))
+                          "sync_replication_required": bool(cfg.require_sync_replication), "crypto": crypto,
+                          "clock": ({"source": "database", "max_skew_ms": cfg.max_clock_skew_ms}
+                                    if cfg.max_clock_skew_ms is not None else {"source": "host"})}, sort_keys=True))
         return 0
     stdin = sys.stdin.read()
     try:

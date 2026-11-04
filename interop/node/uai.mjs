@@ -566,6 +566,7 @@ export class RemoteDecisionGuard {
     if (this.approved !== null) throw new Error("this guard was already authorized; one guard serves one decision");
     if (!isPlainObject(terms) || terms.requester !== this.actingFor) throw new Refused("audience", "the terms are for a requester this guard does not act for");
     if (terms.capability !== this.capability[0] || terms.version !== this.capability[1] || !Number.isSafeInteger(terms.version)) throw new Refused("terms", "the decision was negotiated for a different capability or version than this guard protects");
+    if (typeof this.clock.sync === "function") this.clock.sync();   // a trusted clock (pg.mjs TrustedClock) is re-read from its reference for EVERY decision
     const now = this.clock();
     this.trust.admit(typeof terms.decider === "string" ? terms.decider : "", { now });
     if (this.grants !== null && leaseMs === null) leaseMs = 30000;   // a refusal a person can cure must not burn the decision
