@@ -17,7 +17,13 @@
 # a connection to this one; the ledger alone cannot tell them apart.
 #
 # It runs on a schedule because a connection can be removed in another repository without touching this one, and
-# on any pull request here that changes the ledger or the checker.
+# on any pull request here, or push to main, that changes the ledger, the checker, cns/gate.py or a digest contract.
+#
+# The second job, kernel-digest, is the one place CNS runs another repository's code: it puts CNS's digest contract
+# files over STACK-Kernel's vendored copies and runs STACK-Kernel's Rust digest tests, so a change to cns/gate.py or
+# to the vectors that the Rust reproductions do not follow fails here, before merge. It is its own job with a
+# read-only token and no secrets, and the links job above uses nothing it produces. The dependency is one way:
+# STACK-Kernel builds and tests without CNS, against its own vendored copies.
 name: links
 
 on:
@@ -34,6 +40,24 @@ on:
       - cns_composition/cns_versions.py
       - contracts/cns-releases.json
       - .github/workflows/links.yml
+      - cns/gate.py
+      - cns_composition/digest_differential.py
+      - contracts/digest-differential.json
+  push:
+    branches:
+      - main
+    paths:
+      - contracts/cns-links.json
+      - cns_composition/link_ledger.py
+      - cns_composition/consumers.py
+      - cns_composition/digest_vectors.py
+      - contracts/digest-vectors.json
+      - cns_composition/cns_versions.py
+      - contracts/cns-releases.json
+      - .github/workflows/links.yml
+      - cns/gate.py
+      - cns_composition/digest_differential.py
+      - contracts/digest-differential.json
 
 permissions: {}
 
@@ -93,3 +117,37 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: python -m cns_composition.cns_versions --stack ../stack
+
+  kernel-digest:
+    name: kernel-digest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: hub
+          persist-credentials: false
+      - name: Check out STACK-Kernel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          basic=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$basic"
+          if ! git -c "http.extraheader=AUTHORIZATION: basic $basic" clone --quiet --depth 1 \
+               "https://github.com/$OWNER/STACK-Kernel.git" kernel 2>/dev/null; then
+            echo "::error::could not check out STACK-Kernel, so its Rust digest tests did not run"
+            exit 1
+          fi
+      - name: Put CNS's digest contract files over STACK-Kernel's vendored copies
+        run: |
+          cp hub/contracts/digest-vectors.json kernel/crates/stack-sentinel/tests/fixtures/cns-digest-vectors.json
+          cp hub/contracts/digest-differential.json kernel/crates/stack-sentinel/tests/fixtures/digest-differential.json
+          git -C kernel status --short
+      - name: STACK-Kernel's Rust reproductions of subject_digest agree with this commit of CNS
+        working-directory: kernel
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable test -p stack-sentinel --test cns_vectors --locked
+          cargo +stable test -p stack-trident --test cns_digest --locked
