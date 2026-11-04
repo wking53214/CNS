@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -129,6 +130,15 @@ def _read_json(status: int, raw: bytes, max_bytes: int) -> Dict[str, Any]:
     return value
 
 
+def _check_key(api_key: str) -> None:
+    """A key with whitespace or a control or format character anywhere is refused before any request is built.
+
+    A pasted key often carries a newline, a tab, a zero-width space or a byte order mark. Sent as a header it would be rejected,
+    split, or silently altered. The error names the problem, never the key or any part of it."""
+    if any(ch.isspace() or unicodedata.category(ch) in ("Cc", "Cf") for ch in api_key):
+        raise ValueError("the API key contains whitespace or a control character; check how it was pasted (the key is not shown)")
+
+
 def _client(name: str, model: str, log: ProvenanceLog, call: Callable[[str, Provenance], str]) -> Callable[[str], str]:
     def complete(prompt: str) -> str:
         rec = log.add(Provenance(provider=name, model_requested=model))
@@ -159,6 +169,7 @@ def anthropic_complete(api_key: str, model: str, log: ProvenanceLog, *, base_url
     block. A `refusal` stop reason is the provider declining the request and is refused as such, never read as an answer."""
     if not api_key or not model:
         raise ValueError("an API key and a model name are needed")
+    _check_key(api_key)
 
     def call(prompt: str, rec: Provenance) -> str:
         body = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}
@@ -191,6 +202,7 @@ def gemini_complete(api_key: str, model: str, log: ProvenanceLog, *, base_url: s
     """`complete(prompt)` over Google's Gemini generateContent. The key is sent in a header, never in the URL."""
     if not api_key or not model or "/" in model or "?" in model:
         raise ValueError("an API key and a plain model name are needed")
+    _check_key(api_key)
 
     def call(prompt: str, rec: Provenance) -> str:
         body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
@@ -244,6 +256,7 @@ def openai_complete(api_key: str, model: str, log: ProvenanceLog, *, base_url: s
     """`complete(prompt)` over OpenAI Chat Completions (the ChatGPT model family). The key lives only in this closure."""
     if not api_key or not model:
         raise ValueError("an API key and a model name are needed")
+    _check_key(api_key)
 
     def call(prompt: str, rec: Provenance) -> str:
         return _chat_call(model, prompt, rec, base_url.rstrip("/") + "/v1/chat/completions",
@@ -264,6 +277,7 @@ def copilot_complete(api_key: str, model: str, log: ProvenanceLog, *, route: str
     the key goes in the `api-key` header. The route is part of the provenance provider name, so a record says which was used."""
     if not api_key or not model:
         raise ValueError("an API key and a model name are needed")
+    _check_key(api_key)
     if route not in COPILOT_ROUTES:
         raise ValueError(f"unknown Copilot route {route!r}: expected one of {COPILOT_ROUTES}")
     if route == "azure-openai":

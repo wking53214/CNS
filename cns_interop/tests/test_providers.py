@@ -438,3 +438,33 @@ def test_the_live_runner_strips_whitespace_from_a_pasted_key(monkeypatch, capsys
     assert live.main([]) == 0
     assert seen == [KEY]
     assert KEY not in capsys.readouterr().out
+
+
+BAD_KEY_CHARS = (" ", "\t", "\n", "\r", "\x00", "\x1b", "\x7f", " ", " ", "​", "﻿")
+
+
+@pytest.mark.parametrize("where", ("start", "middle", "end"))
+@pytest.mark.parametrize("ch", BAD_KEY_CHARS, ids=[f"U+{ord(c):04X}" for c in BAD_KEY_CHARS])
+def test_a_key_with_whitespace_or_a_control_character_anywhere_is_refused_and_the_error_never_shows_it(ch, where):
+    key = {"start": ch + KEY, "middle": KEY[:8] + ch + KEY[8:], "end": KEY + ch}[where]
+    makers = (lambda: anthropic_complete(key, "m", ProvenanceLog()),
+              lambda: gemini_complete(key, "m", ProvenanceLog()),
+              lambda: openai_complete(key, "m", ProvenanceLog()),
+              lambda: copilot_complete(key, "m", ProvenanceLog()),
+              lambda: copilot_complete(key, "m", ProvenanceLog(), route="azure-openai", base_url="https://x.openai.azure.com"))
+    for make_client in makers:
+        with pytest.raises(ValueError) as info:
+            make_client()
+        shown = str(info.value) + repr(info.value) + repr(info.value.args)
+        assert "whitespace or a control character" in str(info.value)
+        assert KEY not in shown and KEY[:8] not in shown and KEY[8:] not in shown
+
+
+def test_a_refused_key_never_reaches_the_network():
+    stub = serving("anthropic", honest_model)
+    try:
+        with pytest.raises(ValueError):
+            anthropic_complete(KEY + "\n", "m", ProvenanceLog(), base_url=stub.url)
+        assert stub.requests == []
+    finally:
+        stub.close()
