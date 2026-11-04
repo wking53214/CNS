@@ -87,6 +87,7 @@ docstring aside). The key is in no file.
 | Wrong key | `malformed.c_wrong_key` | HTTP 401, refused; the key is not in the record |
 | Prose answer | `malformed.d_prose_answer` (Haiku) | end_turn, then refused by the strict reader as not one JSON object |
 | Timeout | `timeout` (Opus, timeout_s 1.0) | `TimeoutError` after 1018 ms, refused and recorded as a provider failure |
+| Whole repository after the run | `python -m pytest -q`; `ruff check .`; `python -m mypy cns_interop`; `python -m mypy --strict cns/`; `python -m mypy cns_composition` | 2319 passed, 0 failed, 0 skipped (180 s; 2305 before plus 14 new prompt and refusal tests); clean; no issues in 56, 16 and 64 files. Node suites 37 passed |
 
 Accepted by the strict reader, per model: Opus 3 of 3, Sonnet 3 of 3, Haiku 3 of 3 (runner 6 of 6, raw 3 of 3). The first run,
 above, stays as recorded: 0 of 6 in the runner, 0 of 3 raw.
