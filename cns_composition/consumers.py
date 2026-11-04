@@ -68,6 +68,7 @@ REQUIRED: Mapping[str, Imports] = {
         "cns.gate": (),
     },
     "observe-perceive": {
+        "cns": (),
         "cns.gate": ("Gate", "GateChain", "GateOutcome", "GatePosition", "resolve", "subject_digest", "unbound"),
         # root_admission.py: the roster that must approve a root before the kernel registers it. These are the
         # consequential imports, and they were missing, so a rename here would have broken it unannounced.
