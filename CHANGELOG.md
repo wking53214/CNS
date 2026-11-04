@@ -17,8 +17,9 @@ entry says so.
 
 ## [Unreleased]
 
-Work after the `v2.3.0` tag (`41592fb`). It adds a package and tightens a few checks for input that was already wrong
-(see Changed; no signature, root or outcome meaning moved); which version it
+Work after the `v2.3.0` tag (`41592fb`). It adds a package, strengthens the strict decision-spine check, fixes one
+command that failed its own test, and tightens a few checks for input that was already wrong (see Changed; no
+signature, root or outcome meaning moved); which version it
 ships in is the owner's decision, so `pyproject.toml` still says 2.3.0 and `release --check` reads this heading as
 not a release.
 
@@ -32,12 +33,22 @@ not a release.
   the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
   entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
   are unchanged. The `cns` package is untouched.
-- `chains/spine_run.py` gains twenty-five strict scenarios beside its seven lenient ones: the real objects through the
+- `chains/spine_run.py` gains thirty-five strict scenarios beside its seven lenient ones: the real objects through the
   real attacks (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale replay, a
-  repeat, a truncated ledger, a missing context, a made-up run), each stating the problem the boundary that should refuse
-  it must name; one that holds the four connectors' own copies of the context check to `context_problems`; and two
-  marked GAP that record what the strict check does not catch (it verifies agreement, not authorship, and zeta never
-  sees the KeySet a result is bound to) as facts that go red the day they close.
+  repeat, a truncated ledger, a missing context, a made-up run, a hash the ledger never wrote, a chain broken after
+  the run, an unbound append, a second Decision for a recorded event, a run spanning two events, an older Decision
+  after a newer one, a KeySet digest of another KeySet), each stating the problem the boundary that should refuse it
+  must name; one that holds the four connectors' own copies of the context check to `context_problems`; and three
+  marked GAP that record what the strict check does not catch (authorship; a narrative rewritten under a valid
+  five-field fingerprint; a cited lock that is closed) as facts that go red the day they close. A scenario that
+  crashes is reported as that scenario failing and the rest still run.
+- `strict_problems` and `strict_root` take `chain_verified`, the answer of delta's `verify_chain_integrity` and
+  `verify_against` for the ledger the entry came from; without it the entry is reported as not shown to belong to a
+  verified chain. They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
+  alpha, zeta, beta and delta. `blame` names alpha's run as the reference.
+- `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
+  `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.
+
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
   endorsements, revocation), capability manifests, terms negotiation, salted selective disclosure, portable decisions
@@ -90,6 +101,9 @@ not a release.
 - `cns.gate.resolve` read a verdict whose outcome was the text "terminal_breach" as no objection at all, and
   `run_repo_chain` reported such a chain PASS, complete and bound. It is a breach now.
 - `consumers --stack` exited 1 on observe-perceive's `super_gate` and `decision_guard` imports, which `REQUIRED` did not list.
+- `cns_composition.spine_manifest` now ends `main` with `delivery.run`, as every command in the package must; on
+  `main` (8bd1ca2) `test_every_command_in_the_package_ends_with_deliver` failed because it did not. The one existing
+  test edit is the command's registration in that test's list (Step 8a).
 - `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)
   lost earlier entries and a spent decision was accepted again. It now appends one line and fsyncs, and when it drops
   expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.

@@ -5,8 +5,8 @@
 #                        DGK's perimeter are shown differently, which `same_subject` refuses.
 # chains/spine_run.py    interconnected alpha, zeta, beta and delta run for real, then checked at their seams by
 #                        cns_composition.spine_trace, leniently (seven scenarios) and strictly, from each stage's content with a
-#                        pipeline context (twenty-five: five checks that hold, eighteen real attacks each naming the problem that should
-#                        refuse it, and two gaps the check does not close, recorded as facts).
+#                        pipeline context (thirty-five: five checks that hold, twenty-seven real attacks each naming the problem that should
+#                        refuse it, and three gaps the check does not close, recorded as facts).
 # chains/ecology_answer.py  an Ecology answer record judged by DIT's gates through cns_composition.super_gate, the
 #                        verdicts bound to the answer text and tied to Ecology's record by its answer hash. Six scenarios, one of
 #                        them a DIT gate left out of the request, which cns_composition.super_gate refuses as a breach.
