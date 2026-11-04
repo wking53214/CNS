@@ -15,6 +15,7 @@ independently written repos and is absent from ordinary software.
 | `collision_inventory.py` | Generates `COLLISIONS.md`. Imports its parsing and classification from `cns_map.py` so the two documents cannot disagree about what a class is. |
 | `falsifier-2026-10-28/` | The falsifier run: 20 real AI co-authored commits of ghost_tools replayed through the circuit as built and with throwaway rule changes, records copied unaltered. Its README says what it is not. |
 | `proof-2026-10-29/` | The proof run: three of those commits through the branch code, each ending HELD with a claim row that names the change, records copied unaltered. Its README lists the eight checks and the limits. |
+| `live-anthropic-2026-11-04/` | The first live AI-provider run: the UAI-1 runner and failure checks against the real Anthropic API on Opus, Sonnet and Haiku 5.5, outputs copied unaltered. Its README says what the run shows and what it does not. |
 
 ## Why the collision inventory exists
 

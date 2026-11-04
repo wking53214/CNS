@@ -1,0 +1,20 @@
+{
+ "answer": "OK",
+ "max_tokens": 256,
+ "model": "claude-haiku-5-5",
+ "prompt": "Reply with exactly the word OK and nothing else.",
+ "provenance": [
+  {
+   "call": "ok",
+   "finish_reason": "end_turn",
+   "latency_ms": 613,
+   "model_reported": "claude-haiku-5-5",
+   "model_requested": "claude-haiku-5-5",
+   "outcome": "pending",
+   "provider": "anthropic",
+   "reason": "",
+   "request_sha256": "3147e12922e379ea0f245c7684f9f6b00272b3ae8701c5850d525a98d42f1d30",
+   "response_sha256": "ce967ff2220fff8fefbe24d8ab7bbd2070f30ecc302dbb747e6194ac01427b62"
+  }
+ ]
+}
