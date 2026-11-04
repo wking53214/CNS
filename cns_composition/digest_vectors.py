@@ -15,10 +15,18 @@ its own tests compare. CNS tests assert the file is exactly what `subject_digest
 cannot go stale, and `drift` reads the vendored copy in a checkout to say when a repository's copy has fallen
 behind it.
 
-WHAT IS NOT HERE
+SCHEMA 2
 
-NaN and the infinities, which CNS refuses and JSON cannot carry. A reproduction should refuse them too; that is
-in its own tests.
+Each vector also carries `rendering`, the exact canonical string, so a reproduction compares bytes before it compares
+hashes, and `restricted_v1`, whether the content lies in the sub-domain STACK-Kernel's Trident accepts (see `DOMAIN`).
+The flag is computed here by `restricted_v1`, never written by hand. `digest_version` names the algorithm; it changes
+only if a currently valid input would digest differently. `domain` states the value domain in words.
+
+WHAT JSON CANNOT CARRY
+
+NaN, the infinities, a lone surrogate, a key that is not text, and bytes, all of which CNS refuses. They are listed in
+`refusals` symbolically, with the JSON text a lenient parser would accept where there is one. A reproduction must refuse
+every one; CNS's own tests check that Python raises `TypeError` for each.
 
 THE FILE
 
@@ -35,12 +43,23 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from cns.gate import subject_digest
+from cns.gate import _canonical, subject_digest
 from cns_composition import delivery, repin
 
-__all__ = ["CASES", "VENDORED", "build", "drift", "main"]
+__all__ = ["CASES", "DIGEST_VERSION", "DOMAIN", "REFUSALS", "RESTRICTED_V1_MAX_DEPTH", "VENDORED", "build",
+           "container_depth", "drift", "main", "restricted_v1"]
 
-SCHEMA = "cns-digest-vectors/1"
+SCHEMA = "cns-digest-vectors/2"
+
+#: The name of the algorithm the digests in this file come from. It changes only if a currently valid input would
+#: digest differently; adding vectors, refusals or metadata does not change it.
+DIGEST_VERSION = "cns-digest/1"
+
+#: The deepest container nesting the Trident accepts in an envelope payload at its default limits (see `DOMAIN`).
+RESTRICTED_V1_MAX_DEPTH = 31
+
+#: The largest integer magnitude the Trident accepts: 2^53 - 1.
+_SAFE = 2 ** 53 - 1
 
 #: repository -> where its vendored copy of the vectors lives.
 VENDORED: Mapping[str, str] = {
@@ -74,15 +93,167 @@ CASES: Tuple[Tuple[str, Dict[str, Any]], ...] = (
     ("ints_past_64_bits", {"a": 9223372036854775808, "b": 18446744073709551616, "c": -123456789012345678901234567890}),
     ("long_list", {"l": list(range(25))}),
     ("deep", {"a": {"b": {"c": {"d": {"e": {"f": {"g": "bottom"}}}}}}}),
+    # ---- schema 2 additions. The 24 above are frozen: their content and digests never change.
+    # Code point order puts U+E000 and U+FFFF before U+10000; UTF-16 order puts the astral keys first (surrogates).
+    ("astral_keys_sort_after_high_bmp_keys", {"\ue000": 1, "\uff61": 2, "\uffff": 3, "\U00010000": 4, "\U0001f600": 5}),
+    ("empty_string_key", {"": "empty key", "a": ""}),
+    ("nul_and_control_characters", {"nul": "\x00", "c0": "\x01\x07\x08\t\n\x0b\x0c\r\x1b\x1f", "del_c1": "\x7f\x80\x85\x9f",
+                                    "separators": "\u2028\u2029", "key\x00nul": 1, "\n": "newline key"}),
+    ("mixed_multilingual_text", {"ja": "日本語のテキスト", "ar": "مرحبا بالعالم", "he": "שלום", "hi": "नमस्ते",
+                                 "zh": "中文", "ko": "한국어", "ru": "Привет", "family": "\U0001f469\u200d\U0001f469\u200d\U0001f467",
+                                 "flag": "\U0001f1fa\U0001f1f8", "fraktur": "\U0001d518\U0001d52b\U0001d526", "bom": "\ufeff"}),
+    ("int_at_the_safe_limit", {"max": 9007199254740991, "min": -9007199254740991}),
+    ("int_one_past_the_safe_limit", {"a": 9007199254740992}),
+    ("negative_int_one_past_the_safe_limit", {"a": -9007199254740992}),
+    ("negative_ints", {"a": -1, "b": -10, "c": -100000, "d": [-2, -3]}),
+    ("depth_at_the_restricted_limit", {}),       # built by _nested(RESTRICTED_V1_MAX_DEPTH) below
+    ("depth_one_past_the_restricted_limit", {}),  # built by _nested(RESTRICTED_V1_MAX_DEPTH + 1) below
+    ("long_string", {"s": "abc\u00e9\U0001f600" * 2000}),
+    ("many_keys_scrambled_insertion_order", {}),  # built by _many_keys() below
+    ("json_escapes_are_not_cns_escapes", {"quote": "\"", "backslash": "\\", "slash": "/", "tab": "\t",
+                                          "newline": "\n", "e_acute": "\u00e9", "unicode_escape_text": "\\u00e9"}),
+    ("text_that_looks_like_json", {"obj": '{"a":1}', "null": "null", "true": "true", "one": "1", "list": "[]"}),
 )
+
+
+def _nested(depth: int) -> Dict[str, Any]:
+    """Content whose container depth is exactly `depth`: maps and lists alternate below the top-level map."""
+    value: Any = "bottom"
+    for level in range(depth, 1, -1):
+        value = [value] if level % 2 == 0 else {"m": value}
+    return {"m": value}
+
+
+def _many_keys() -> Dict[str, Any]:
+    """200 keys inserted in a fixed scrambled order. A reader must sort them; insertion order must not matter."""
+    order = [(i * 73) % 200 for i in range(200)]  # 73 is coprime to 200, so this is a permutation
+    return {f"k{i:03d}": i for i in order}
+
+
+_BUILT: Mapping[str, Any] = {
+    "depth_at_the_restricted_limit": lambda: _nested(RESTRICTED_V1_MAX_DEPTH),
+    "depth_one_past_the_restricted_limit": lambda: _nested(RESTRICTED_V1_MAX_DEPTH + 1),
+    "many_keys_scrambled_insertion_order": _many_keys,
+}
+CASES = tuple((name, _BUILT[name]() if name in _BUILT else content) for name, content in CASES)
+
+#: (name, what it is, the JSON text a lenient parser accepts for it or None, why it is refused). JSON cannot carry
+#: these as values, so they are described. Python's own values for them are in `_refusal_values`.
+REFUSALS: Tuple[Tuple[str, str, Optional[str], str], ...] = (
+    ("nan", 'map {"x": float NaN}', '{"x": NaN}', "NaN is not a value a verdict can be bound to"),
+    ("positive_infinity", 'map {"x": float +infinity}', '{"x": Infinity}', "an infinity is not a value"),
+    ("negative_infinity", 'map {"x": float -infinity}', '{"x": -Infinity}', "an infinity is not a value"),
+    ("lone_high_surrogate", 'map {"x": text holding U+D800 alone}', '{"x": "\\ud800"}',
+     "text holding a lone surrogate is not Unicode and has no UTF-8 encoding"),
+    ("lone_low_surrogate", 'map {"x": text holding U+DC00 alone}', '{"x": "\\udc00"}',
+     "text holding a lone surrogate is not Unicode and has no UTF-8 encoding"),
+    ("non_text_key", "map {1: \"a\"} (an integer key)", None,
+     "map keys must be text; JSON cannot write any other key"),
+    ("bytes", 'map {"x": the bytes 0x61 0x62}', None,
+     "binary data has no rendering; encode it as text first. JSON has no bytes type"),
+)
+
+
+def _refusal_values() -> Dict[str, Any]:
+    """Python values for every entry in `REFUSALS`. `subject_digest` must raise TypeError on each."""
+    return {
+        "nan": {"x": float("nan")},
+        "positive_infinity": {"x": float("inf")},
+        "negative_infinity": {"x": float("-inf")},
+        "lone_high_surrogate": {"x": "\ud800"},
+        "lone_low_surrogate": {"x": "\udc00"},
+        "non_text_key": {1: "a"},
+        "bytes": {"x": b"ab"},
+    }
+
+
+def container_depth(value: Any) -> int:
+    """How deeply maps and lists nest: 0 for a scalar, 1 for a map or list of scalars, plus one per level."""
+    if isinstance(value, dict):
+        return 1 + max((container_depth(v) for v in value.values()), default=0)
+    if isinstance(value, list):
+        return 1 + max((container_depth(v) for v in value), default=0)
+    return 0
+
+
+def _no_float_or_big_int(value: Any) -> bool:
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return True
+    if isinstance(value, int):
+        return -_SAFE <= value <= _SAFE
+    if isinstance(value, float):
+        return False
+    if isinstance(value, dict):
+        return all(_no_float_or_big_int(v) for v in value.values())
+    if isinstance(value, list):
+        return all(_no_float_or_big_int(v) for v in value)
+    raise TypeError(f"not JSON content: {type(value).__name__}")
+
+
+def restricted_v1(content: Any) -> bool:
+    """Whether `content` lies in the restricted-v1 sub-domain (`DOMAIN["restricted_v1"]`). Computed, never hand-set."""
+    return _no_float_or_big_int(content) and container_depth(content) <= RESTRICTED_V1_MAX_DEPTH
+
+
+DOMAIN: Dict[str, Any] = {
+    "content": "A map whose keys are text. This is what a verdict binds to and what every vector holds.",
+    "values": [
+        "null",
+        "boolean (distinct from the integers 0 and 1)",
+        "integer of any magnitude (a JSON number with no fraction and no exponent)",
+        "float: a finite IEEE 754 binary64 value (a JSON number with a fraction or an exponent); "
+        "-0.0 renders as 0.0; NaN and the infinities are refused",
+        "text: a sequence of Unicode scalar values; a lone surrogate is refused",
+        "list of values",
+        "map from text keys to values; keys are distinct",
+    ],
+    "rendering": {
+        "null": "n:",
+        "boolean": "b:1 for true, b:0 for false",
+        "integer": "i:<base 10, a leading - when negative, no leading zeros>:",
+        "float": "f:<Python repr of the binary64 value, shortest round trip>:",
+        "text": "s:<number of code points, base 10>:<the text>",
+        "list": "l:<number of items>:<each item rendered, in order>",
+        "map": "d:<number of members>:<for each key in ascending code point order: the key rendered as text, then "
+               "its value rendered>",
+    },
+    "digest": "SHA-256 of the UTF-8 bytes of the rendering, written as 64 lowercase hex characters",
+    "depth": "The normative domain sets no nesting limit. Container depth is 0 for a scalar and 1 plus the deepest "
+             "member for a map or list, so a content map of scalars has depth 1. The Python reference raises "
+             "RecursionError, not TypeError, at roughly 500 levels.",
+    "restricted_v1": {
+        "who": "STACK-Kernel stack-trident, envelope subject_digest, at its default limits (max_depth 32)",
+        "rule": "No float anywhere. Every integer within -(2^53 - 1) to 2^53 - 1 inclusive. Container depth of the "
+                "content (counted as in `depth`) at most 31. Everything else as in the normative domain.",
+        "why_31": "The Trident counts the envelope object as nesting level 1, so the payload's top-level map is "
+                  "level 2 and a payload may nest max_depth - 1 = 31 levels. Calling "
+                  "stack_trident::cns_digest::subject_digest directly accepts depth up to max_depth (32); the "
+                  "envelope path (seal and verify) refuses depth 32 with TooDeep before the digest is computed.",
+        "max_container_depth": RESTRICTED_V1_MAX_DEPTH,
+        "max_abs_integer": _SAFE,
+        "outside": "The Trident refuses content outside restricted_v1 with a typed error. It never computes "
+                   "a different digest and never falls back to another canonicalization.",
+        "not_part_of_the_domain": "Envelope size (65,536 canonical JSON bytes) and value-count (16,384) caps are "
+                                  "transport limits of a deployment, not of the digest. Every vector here is "
+                                  "within them.",
+    },
+}
 
 
 def build() -> Dict[str, Any]:
     """The vectors file as CNS produces it now."""
     return {
         "schema": SCHEMA,
-        "note": "digest is cns.gate.subject_digest(content); regenerate with python -m cns_composition.digest_vectors --write",
-        "vectors": [{"name": name, "content": content, "digest": subject_digest(content)} for name, content in CASES],
+        "digest_version": DIGEST_VERSION,
+        "note": "digest is cns.gate.subject_digest(content) and rendering is the string it hashes; restricted_v1 is "
+                "computed by cns_composition.digest_vectors.restricted_v1; regenerate with "
+                "python -m cns_composition.digest_vectors --write",
+        "domain": DOMAIN,
+        "vectors": [{"name": name, "content": content, "rendering": _canonical(content),
+                     "digest": subject_digest(content), "restricted_v1": restricted_v1(content)}
+                    for name, content in CASES],
+        "refusals": [{"name": name, "what": what, "lenient_json": text, "why": why}
+                     for name, what, text, why in REFUSALS],
     }
 
 
