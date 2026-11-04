@@ -118,7 +118,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install CNS
-        run: python -m pip install ./hub
+        run: python -m pip install "./hub[crypto]"
       - name: Four repositories, one chain
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/Governance_Gateway/src:${{ github.workspace }}/stack/DGK:${{ github.workspace }}/stack/DIT/src:${{ github.workspace }}/stack/URE
