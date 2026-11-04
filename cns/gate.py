@@ -218,6 +218,11 @@ def resolve(results: Iterable[GateResult]) -> GateOutcome:
     the caller ran no gates and this function does not invent a refusal it
     has no evidence for. A chain that should have had gates is caught by
     `GateChain.complete`, which is a different question asked earlier.
+
+    A verdict whose outcome is not one of the three members is a breach. The
+    enum mixes in `str`, so the text "terminal_breach" equals the member and
+    still is not it; matching by identity alone left such a verdict
+    objecting to nothing, and a refusal resolved to PASS.
     """
     outcome = GateOutcome.PASS
     for r in results:
@@ -225,6 +230,8 @@ def resolve(results: Iterable[GateResult]) -> GateOutcome:
             return GateOutcome.TERMINAL_BREACH
         if r.outcome is GateOutcome.RETRY:
             outcome = GateOutcome.RETRY
+        elif r.outcome is not GateOutcome.PASS:
+            return GateOutcome.TERMINAL_BREACH
     return outcome
 
 
