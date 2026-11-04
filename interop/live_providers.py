@@ -1,9 +1,10 @@
 """live_providers.py: run ONE real exchange through each provider that has a key, and write the evidence.
 
-    ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=...  GEMINI_API_KEY=... GEMINI_MODEL=...
+    UAI_ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=...  GEMINI_API_KEY=... GEMINI_MODEL=...
     OPENAI_API_KEY=... OPENAI_MODEL=...  GITHUB_MODELS_TOKEN=... COPILOT_MODEL=openai/gpt-4.1  python interop/live_providers.py --out evidence.json
 
-A provider with no key is reported as NOT EXECUTED and is never counted. If NOTHING was executed the exit status is 3, so a
+The Anthropic key is read from UAI_ANTHROPIC_API_KEY first and from ANTHROPIC_API_KEY when that is empty or unset (some hosts
+reserve ANTHROPIC_API_KEY for themselves). A provider with no key is reported as NOT EXECUTED and is never counted. If NOTHING was executed the exit status is 3, so a
 script or a CI job cannot mistake "no keys" for "passed". Nothing here is a stub: the base URLs are the providers' own, and
 `ProviderInfo.live` is set only after a call really returned and its output was read by the strict parser. The model never
 receives a signer, a ledger, a grant or an approval, and what it returns is a recommendation that the decider's policy may
@@ -56,11 +57,15 @@ def run_one(name: str, complete: Any, log: ProvenanceLog, model: str) -> Dict[st
 
 def main(argv: List[str]) -> int:
     results: List[Dict[str, Any]] = []
-    for name, key_var, model_var, make in (("anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", anthropic_complete),
-                                           ("google", "GEMINI_API_KEY", "GEMINI_MODEL", gemini_complete),
-                                           ("openai", "OPENAI_API_KEY", "OPENAI_MODEL", openai_complete),
-                                           ("copilot-github-models", "GITHUB_MODELS_TOKEN", "COPILOT_MODEL", copilot_complete)):
-        key, model = os.environ.get(key_var, "").strip(), os.environ.get(model_var, "")  # a pasted key often ends in a newline
+    for name, key_vars, model_var, make in (("anthropic", ("UAI_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"), "ANTHROPIC_MODEL",
+                                             anthropic_complete),
+                                            ("google", ("GEMINI_API_KEY",), "GEMINI_MODEL", gemini_complete),
+                                            ("openai", ("OPENAI_API_KEY",), "OPENAI_MODEL", openai_complete),
+                                            ("copilot-github-models", ("GITHUB_MODELS_TOKEN",), "COPILOT_MODEL", copilot_complete)):
+        key_var = " or ".join(key_vars)
+        # the first variable that holds a key wins; a pasted key often ends in a newline
+        key = next((v for v in (os.environ.get(n, "").strip() for n in key_vars) if v), "")
+        model = os.environ.get(model_var, "")
         if not key or not model:
             print(f"NOT EXECUTED: {name} (set {key_var} and {model_var})")
             results.append({"provider": name, "executed": False})

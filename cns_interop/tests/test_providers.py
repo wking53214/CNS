@@ -322,7 +322,7 @@ def test_the_live_runner_says_not_executed_and_exits_nonzero_without_keys_so_it_
     import os
     import subprocess
     env = {k: v for k, v in os.environ.items() if k not in (
-        "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_MODEL", "GEMINI_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL",
+        "UAI_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_MODEL", "GEMINI_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL",
         "GITHUB_MODELS_TOKEN", "COPILOT_MODEL")}
     done = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[2] / "interop" / "live_providers.py")],
                           capture_output=True, text=True, env=env, timeout=60)
@@ -431,7 +431,7 @@ def test_the_live_runner_strips_whitespace_from_a_pasted_key(monkeypatch, capsys
             raise Refused("provider", "offline")
         return complete
     monkeypatch.setattr(live, "anthropic_complete", fake)
-    for var in ("GEMINI_API_KEY", "OPENAI_API_KEY", "GITHUB_MODELS_TOKEN"):
+    for var in ("UAI_ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "GITHUB_MODELS_TOKEN"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "  " + KEY + "\n")
     monkeypatch.setenv("ANTHROPIC_MODEL", "model-x")
@@ -494,3 +494,48 @@ def test_the_live_runner_gives_every_provider_120_seconds_so_thinking_is_not_rec
     assert live.main([]) == 0
     assert live.LIVE_TIMEOUT_S == 120.0
     assert seen == {fn: 120.0 for fn in ("anthropic_complete", "gemini_complete", "openai_complete", "copilot_complete")}
+
+
+@pytest.mark.parametrize("uai, plain, expected", (
+    (KEY, "other-" + KEY, KEY),                 # both set: UAI_ANTHROPIC_API_KEY wins
+    (None, "  " + KEY + "\n", KEY),             # unset: ANTHROPIC_API_KEY is the fallback, stripped
+    (" \n", KEY, KEY),                          # blank after stripping counts as unset
+    (" " + KEY + "\t", None, KEY),              # only the UAI name, stripped
+))
+def test_the_live_runner_reads_uai_anthropic_api_key_first_and_falls_back_to_anthropic_api_key(monkeypatch, capsys,
+                                                                                               uai, plain, expected):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("live_providers", Path(__file__).resolve().parents[2] / "interop" / "live_providers.py")
+    live = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(live)
+    seen = []
+
+    def fake(key, model, log, **kw):
+        seen.append(key)
+        def complete(prompt):
+            raise Refused("provider", "offline")
+        return complete
+    monkeypatch.setattr(live, "anthropic_complete", fake)
+    for var in ("GEMINI_API_KEY", "OPENAI_API_KEY", "GITHUB_MODELS_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    for var, value in (("UAI_ANTHROPIC_API_KEY", uai), ("ANTHROPIC_API_KEY", plain)):
+        if value is None:
+            monkeypatch.delenv(var, raising=False)
+        else:
+            monkeypatch.setenv(var, value)
+    monkeypatch.setenv("ANTHROPIC_MODEL", "model-x")
+    assert live.main([]) == 0
+    assert seen == [expected]
+    assert KEY not in capsys.readouterr().out
+
+
+def test_the_live_runner_names_both_anthropic_key_variables_when_neither_is_set(monkeypatch, capsys):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("live_providers", Path(__file__).resolve().parents[2] / "interop" / "live_providers.py")
+    live = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(live)
+    for var in ("UAI_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "GITHUB_MODELS_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ANTHROPIC_MODEL", "model-x")
+    assert live.main([]) == 3
+    assert "NOT EXECUTED: anthropic (set UAI_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY and ANTHROPIC_MODEL)" in capsys.readouterr().out
