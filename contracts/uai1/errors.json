@@ -105,6 +105,14 @@
    "retry": "later"
   },
   {
+   "code": "clock_skew",
+   "consumes_message": false,
+   "implementations": "both",
+   "layer": "infrastructure",
+   "meaning": "The receiver's clock and its ledger database's clock differ by more than the receiver allows, so it cannot judge message lifetimes and does not act. Nothing was read or spent.",
+   "retry": "after-fix"
+  },
+  {
    "code": "rate_limited",
    "consumes_message": false,
    "implementations": "python",

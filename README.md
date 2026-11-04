@@ -87,7 +87,7 @@ shapes they share. The evidence spine, below, shows one document crossing five o
 | Implemented and tested here | Experimental, partial or absent |
 |---|---|
 | UAI-1 envelope, strict wire reading, canonical digest, Ed25519 (pure Python, or OpenSSL with a frozen production profile) | No second, independently written implementation by another team has been run against the suite |
-| Python and Node implementations that agree on shared vectors and on a conformance suite | Node has no PostgreSQL support: multi-host receivers are Python only |
+| Python and Node implementations that agree on shared vectors and on a conformance suite | Node shares the PostgreSQL ledger but not the PostgreSQL policy store or audit chain, and has no quorum-commit mode |
 | Receiver-owned grants, approvals, single-use permits, hash-chained audit in Python **and** Node (differentially tested) | Delegation is deliberately not built |
 | Replay protection in the real action path: file, SQLite or PostgreSQL ledgers, leases and fencing tokens | No HSM or OS keystore support (an external signer hook exists; nothing hardware-backed was tested) |
 | Receiver policy and audit shared across hosts through PostgreSQL | Not distributed consensus: one PostgreSQL primary, as available as that node; asynchronous standbys can lose a write |
