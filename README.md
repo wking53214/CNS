@@ -170,6 +170,34 @@ ledger of its own (not the shared one) accepts an approval already spent. The `c
 touch the decision core; "Where the six spine repositories stand" below gives its latest result. The spine does not
 cover ZTS, sentinel_os or GSA-815, and it speaks for CCC only as far as CCC's gate and write permission go.
 
+### The decision spine
+
+`chains/spine_run.py` runs `interconnected_alpha`, `interconnected_zeta`, `interconnected_beta` and `interconnected_delta`
+for real (Keys, Locks, a Decision, a hash-chained ledger entry) and checks their seams with `cns_composition.spine_trace`,
+in two modes.
+
+- **Lenient** (`problems`, `root`): takes the digests and summaries a caller read off the objects. It cannot tell a run
+  from a fabricated account of one: four stages stating whatever agrees with itself return no problems and a root.
+- **Strict** (`strict_problems`, `strict_root`): takes each stage's content as its connector produces it with a pipeline
+  context (`spine-context/1`: `schema`, `entity_id`, `event_id`, `run_id`), recomputes every digest itself, and
+  requires one context across all four stages, each stage naming the digest of the stage before it (zeta's results and
+  beta's Decision name alpha's KeySet, beta names each of zeta's lock results, delta names beta's Decision, whose
+  fields its embedded copy must equal), the Decision citing only Keys alpha listed as present (`present_names`) and
+  Locks zeta evaluated, and the ledger entry recorded under the same run and event. A missing field is a problem, not
+  a skip. The strict root is domain-separated (`spine-trace/2`) and is never a native digest of any stage.
+
+CNS applies no decision policy here: it does not say which Key should be present, which Lock should open or whether
+the Decision is right, and `present_names` is stated by alpha so CNS never re-implements zeta's confidence rule. Two
+limits stay. A native stage can still compute a result from a foreign input in memory (zeta's KeySet and LockResult
+carry no identity), so the result is refused when it is bound, recorded or verified, not when it is computed. And
+delta's ledger is an in-memory reference ledger: a checkpoint held outside it is what detects truncation or a
+rewrite, and nothing survives a restart. Two more are recorded as facts, not hidden: the strict check verifies that
+contents agree and chain by digest, not who made them (there is no key, so contents made up by someone who
+recomputes the digests pass), and zeta never sees the KeySet a result is bound to, so a result evaluated from one
+KeySet and bound to another's digest passes. The `chains` workflow runs the scenarios (seven lenient, twenty-five
+strict: five checks that hold, eighteen attacks each stating the problem that should refuse it, and the two gaps above,
+which expect no problem and go red the day they close).
+
 ## The rule
 
 `cns` carries **row shapes and interfaces**: dataclasses, enums,
@@ -582,18 +610,19 @@ checker to trust these annotations, so it is asserted rather than assumed.
 
 ## Where the six spine repositories stand
 
-HERALD, TIE, Conservation_Kernel, Governance_Gateway, CCC and this repository, read at their `main` heads on 2026-10-30.
-The numbers are measured, not carried over: the first count is the repository's own suite with CNS absent, the
-second with the `cns` extra installed.
+HERALD, TIE, Conservation_Kernel, Governance_Gateway, CCC and this repository. The CNS pins were read from each
+repository's `main` on 2026-11-04. The test counts and CI results of the five consumers are from 2026-10-30 and have
+not been re-measured since; CNS's own count was measured on 2026-11-04. For the consumers the first count is the
+repository's own suite with CNS absent, the second with the `cns` extra installed.
 
 | Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
 |---|---|---|---|---|---|
-| CNS | 2.3.0, tagged; `main` is ahead of the tag | Tags `v0.1.0` to `v2.3.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`; `v2.3.0` has its text there and no Release yet. | green (6 jobs) | 1437 | not applicable |
-| HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.2.0` |
-| TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.2.0` |
-| Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.2.0` |
-| Governance_Gateway | 0.1.0 | none | green | 230 and 1 skipped / 417 | the tag `v2.2.0` |
-| CCC | 0.1.0 | none | green | 409, 1 skipped and 1 xfailed / 924 and 1 xfailed | the tag `v2.2.0`; its `cccb` library is pinned to a commit |
+| CNS | 2.3.0, tagged; `main` is ahead of the tag | Tags `v0.1.0` to `v2.3.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`; `v2.3.0` has its text there and no Release yet. | green (6 jobs) | 2353 (measured 2026-11-04 with the dev extra installed, no skips) | not applicable |
+| HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.3.0` |
+| TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.3.0` |
+| Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.3.0` |
+| Governance_Gateway | 0.1.0 | none | green | 230 and 1 skipped / 417 | the tag `v2.3.0` |
+| CCC | 0.1.0 | none | green | 409, 1 skipped and 1 xfailed / 924 and 1 xfailed | the tag `v2.3.0`; its `cccb` library is pinned to a commit |
 
 What this means, plainly:
 
@@ -666,7 +695,7 @@ Each line names the test or workflow job that holds it. A claim without one is n
   it open pull requests was off) and #31 was opened by the workflow's own token (`github-actions[bot]`).
 - `cns.assay` has one writer and one reader (ASSAY); it does not meet the two-repository rule and is recorded
   above as the one exception.
-- 2.1.0 is tagged, and the circuit pins `v2.2.0`, which carries its three fields, but the tests here prove the
+- 2.1.0 is tagged, and the circuit pins `v2.3.0`, which carries its three fields, but the tests here prove the
   shapes, not a circuit run that carries `ghost_severity`, `claim` or `evidence`: no CI job here asserts a writer
   filling them or a reader joining on them. `docs/evidence/proof-2026-10-29` holds the run records of three such runs; they are records, not checks.
 
