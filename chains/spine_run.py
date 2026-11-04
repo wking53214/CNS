@@ -32,7 +32,9 @@ import delta.cns_connector as delta_cns
 import delta.context as delta_context
 import zeta.cns_connector as zeta_cns
 from alpha import VitalsObservation, observe
-from beta import Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, StaleLockResultError
+from beta import (
+    Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError, StaleLockResultError,
+    decision_fingerprint)
 from cns.gate import subject_digest
 from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, SpineRecord, context_problems, problems, root, strict_problems, strict_root)
@@ -103,7 +105,8 @@ def cites_a_lock_zeta_never_evaluated() -> List[str]:
 
 def ledger_recorded_another_decision() -> List[str]:
     engine, ledger, keys, results, decision, _ = run()
-    other = engine.decide("patient_1", observe(WELL), results, T0)
+    well = observe(WELL)
+    other = engine.decide("patient_1", well, LockEvaluator(build()[0]).evaluate_all("patient_1", well, T0), T0)
     return problems(facts(keys, results, decision, ledger.append(other)))
 
 
@@ -129,7 +132,7 @@ SICK_ELSEWHERE = VitalsObservation(heart_rate=149, oxygen_saturation=90.0, respi
 def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None) -> Dict[str, Any]:
     """Run the four stages for real, binding each to the context and to the digest of the stage before it."""
     locks, engine = build()
-    ledger = DecisionLedger()
+    ledger = DecisionLedger(require_context=True)
     entity = ctx["entity_id"]
     keys = observe(vitals)
     alpha = alpha_cns.keyset_content(keys, context=ctx)
@@ -145,18 +148,31 @@ def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind
     entry = ledger.append(decision, context=ctx)
     delta = delta_cns.entry_content(entry, context=ctx, decision_digest=subject_digest(beta))
     return {"alpha": alpha, "zeta": zeta, "beta": beta, "delta": delta, "ledger": ledger, "engine": engine,
-            "decision": decision, "keys": keys, "results": results, "da": da}
+            "decision": decision, "keys": keys, "results": results, "da": da, "checkpoint": ledger.checkpoint()}
+
+
+def ledger_verified(parts) -> bool:
+    """Ask delta itself: the chain verifies, it still contains the history held outside it, and the entry the run's
+    content names IS the ledger's last entry (so exported content cannot name a hash the ledger never wrote)."""
+    try:
+        ledger, held, content = parts["ledger"], parts["checkpoint"], parts["delta"]
+        entry = ledger.entries[-1]
+        return (ledger.verify_chain_integrity() is True and ledger.verify_against(held) is True
+                and content.get("audit_id") == entry.audit_id and content.get("previous_hash") == entry.previous_hash
+                and content.get("immutable_hash") == entry.immutable_hash)
+    except Exception:  # noqa: BLE001 - nothing to ask, or the ledger refused to answer: not shown to verify
+        return False
 
 
 def check(parts) -> List[str]:
-    return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+    return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=ledger_verified(parts))
 
 
 def refused(thunk: Callable[[], Any]) -> List[str]:
     """What a boundary refused, as a problem string, or nothing if it let the call through."""
     try:
         thunk()
-    except (ValueError, TypeError, StaleLockResultError) as exc:
+    except (ValueError, TypeError, StaleLockResultError, KeySetMismatchError) as exc:
         return [f"{type(exc).__name__}: {exc}"]
     return []
 
@@ -167,13 +183,13 @@ def strict_clean(vitals) -> List[str]:
 
 def strict_roots_differ_by_run() -> List[str]:
     a, b = stages(SICK), stages(SICK, ctx={**CTX, "run_id": "run_2"})
-    ra, rb = (strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"]) for p in (a, b))
+    ra, rb = (strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain_verified=ledger_verified(p)) for p in (a, b))
     return [] if ra != rb else ["the same readings in two runs produced one root"]
 
 
 def strict_root_is_not_a_lenient_root() -> List[str]:
     p = stages(SICK)
-    strict = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"])
+    strict = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain_verified=ledger_verified(p))
     lenient = root(facts(p["keys"], p["results"], p["decision"], p["ledger"].entries[0]))
     return [] if strict != lenient else ["a strict root equals a lenient root"]
 
@@ -222,11 +238,11 @@ def decision_altered_after_delta_recorded_it() -> List[str]:
 
 
 def beta_decided_from_another_lock_result() -> List[str]:
-    """Beta's Decision comes from the well patient's lock results; zeta's contents and the KeySet are the sick patient's."""
+    """Beta is given the sick patient's KeySet and the well patient's lock results. It used to return ESCALATE with no
+    triggering Keys and full confidence; each result now records the KeySet it came from, and beta refuses."""
     locks, _ = build()
     well_results = LockEvaluator(locks).evaluate_all("patient_1", observe(WELL), T0)
-    p = stages(SICK, results_from=well_results)
-    return check(p)
+    return refused(lambda: stages(SICK, results_from=well_results))
 
 
 def delta_recorded_another_decision() -> List[str]:
@@ -342,35 +358,129 @@ def alpha_lists_a_key_it_does_not_hold_as_present() -> List[str]:
     return check(p)
 
 
-def GAP_zeta_and_beta_named_the_digest_of_another_keyset() -> List[str]:
-    """KNOWN GAP, stated as a fact. Zeta and beta evaluated and decided on one set of readings and were bound with the
-    digest of a different KeySet that lists the same present Keys. Neither sees the other's KeySet, so keyset_digest is
-    asserted by whoever binds the result, and the strict check verifies that the supplied contents agree, not where they
-    came from. No problem is found. The day zeta records the KeySet it evaluated, this goes red and is updated on purpose."""
+def zeta_and_beta_named_the_digest_of_another_keyset() -> List[str]:
+    """Zeta and beta evaluated and decided on one set of readings and were bound with the digest of a different KeySet
+    that lists the same present Keys. This used to pass (a recorded GAP): the digest a binder names can be made to chain.
+    Zeta now records a fingerprint of the KeySet it evaluated and alpha reports its own; they differ."""
     p = stages(SICK, bind_keyset_of=SICK_ELSEWHERE)
     p["alpha"] = alpha_cns.keyset_content(observe(SICK_ELSEWHERE), context=CTX)
     return check(p)
 
 
 def GAP_contents_fabricated_by_someone_who_recomputes_the_digests() -> List[str]:
-    """KNOWN GAP, stated as a fact. There is no key in this check: four contents that agree with each other and chain by
-    digest pass whether or not any component produced them. It verifies agreement, not authorship. No problem is found."""
+    """KNOWN GAP, stated as a fact. There is no key in this check: four contents that agree with each other, carry one
+    KeySet fingerprint, chain by digest and are reported by the caller as ledger-verified pass whether or not any
+    component produced them. It verifies agreement, not authorship. (Without the fingerprints, or without the
+    chain claim, it is refused; the other scenarios hold that.) No problem is found."""
     ctx = dict(CTX)
+    fp = "e" * 64
     alpha = {"min_confidence": 0.0, "keys": [{"name": "anything", "present": True, "confidence": 1.0, "reason": "made up"}],
-             "context": dict(ctx), "present_names": ["anything"]}
+             "context": dict(ctx), "present_names": ["anything"], "keyset_fingerprint": fp}
     da = subject_digest(alpha)
     zeta = {"any_lock": {"entity_id": "patient_1", "lock_id": "any_lock", "open": True, "changed": True, "forced": False,
-                         "reasons": ["made up"], "context": dict(ctx), "keyset_digest": da}}
+                         "reasons": ["made up"], "context": dict(ctx), "keyset_digest": da, "keyset_fingerprint": fp}}
+    fingerprint = decision_fingerprint({
+        "entity_id": "patient_1", "decision_id": "d", "decision": "DISCHARGE_SAFE",
+        "triggered_by_locks": ["any_lock"], "triggered_by_keys": ["anything"]})
     core = {"entity_id": "patient_1", "decision_id": "d", "decision": "DISCHARGE_SAFE", "timestamp": "2026-10-01T08:00:00",
             "confidence": 1.0, "triggered_by_locks": ["any_lock"], "triggered_by_keys": ["anything"],
-            "newly_triggered_locks": [], "decision_fingerprint": "0" * 64, "reasoning": "made up",
-            "reversal_conditions": [], "instructions": "made up"}
+            "newly_triggered_locks": [], "decision_fingerprint": fingerprint, "reasoning": "made up",
+            "reversal_conditions": [], "instructions": "made up", "keyset_fingerprint": fp}
     beta = {**core, "context": dict(ctx), "keyset_digest": da,
             "lock_result_digests": {k: subject_digest(v) for k, v in zeta.items()}}
     delta = {"audit_id": "0" * 16, "timestamp": "2026-10-01T08:00:00", "previous_hash": "0" * 64, "immutable_hash": "1" * 64,
              "decision": dict(core), "run_id": ctx["run_id"], "event_id": ctx["event_id"], "context": dict(ctx),
              "decision_digest": subject_digest(beta)}
-    return check({"alpha": alpha, "zeta": zeta, "beta": beta, "delta": delta})
+    return strict_problems(alpha, zeta, beta, delta, chain_verified=True)
+
+
+def delta_content_names_a_hash_the_ledger_never_wrote() -> List[str]:
+    p = stages(SICK)
+    p["delta"] = {**p["delta"], "immutable_hash": "9" * 64}
+    return check(p)
+
+
+def the_ledger_chain_is_broken_after_the_run() -> List[str]:
+    p = stages(SICK)
+    first = p["ledger"].entries[0]
+    p["ledger"].entries[0] = dataclasses.replace(first, decision=dataclasses.replace(first.decision, instructions="Send home."))
+    return check(p)
+
+
+def nobody_asked_delta_whether_the_chain_verifies() -> List[str]:
+    p = stages(SICK)
+    return strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"])
+
+
+def an_unbound_append_to_a_ledger_that_requires_a_context() -> List[str]:
+    p = stages(SICK)
+    return refused(lambda: DecisionLedger(require_context=True).append(p["decision"]))
+
+
+def a_second_decision_for_an_event_already_recorded() -> List[str]:
+    p = stages(SICK)
+    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    return refused(lambda: p["ledger"].append(other, context={**CTX, "run_id": "run_9"}))
+
+
+def one_run_spanning_two_events() -> List[str]:
+    p = stages(SICK)
+    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    return refused(lambda: p["ledger"].append(other, context={**CTX, "event_id": "event_9"}))
+
+
+def an_older_decision_after_a_newer_one_for_the_same_entity() -> List[str]:
+    p = stages(SICK)
+    locks, engine = build()
+    keys = observe(WELL)
+    older = engine.decide("patient_1", keys, LockEvaluator(locks).evaluate_all("patient_1", keys, T0 - timedelta(days=1)),
+                          T0 - timedelta(days=1))
+    return refused(lambda: p["ledger"].append(older, context={**CTX, "run_id": "run_9", "event_id": "event_9"}))
+
+
+def an_append_onto_a_head_that_does_not_match() -> List[str]:
+    p = stages(SICK)
+    p["ledger"].entries.pop()
+    return refused(lambda: p["ledger"].append(p["decision"], context={**CTX, "run_id": "run_9", "event_id": "event_9"}))
+
+
+def GAP_a_decisions_narrative_forged_with_a_valid_fingerprint() -> List[str]:
+    """KNOWN GAP, stated as a fact. decision_fingerprint covers 5 of a Decision's 13 fields, so instructions, confidence
+    and reasoning can be rewritten and the Decision still validates, records, binds and chains. (A forger who changes
+    the verdict, locks or keys must recompute the fingerprint, and beta's fingerprint function is public and keyless.)
+    No problem is found. Widening the fingerprint is a native Beta change that has not been made."""
+    p = stages(SICK)
+    forged = dataclasses.replace(p["decision"], instructions="Send home.", confidence=0.01, reasoning="vitals normal")
+    forged.validate(check_fingerprint=True)
+    ledger = DecisionLedger(require_context=True)
+    entry = ledger.append(forged, context=CTX)
+    p.update(ledger=ledger, checkpoint=ledger.checkpoint())
+    p["beta"] = beta_cns.decision_content(
+        forged, context=CTX, keyset_digest=p["da"], lock_result_digests=p["beta"]["lock_result_digests"])
+    p["delta"] = delta_cns.entry_content(entry, context=CTX, decision_digest=subject_digest(p["beta"]))
+    return check(p)
+
+
+def GAP_a_decision_cites_a_lock_that_is_closed() -> List[str]:
+    """KNOWN GAP, stated as a fact. A Decision keeps the union of the locks its rule cited, not which the rule required
+    open and which closed, so an ESCALATE that cites sepsis_lock passes while zeta's bound content says it is closed.
+    (The forger recomputes beta's public, keyless fingerprint.) No problem is found. Recording the partition is a
+    native Beta change that has not been made."""
+    p = stages(WELL)
+    locks, engine = build()
+    d = p["decision"]
+    forged = dataclasses.replace(
+        d, decision="ESCALATE", decision_id="escalate_sepsis", triggered_by_locks=("sepsis_lock",),
+        decision_fingerprint=decision_fingerprint({
+            "entity_id": d.entity_id, "decision_id": "escalate_sepsis", "decision": "ESCALATE",
+            "triggered_by_locks": ["sepsis_lock"], "triggered_by_keys": list(d.triggered_by_keys)}))
+    ledger = DecisionLedger(require_context=True)
+    entry = ledger.append(forged, context=CTX)
+    p.update(ledger=ledger, checkpoint=ledger.checkpoint())
+    p["beta"] = beta_cns.decision_content(
+        forged, context=CTX, keyset_digest=p["da"], lock_result_digests=p["beta"]["lock_result_digests"])
+    p["delta"] = delta_cns.entry_content(entry, context=CTX, decision_digest=subject_digest(p["beta"]))
+    return check(p)
 
 
 CONTEXT_CASES: List[Any] = [
@@ -413,19 +523,19 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
     ("strict: a strict root is never a lenient root", strict_root_is_not_a_lenient_root, ""),
     ("strict: the four connectors agree with CNS on the context", connectors_agree_with_cns_on_what_a_context_is, ""),
     ("strict: zeta's results are bound to another subject", subject_substituted_between_alpha_and_zeta,
-     "is bound to a different run: entity_id 'patient_2' vs 'patient_1'"),
+     "is bound to a different run than alpha's: entity_id 'patient_2' vs 'patient_1'"),
     ("strict: beta's Decision is bound to another event", event_substituted_between_zeta_and_beta,
-     "beta is bound to a different run: event_id 'event_2' vs 'event_1'"),
+     "beta is bound to a different run than alpha's: event_id 'event_2' vs 'event_1'"),
     ("strict: alpha and zeta from one run, beta and delta from another", alpha_and_zeta_from_one_run_beta_and_delta_from_another,
-     "is bound to a different run: run_id 'run_2' vs 'run_1'"),
+     "is bound to a different run than alpha's: run_id 'run_2' vs 'run_1'"),
     ("strict: the KeySet is altered after zeta evaluated it", keyset_altered_after_zeta_evaluated_it,
      "was evaluated from a different KeySet than alpha produced"),
     ("strict: a lock result is altered after beta decided on it", lock_result_altered_after_beta_decided_on_it,
      "rests on a different lock result than zeta produced for sepsis_lock"),
     ("strict: the Decision is altered after delta recorded it", decision_altered_after_delta_recorded_it,
      "delta recorded a Decision other than the one beta produced"),
-    ("strict: beta decided from another lock state's results", beta_decided_from_another_lock_result,
-     "rests on a different lock result than zeta produced"),
+    ("strict: beta is given another lock state's results", beta_decided_from_another_lock_result,
+     "evaluated from a different KeySet than the one given"),
     ("strict: delta recorded another Decision, quoting beta's digest", delta_recorded_another_decision,
      "the Decision delta recorded differs from beta's in:"),
     ("strict: beta refuses a Decision whose basis contradicts its keys", contradictory_basis_is_refused_by_beta,
@@ -446,7 +556,24 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
      "carries lock_id 'abnormal_vitals_lock'"),
     ("strict: alpha lists a present key its own keys do not hold", alpha_lists_a_key_it_does_not_hold_as_present,
      "alpha lists present_names that its own keys do not hold as present: invented_key"),
-    ("strict: GAP, zeta and beta named the digest of another KeySet", GAP_zeta_and_beta_named_the_digest_of_another_keyset, ""),
+    ("strict: zeta and beta named the digest of another KeySet", zeta_and_beta_named_the_digest_of_another_keyset,
+     "(its recorded KeySet fingerprint differs from alpha's)"),
+    ("strict: delta's content names a hash the ledger never wrote", delta_content_names_a_hash_the_ledger_never_wrote,
+     "the ledger chain was not shown to verify"),
+    ("strict: the ledger chain is broken after the run", the_ledger_chain_is_broken_after_the_run,
+     "the ledger chain was not shown to verify"),
+    ("strict: nobody asked delta whether the chain verifies", nobody_asked_delta_whether_the_chain_verifies,
+     "the ledger chain was not shown to verify"),
+    ("strict: an unbound append to a ledger that requires a context", an_unbound_append_to_a_ledger_that_requires_a_context,
+     "requires a context"),
+    ("strict: a second Decision for an event already recorded", a_second_decision_for_an_event_already_recorded,
+     "already has a Decision recorded under run"),
+    ("strict: one run spanning two events", one_run_spanning_two_events, "belongs to event 'event_1', not 'event_9'"),
+    ("strict: an older Decision after a newer one for the same entity", an_older_decision_after_a_newer_one_for_the_same_entity,
+     "older than the newest Decision recorded for 'patient_1'"),
+    ("strict: an append onto a head that does not match", an_append_onto_a_head_that_does_not_match, "head does not match"),
+    ("strict: GAP, a Decision's narrative forged under a valid fingerprint", GAP_a_decisions_narrative_forged_with_a_valid_fingerprint, ""),
+    ("strict: GAP, a Decision cites a lock that is closed", GAP_a_decision_cites_a_lock_that_is_closed, ""),
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, ""),
 ]
@@ -455,7 +582,10 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
 def main() -> int:
     wrong: List[str] = []
     for name, scenario, expect in SCENARIOS:
-        found = scenario()
+        try:
+            found = scenario()
+        except Exception as exc:  # noqa: BLE001 - a scenario that crashes failed; the rest must still report
+            found = [f"the scenario raised {type(exc).__name__}: {exc}"]
         ok = (not found) if not expect else any(expect in p for p in found)
         print(f"{'ok  ' if ok else 'FAIL'} {name:52} -> {'no problems' if not found else str(len(found)) + ' named'}")
         if not ok:
