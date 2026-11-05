@@ -275,22 +275,39 @@ def _canonical(value: Any) -> str:
     needs it encodes it as text first (hex, base64) and binds to that.
     Any other sequence that is not text renders as a list, exactly like a
     `list` or `tuple` of the same items.
+
+    Exact types only, added after 2.3.0 (a deliberate change limited to subclass
+    inputs; no plain value digests differently). A subclass of `str`, `int`,
+    `float`, `dict`, `list` or `tuple` (an `IntEnum` or a `str` Enum included)
+    is refused with a `TypeError` naming the type. It would be rendered through
+    `__format__`, `__repr__`, `keys` or `__iter__`, which it can override, while
+    `json` (the ledger hash, a component's own fingerprint) reads the raw data,
+    so one value could carry two renderings. A mapping's keys and a sequence's
+    items are read once.
     """
     if value is None:
         return "n:"
-    if isinstance(value, bool):
+    kind = type(value)
+    exact = (str, int, float, bool, dict, list, tuple)
+    if (isinstance(value, (str, int, float, dict, list, tuple)) and kind not in exact):
+        # A subclass is rendered through methods it can override (`__format__`, `__repr__`, `keys`, `__iter__`) while
+        # json reads the raw data, so one value could have two renderings. Only the exact types are rendered.
+        raise TypeError(
+            f"cannot bind a verdict to {kind.__name__}, a subclass of {next(t for t in exact if isinstance(value, t)).__name__}; "
+            "only the exact types str, int, float, bool, dict, list and tuple are rendered")
+    if kind is bool:
         # Before int: bool is a subclass of int, and True would render as 1.
         return "b:1" if value else "b:0"
-    if isinstance(value, int):
+    if kind is int:
         return f"i:{value}:"
-    if isinstance(value, float):
+    if kind is float:
         if value != value or value in (float("inf"), float("-inf")):
             raise TypeError(
                 "cannot bind a verdict to NaN or an infinity")
         if value == 0.0:
             value = 0.0  # collapses -0.0, which compares equal to it
         return f"f:{value!r}:"
-    if isinstance(value, str):
+    if kind is str:
         if not value.isascii():
             try:
                 value.encode("utf-8")
@@ -300,11 +317,15 @@ def _canonical(value: Any) -> str:
                     "it is not Unicode and has no UTF-8 encoding") from None
         return f"s:{len(value)}:{value}"
     if isinstance(value, Mapping):
-        if any(not isinstance(k, str) for k in value.keys()):
-            # Checked before any lookup: {1: "a"} would otherwise fail with KeyError, and a mapping that answered
-            # the lookup would render the same as {"1": "a"}.
-            raise TypeError("mapping keys must be text")
-        items = sorted((str(k) for k in value.keys()))
+        keys = list(value.keys())  # read once: the checks and the rendering see the same keys
+        for k in keys:
+            if not isinstance(k, str):
+                # Checked before any lookup: {1: "a"} would otherwise fail with KeyError, and a mapping that answered
+                # the lookup would render the same as {"1": "a"}.
+                raise TypeError("mapping keys must be text")
+            if type(k) is not str:
+                raise TypeError(f"cannot bind a verdict to a mapping key of type {type(k).__name__}; keys must be exact str")
+        items = sorted(keys)
         if len(set(items)) != len(items):
             raise TypeError("mapping keys collide once stringified")
         body = "".join(_canonical(k) + _canonical(value[k]) for k in items)
@@ -312,8 +333,9 @@ def _canonical(value: Any) -> str:
     if isinstance(value, (list, tuple)) or (
             isinstance(value, Sequence)
             and not isinstance(value, (str, bytes, bytearray, memoryview, array))):
-        body = "".join(_canonical(v) for v in value)
-        return f"l:{len(value)}:{body}"
+        seq = list(value)  # read once: the count and the members come from the same read
+        body = "".join(_canonical(v) for v in seq)
+        return f"l:{len(seq)}:{body}"
     raise TypeError(
         f"cannot bind a verdict to {type(value).__name__}; use str, int, "
         f"float, bool, None, or a mapping or sequence of those")
