@@ -113,8 +113,8 @@ plain values digest as before).
   CNS. alpha's run is the reference the other stages are judged against.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.
-  It names the hardened tips (alpha `ac34eec`, zeta `10b5ba7`, beta `c9afa4e`, delta `e3a9d70`); `v2.3.0` and its
-  commit are unchanged. Delta's `pyproject.toml` at `e3a9d70` still pins zeta `10b5ba7` and beta `c9afa4e`. The manifest
+  It names the hardened tips (alpha `17bc5fd`, zeta `5762348`, beta `9b0f616`, delta `3343652`); `v2.3.0` and its
+  commit are unchanged. Delta's `pyproject.toml` at `3343652` pins zeta `5762348` and beta `9b0f616`. The manifest
   check was verified on detached worktrees at exactly those commits and `chains/spine_run.py` ran 83 of 83 on them, with
   every component imported from its worktree.
 
