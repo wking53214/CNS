@@ -51,8 +51,11 @@ requires:
   - delta's entry was recorded under that run and event;
   - a ledger receipt (`chain=`, what `delta.cns_connector.verification_receipt` returns after delta's own chain check and a
     check against a checkpoint held outside the ledger) that is for exactly the delta content given and the run's context,
-    with consistent ints and 64-hex heads. The receipt is not signed: a forger who writes a consistent one passes. The old
-    `chain_verified` boolean is a deprecated alias and never counts.
+    read once, with exactly its ten plain-str keys and exact types, its entry_hash and previous_hash equal to the delta
+    content's, `0 <= index < checkpoint_length <= ledger_length`, the ledger head equal to the entry's hash when the entry is
+    the last, and the checkpoint head equal to the ledger head when the checkpoint covers the whole ledger. The receipt is
+    not signed: a forger who writes a consistent one passes. The old `chain_verified` boolean is a deprecated alias and
+    never counts.
 
 When alpha content carries an `origin` (source, producer, observed_at, collection_context, transformation) it is checked
 for well-formedness and for `observed_at` not being later than the Decision's timestamp, and for nothing else: these are
@@ -203,8 +206,8 @@ CHAIN_NOT_SHOWN = ("the ledger chain was not shown to verify (delta's verify_cha
 BARE_ASSERTION = "chain_verified is a bare assertion and is not evidence; pass chain= a delta verification receipt"
 FINGERPRINT_NOT_RECOMPUTED = "alpha's KeySet fingerprint does not match a recomputation from alpha's keys"
 _ORIGIN_FIELDS = ("source", "producer", "observed_at", "collection_context", "transformation")
-_RECEIPT_FIELDS = ("schema", "entry_digest", "index", "ledger_length", "ledger_head", "checkpoint_length",
-                   "checkpoint_head", "context")
+_RECEIPT_FIELDS = ("schema", "entry_digest", "index", "entry_hash", "previous_hash", "ledger_length", "ledger_head",
+                   "checkpoint_length", "checkpoint_head", "context")
 _UNSET: Any = object()
 
 _CONTEXT_FIELDS = ("schema", "entity_id", "event_id", "run_id")
@@ -302,9 +305,14 @@ def strict_problems(
     `chain` is the one fact the contents cannot carry: that delta's own ledger verified, with the recorded entry a
     member of it, against a checkpoint held outside it. It is the receipt `delta.cns_connector.verification_receipt`
     returns (schema `ledger-receipt/1`). CNS imports no repository and never sees the ledger, so it checks the receipt
-    against what it already holds: the receipt's `entry_digest` must equal the digest of the delta content given, its
-    context must be the run's, its lengths and index must be ints (not bools) that fit one another, and its heads must be
-    64 lowercase hex digits. Every failure is a named problem; without a valid receipt the chain is "not shown to
+    against what it already holds: the receipt is read once into a snapshot and must be a mapping with exactly the ten
+    plain-str keys (schema, entry_digest, index, entry_hash, previous_hash, ledger_length, ledger_head, checkpoint_length,
+    checkpoint_head, context), each value of its exact type (a str or int subclass is refused); its `entry_digest` must
+    equal the digest of the delta content given, its `entry_hash` and `previous_hash` the delta content's `immutable_hash`
+    and `previous_hash`, its context the run's; its lengths and index must be ints (not bools) with
+    `0 <= index < checkpoint_length <= ledger_length`; its heads must be 64 lowercase hex digits; the ledger head must be
+    the entry's hash when the entry is the ledger's last, and the checkpoint head the ledger head when the checkpoint
+    covers the whole ledger. Every failure is a named problem; without a valid receipt the chain is "not shown to
     verify" and no root is issued. The receipt is not signed: someone who can build a consistent one can pass this check,
     so it raises the bar for mistakes and partial forgeries and is not proof of custody.
 
@@ -384,8 +392,25 @@ def _is_int(value: object) -> bool:
     return type(value) is int
 
 
-def _receipt_problems(chain: Any, delta_digest: Optional[str], run: Optional[Mapping[str, Any]]) -> List[str]:
-    """What is wrong with a ledger receipt, judged against the delta content and the run CNS already holds. Empty if none."""
+def _is_hex_str(value: object) -> bool:
+    return type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _shown(value: object) -> str:
+    """How a receipt value is named in a problem. Only plain values are shown as themselves: a hostile object's own repr is
+    never called."""
+    if value is None or type(value) in (str, int, bool, float):
+        return repr(value)
+    return f"<{type(value).__name__}>"
+
+
+def _receipt_problems(chain: Any, delta: Any, delta_digest: Optional[str], run: Optional[Mapping[str, Any]]) -> List[str]:
+    """What is wrong with a ledger receipt, judged against the delta content and the run CNS already holds. Empty if none.
+
+    The receipt is read ONCE into a plain dict and everything below is judged from that snapshot, so a mapping that answers
+    differently on a later read cannot pass and be used as something else. Only an exact set of ten `str` keys is a receipt,
+    every value must be of its exact type (a subclass can lie about its own equality), and the receipt's hashes and
+    positions must agree with the delta content and with each other. Nothing here raises: every failure is a named problem."""
     if not isinstance(chain, Mapping):
         return [f"the ledger receipt must be a mapping (delta's verification_receipt); got {type(chain).__name__}"]
     try:
@@ -393,30 +418,59 @@ def _receipt_problems(chain: Any, delta_digest: Optional[str], run: Optional[Map
     except Exception as exc:  # noqa: BLE001 - a receipt that cannot be read once is not evidence
         return [f"the ledger receipt could not be read: {type(exc).__name__}: {exc}"]
     out: List[str] = []
-    if receipt.get("schema") != RECEIPT_SCHEMA:
-        out.append(f"the ledger receipt has schema {receipt.get('schema')!r}; this check reads {RECEIPT_SCHEMA!r}")
-    odd = sorted(set(map(str, receipt)) ^ set(_RECEIPT_FIELDS))
-    if odd:
-        out.append(f"the ledger receipt has exactly the fields {list(_RECEIPT_FIELDS)}; these differ: {', '.join(odd)}")
+    schema = receipt.get("schema")
+    if type(schema) is not str or schema != RECEIPT_SCHEMA:
+        out.append(f"the ledger receipt has schema {_shown(schema)}; this check reads {RECEIPT_SCHEMA!r}")
+    foreign = sum(1 for k in receipt if type(k) is not str)
+    present = {k for k in receipt if type(k) is str}
+    odd = sorted(present ^ set(_RECEIPT_FIELDS))
+    if odd or foreign:
+        detail = ", ".join(odd + ([f"{foreign} key(s) that are not a plain str"] if foreign else []))
+        out.append(f"the ledger receipt has exactly the fields {list(_RECEIPT_FIELDS)} as plain str keys; these differ: {detail}")
         return out
-    entry = receipt["entry_digest"]
-    if not _is_sha256(entry):
-        out.append("the ledger receipt's entry_digest is not a full lowercase SHA-256")
-    elif delta_digest is not None and entry != delta_digest:
+    entry_digest = receipt["entry_digest"]
+    if not _is_hex_str(entry_digest):
+        out.append("the ledger receipt's entry_digest is not a full lowercase SHA-256 (an exact str)")
+    elif delta_digest is not None and entry_digest != delta_digest:
         out.append("the ledger receipt is for other content: its entry_digest is not the digest of the delta content given")
-    issues = context_problems(receipt["context"])
-    if issues:
-        out += [f"the ledger receipt's context: {issue}" for issue in issues]
-    elif run is not None and dict(receipt["context"]) != dict(run):
-        out.append("the ledger receipt is for another run: its context is not the run's context")
+    held_context = receipt["context"]
+    snapshot: Any = held_context
+    if isinstance(held_context, Mapping):
+        try:
+            snapshot = dict(held_context)
+        except Exception as exc:  # noqa: BLE001 - a context that cannot be read once is not a context
+            out.append(f"the ledger receipt's context could not be read: {type(exc).__name__}: {exc}")
+            snapshot = None
+    if snapshot is not None:
+        issues = context_problems(snapshot)
+        if issues:
+            out += [f"the ledger receipt's context: {issue}" for issue in issues]
+        elif run is not None and snapshot != dict(run):
+            out.append("the ledger receipt is for another run: its context is not the run's context")
     ints = True
     for name in ("index", "ledger_length", "checkpoint_length"):
         if not _is_int(receipt[name]):
-            out.append(f"the ledger receipt's {name} must be an int (not a bool); got {type(receipt[name]).__name__}")
+            out.append(f"the ledger receipt's {name} must be an int (not a bool, not a subclass); got {type(receipt[name]).__name__}")
             ints = False
+    heads = True
     for name in ("ledger_head", "checkpoint_head"):
-        if not _is_sha256(receipt[name]):
-            out.append(f"the ledger receipt's {name} is not a full lowercase SHA-256")
+        if not _is_hex_str(receipt[name]):
+            out.append(f"the ledger receipt's {name} is not a full lowercase SHA-256 (an exact str)")
+            heads = False
+    # The entry the receipt is about must be the entry the delta content describes: hashes of the entry itself, which
+    # delta's own content carries (and whose digest the entry_digest above already binds).
+    hashes = True
+    for name, field in (("entry_hash", "immutable_hash"), ("previous_hash", "previous_hash")):
+        value = receipt[name]
+        if type(value) is not str or not value:
+            out.append(f"the ledger receipt's {name} must be a non-empty exact str; got {type(value).__name__}")
+            hashes = False
+        elif not isinstance(delta, Mapping) or field not in delta:
+            out.append(f"the delta content carries no {field}, so the ledger receipt's {name} cannot be matched to it")
+            hashes = False
+        elif not _same(value, delta[field]):
+            out.append(f"the ledger receipt's {name} is not the delta content's {field}: the receipt is about another entry")
+            hashes = False
     if ints:
         index, length, held = receipt["index"], receipt["ledger_length"], receipt["checkpoint_length"]
         if not 0 <= index < length:
@@ -425,8 +479,14 @@ def _receipt_problems(chain: Any, delta_digest: Optional[str], run: Optional[Map
             out.append("the ledger receipt's checkpoint_length is below 1: an empty checkpoint carries no evidence")
         elif held > length:
             out.append(f"the ledger receipt's checkpoint_length {held} is beyond its ledger_length {length}")
-        elif held == length and receipt["checkpoint_head"] != receipt["ledger_head"]:
-            out.append("the ledger receipt's checkpoint covers the whole ledger but its head is not the ledger's head")
+        if 0 <= index and held >= 1 and index >= held:
+            out.append(f"the ledger receipt's index {index} is not covered by its checkpoint_length {held}: "
+                       "the checkpoint held outside the ledger says nothing of that entry")
+        if heads:
+            if index == length - 1 and hashes and receipt["ledger_head"] != receipt["entry_hash"]:
+                out.append("the ledger receipt's entry is the ledger's last, but its ledger_head is not the entry's own hash")
+            if 1 <= held == length and receipt["checkpoint_head"] != receipt["ledger_head"]:
+                out.append("the ledger receipt's checkpoint covers the whole ledger but its head is not the ledger's head")
     return out
 
 
@@ -600,7 +660,7 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
                        "(its recorded KeySet fingerprint differs from alpha's)")
     if bare_assertion:
         out.append(BARE_ASSERTION)
-    receipt_issues = [] if chain is None else _receipt_problems(chain, dd, run)
+    receipt_issues = [] if chain is None else _receipt_problems(chain, delta, dd, run)
     out += receipt_issues
     if chain is None or receipt_issues:
         out.append(CHAIN_NOT_SHOWN)

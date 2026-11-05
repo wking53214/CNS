@@ -45,7 +45,7 @@ def build(ctx=CTX, **over) -> Dict[str, Any]:
     beta = {**core, "context": dict(ctx), "keyset_digest": da,
             "lock_result_digests": {k: subject_digest(v) for k, v in sorted(zeta.items())}}
     delta = {"audit_id": "a" * 16, "timestamp": "2026-01-01T12:00:00", "previous_hash": "p" * 64,
-             "immutable_hash": "h" * 64, "decision": dict(core), "run_id": ctx["run_id"], "event_id": ctx["event_id"],
+             "immutable_hash": "2" * 64, "decision": dict(core), "run_id": ctx["run_id"], "event_id": ctx["event_id"],
              "context": dict(ctx), "decision_digest": subject_digest(beta)}
     out = {"alpha": alpha, "zeta": zeta, "beta": beta, "delta": delta}
     out.update(over)
@@ -54,16 +54,19 @@ def build(ctx=CTX, **over) -> Dict[str, Any]:
 
 def receipt_for(parts, ctx=None, **over) -> Dict[str, Any]:
     """The receipt delta.cns_connector.verification_receipt would issue for this delta content (shaped as it does it)."""
-    head = "c" * 64
     delta = parts["delta"]
+    entry_hash = delta.get("immutable_hash", "2" * 64) if isinstance(delta, Mapping) else "2" * 64
+    head = entry_hash
     try:
         digest = subject_digest(delta)
     except (TypeError, ValueError):
         digest = "0" * 64  # content that cannot be digested has no receipt; the content is what is named then
     if ctx is None:
         ctx = delta.get("context", CTX) if isinstance(delta, Mapping) else CTX
-    receipt = {"schema": "ledger-receipt/1", "entry_digest": digest, "index": 0, "ledger_length": 1,
-               "ledger_head": head, "checkpoint_length": 1, "checkpoint_head": head, "context": dict(ctx)}
+    previous = delta.get("previous_hash", "p" * 64) if isinstance(delta, Mapping) else "p" * 64
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": digest, "index": 0, "entry_hash": entry_hash,
+               "previous_hash": previous, "ledger_length": 1, "ledger_head": head, "checkpoint_length": 1,
+               "checkpoint_head": head, "context": dict(ctx)}
     receipt.update(over)
     return receipt
 
@@ -707,9 +710,160 @@ def test_the_receipt_binds_the_root_to_nothing_it_does_not_already_hold():
     """The root is over the contents, so two valid receipts for one run give the same root."""
     parts = build()
     one = root_of(parts)
-    two = root_of(parts, chain=receipt_for(parts, ledger_length=7, index=4, checkpoint_length=2, ledger_head="a" * 64,
+    two = root_of(parts, chain=receipt_for(parts, ledger_length=7, index=1, checkpoint_length=2, ledger_head="a" * 64,
                                            checkpoint_head="b" * 64))
     assert one == two
+
+
+# --- the receipt is tied to the delta content and read once (Step 10) -------------------------------------------------
+
+class _LyingStr(str):
+    """Equal to everything: what a receipt field must not be allowed to be."""
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    __hash__ = str.__hash__
+
+
+class _LyingInt(int):
+    def __eq__(self, other):
+        return True
+
+    def __lt__(self, other):
+        return True
+
+    __hash__ = int.__hash__
+
+
+class _Key:
+    """A key that is not a str but prints as one."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return self.name
+
+
+def test_a_receipt_whose_heads_are_not_the_entrys_own_hash_is_named():
+    parts = build()
+    refused_with(parts, receipt_for(parts, ledger_head="0" * 64, checkpoint_head="0" * 64),
+                 "its ledger_head is not the entry's own hash")
+    refused_with(parts, receipt_for(parts, ledger_head="0" * 64), "its ledger_head is not the entry's own hash")
+
+
+def test_a_receipt_whose_entry_or_previous_hash_is_not_the_delta_contents_is_named():
+    parts = build()
+    refused_with(parts, receipt_for(parts, entry_hash="3" * 64), "entry_hash is not the delta content's immutable_hash")
+    refused_with(parts, receipt_for(parts, previous_hash="3" * 64), "previous_hash is not the delta content's previous_hash")
+
+
+def test_a_receipt_for_an_entry_the_checkpoint_does_not_cover_is_named():
+    parts = build()
+    refused_with(parts, receipt_for(parts, index=4, ledger_length=9, checkpoint_length=2, ledger_head="a" * 64,
+                                    checkpoint_head="b" * 64), "is not covered by its checkpoint_length 2")
+    refused_with(parts, receipt_for(parts, index=1, ledger_length=3, checkpoint_length=1, ledger_head="a" * 64,
+                                    checkpoint_head="b" * 64), "is not covered by its checkpoint_length 1")
+
+
+def test_an_index_outside_the_ledger_with_arbitrary_heads_is_named():
+    parts = build()
+    refused_with(parts, receipt_for(parts, index=4), "is not within a ledger of 1 entries")
+
+
+def test_a_checkpoint_that_covers_the_ledger_must_have_the_ledgers_head():
+    parts = build()
+    refused_with(parts, receipt_for(parts, ledger_length=3, index=0, checkpoint_length=3, ledger_head="a" * 64,
+                                    checkpoint_head="b" * 64), "its head is not the ledger's head")
+
+
+def test_a_non_last_entry_may_carry_any_ledger_head_and_is_still_clean_when_the_rest_fits():
+    parts = build()
+    assert problems_of(parts, chain=receipt_for(parts, index=0, ledger_length=3, checkpoint_length=2,
+                                                ledger_head="a" * 64, checkpoint_head="b" * 64)) == []
+
+
+@pytest.mark.parametrize("field", ["schema", "entry_digest", "entry_hash", "previous_hash", "ledger_head", "checkpoint_head"])
+def test_a_str_subclass_in_a_receipt_field_is_refused(field):
+    parts = build()
+    honest = receipt_for(parts)
+    refused_with(parts, receipt_for(parts, **{field: _LyingStr(honest[field])}), field if field != "schema" else "schema")
+
+
+@pytest.mark.parametrize("field", ["index", "ledger_length", "checkpoint_length"])
+def test_an_int_subclass_in_a_receipt_field_is_refused(field):
+    parts = build()
+    refused_with(parts, receipt_for(parts, **{field: _LyingInt(1)}), f"the ledger receipt's {field} must be an int")
+
+
+def test_one_runs_receipt_relabelled_with_another_runs_context_cannot_be_wrapped_to_compare_equal():
+    a, b = build(), build(ctx={**CTX, "run_id": "run-2", "event_id": "ev-2"})
+    stolen = receipt_for(a, entry_digest=_LyingStr(receipt_for(a)["entry_digest"]), context=b["delta"]["context"])
+    refused_with(b, stolen, "entry_digest")
+
+
+def test_an_extra_key_whose_text_is_a_field_name_is_a_named_problem_not_a_pass():
+    parts = build()
+    extra = dict(receipt_for(parts))
+    extra[_Key("index")] = 99
+    refused_with(parts, extra, "plain str keys")
+
+
+def test_a_real_key_replaced_by_one_that_only_prints_alike_is_a_named_problem_not_a_KeyError():
+    parts = build()
+    swapped = {(_Key(k) if k == "index" else k): v for k, v in receipt_for(parts).items()}
+    refused_with(parts, swapped, "plain str keys")
+
+
+def test_a_str_subclass_key_is_not_a_plain_key():
+    parts = build()
+    swapped = {(_LyingStr(k) if k == "context" else k): v for k, v in receipt_for(parts).items()}
+    refused_with(parts, swapped, "plain str keys")
+
+
+def test_a_receipt_with_eleven_keys_or_nine_is_refused():
+    parts = build()
+    refused_with(parts, {**receipt_for(parts), "extra": 1}, "extra")
+    short = receipt_for(parts)
+    del short["previous_hash"]
+    refused_with(parts, short, "previous_hash")
+
+
+class _ReadOnce(Mapping):
+    """A receipt that answers honestly the first time each key is read and with nonsense after."""
+
+    def __init__(self, honest):
+        self._honest, self._seen, self.reads = dict(honest), set(), 0
+
+    def __getitem__(self, key):
+        self.reads += 1
+        if key in self._seen:
+            return "garbage"
+        self._seen.add(key)
+        return self._honest[key]
+
+    def __iter__(self):
+        return iter(self._honest)
+
+    def __len__(self):
+        return len(self._honest)
+
+
+def test_the_receipt_is_read_once_so_a_later_different_answer_changes_nothing():
+    parts = build()
+    receipt = _ReadOnce(receipt_for(parts))
+    assert problems_of(parts, chain=receipt) == []
+    assert receipt.reads == len(receipt_for(parts))
+
+
+def test_the_receipts_context_is_read_once():
+    parts = build()
+    ctx = _Shifty(CTX, {**CTX, "run_id": "run-9"})
+    assert problems_of(parts, chain=receipt_for(parts, context=ctx)) == []
 
 
 # --- keyset_fingerprint_of: a recomputation of alpha's fingerprint, supplied by the caller from zeta ------------------
@@ -824,7 +978,7 @@ ORIGIN = {"source": "ward monitor 4", "producer": "vitals-ingest 2.1", "observed
           "collection_context": "bedside, continuous", "transformation": "none"}
 # the root of build() with no origin, as it was before the origin check existed: pinned so that the check can never
 # move the digest of a run that carries none
-BUILD_ROOT = "9b362dfcb5670ba84398f0539590e4c506dafee3d84d235582c873dd874e9341"
+BUILD_ROOT = "3b0b72aa0fb767eb53941feb1fc2f5980fc4d050171aea15b43dd5f9de321768"
 
 
 def with_origin(origin, **over):

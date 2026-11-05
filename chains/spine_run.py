@@ -478,8 +478,9 @@ def GAP_contents_fabricated_by_someone_who_recomputes_the_digests() -> List[str]
     delta = {"audit_id": "0" * 16, "timestamp": "2026-10-01T08:00:00", "previous_hash": "0" * 64, "immutable_hash": "1" * 64,
              "decision": dict(core), "run_id": ctx["run_id"], "event_id": ctx["event_id"], "context": dict(ctx),
              "decision_digest": subject_digest(beta)}
-    head = "f" * 64
-    receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(delta), "index": 0, "ledger_length": 1,
+    head = delta["immutable_hash"]  # a lone, last entry: the ledger's head is the entry's own hash, which the forger knows
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(delta), "index": 0,
+               "entry_hash": delta["immutable_hash"], "previous_hash": delta["previous_hash"], "ledger_length": 1,
                "ledger_head": head, "checkpoint_length": 1, "checkpoint_head": head, "context": dict(ctx)}
     return strict_problems(alpha, zeta, beta, delta, chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint)
 
@@ -618,6 +619,93 @@ def a_stale_content_fingerprint_in_an_unbound_ledger_cannot_be_bound_to_a_run() 
     ledger = DecisionLedger()
     entry = ledger.append(forged)
     return refused(lambda: delta_cns.entry_content(entry, context=CTX, decision_digest=subject_digest(p["beta"])), ledger_state(ledger))
+
+
+# --- the receipt itself attacked: each starts from the receipt delta really issues and alters it in one way -----------
+
+class LyingHex(str):
+    """A str subclass equal to everything: what a receipt's digest must not be allowed to be."""
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __ne__(self, other: object) -> bool:
+        return False
+
+    __hash__ = str.__hash__
+
+
+class KeyLike:
+    """Not a str, but prints as one: a receipt key compared by its text would take it for the field of that name."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __str__(self) -> str:
+        return self.name
+
+
+def altered_receipt(alter: Callable[[Dict[str, Any]], Dict[str, Any]], parts: Dict[str, Any] | None = None) -> List[str]:
+    """Delta's real receipt for the run, altered in one way, handed to the strict check. A root issued anyway is a problem."""
+    p = parts if parts is not None else stages(SICK)
+    real, why = chain_receipt(p)
+    if real is None:
+        return [f"delta issued no receipt to alter: {why}"]
+    forged = alter(dict(real))
+    args = (p["alpha"], p["zeta"], p["beta"], p["delta"])
+    found = strict_problems(*args, chain=forged, keyset_fingerprint_of=zeta_keyset_fingerprint)
+    try:
+        strict_root(*args, chain=forged, keyset_fingerprint_of=zeta_keyset_fingerprint)
+        found.append("a root was issued for the altered receipt")
+    except ValueError:
+        pass
+    return found
+
+
+def a_receipt_with_both_heads_zeroed() -> List[str]:
+    return altered_receipt(lambda r: {**r, "ledger_head": "0" * 64, "checkpoint_head": "0" * 64})
+
+
+def a_receipt_with_an_index_beyond_its_ledger_and_its_checkpoint() -> List[str]:
+    return altered_receipt(lambda r: {**r, "index": 4})
+
+
+def a_receipt_for_entry_four_of_nine_under_a_checkpoint_that_covers_one() -> List[str]:
+    return altered_receipt(lambda r: {**r, "index": 4, "ledger_length": 9})
+
+
+def a_receipt_naming_another_entrys_hashes() -> List[str]:
+    return altered_receipt(lambda r: {**r, "entry_hash": "7" * 64, "previous_hash": "8" * 64})
+
+
+def a_receipt_relabelled_with_another_runs_context_and_a_lying_entry_digest() -> List[str]:
+    """One run's real receipt, its entry_digest wrapped in a str subclass equal to everything and its context replaced by
+    another run's, offered with that other run's contents."""
+    one, two = stages(SICK), stages(SICK, ctx={**CTX, "run_id": "run_2", "event_id": "event_2"})
+    real, why = chain_receipt(one)
+    if real is None:
+        return [f"delta issued no receipt to relabel: {why}"]
+    relabelled = {**real, "entry_digest": LyingHex(real["entry_digest"]), "context": two["delta"]["context"]}
+    found = strict_problems(two["alpha"], two["zeta"], two["beta"], two["delta"], chain=relabelled,
+                            keyset_fingerprint_of=zeta_keyset_fingerprint)
+    try:
+        strict_root(two["alpha"], two["zeta"], two["beta"], two["delta"], chain=relabelled, keyset_fingerprint_of=zeta_keyset_fingerprint)
+        found.append("a root was issued for the relabelled receipt")
+    except ValueError:
+        pass
+    return found
+
+
+def a_receipt_with_a_str_subclass_head() -> List[str]:
+    return altered_receipt(lambda r: {**r, "ledger_head": LyingHex(r["ledger_head"])})
+
+
+def a_receipt_with_an_extra_key_that_prints_as_a_field() -> List[str]:
+    return altered_receipt(lambda r: {**r, KeyLike("index"): 99})
+
+
+def a_receipt_whose_real_key_is_replaced_by_one_that_prints_alike() -> List[str]:
+    return altered_receipt(lambda r: {(KeyLike(k) if k == "index" else k): v for k, v in r.items()})
 
 
 # --- the hardened components, attacked as the matrix did (row numbers are the attack matrix's) -------------------------
@@ -904,7 +992,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
     # extra: the foreign entry is not a member of the ledger the run holds
     ("strict: delta recorded another Decision, quoting beta's digest", delta_recorded_another_decision,
      Expect("problems", required=("the Decision delta recorded differs from beta's in:",),
-            allowed_extra=("the ledger receipt is for other content", CHAIN_NOT_SHOWN))),
+            allowed_extra=("the ledger receipt is for other content", "entry_hash is not the delta content's immutable_hash",
+                           "previous_hash is not the delta content's previous_hash", CHAIN_NOT_SHOWN))),
     ("strict: beta refuses a Decision whose basis contradicts its keys", contradictory_basis_is_refused_by_beta,
      Expect("refused", required=("confidence_basis is 'absence' but triggered_by_keys implies 'keys'",), raises=("ValueError",))),
     ("strict: delta refuses a contradictory Decision that skipped construction",
@@ -956,7 +1045,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
     # what the checkpoint held outside it recorded, and CNS refuses a receipt that is not for the content it was given.
     # CHAIN_NOT_SHOWN is the consequence of either, so it is an allowed extra beside the named cause.
     ("strict: delta's content names a hash the ledger never wrote", delta_content_names_a_hash_the_ledger_never_wrote,
-     Expect("problems", required=("the ledger receipt is for other content",), allowed_extra=(CHAIN_NOT_SHOWN,))),
+     Expect("problems", required=("the ledger receipt is for other content",),
+            allowed_extra=("entry_hash is not the delta content's immutable_hash", CHAIN_NOT_SHOWN))),
     ("strict: delta content of another Decision under the ledger's hashes", delta_content_of_another_decision_under_the_ledgers_hashes,
      Expect("problems", required=("the ledger receipt is for other content",), allowed_extra=(CHAIN_NOT_SHOWN,))),
     ("strict: the ledger chain is broken after the run", the_ledger_chain_is_broken_after_the_run,
@@ -976,6 +1066,29 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
      Expect("refused", required=("older than the newest Decision recorded for 'patient_1'",), raises=("StaleDecisionError",))),
     ("strict: an append onto a head that does not match", an_append_onto_a_head_that_does_not_match,
      Expect("refused", required=("head does not match",), raises=("LedgerCorruptError",))),
+    # --- the receipt itself: each starts from delta's real receipt and alters it in one way; no root may be issued ---
+    ("strict: a receipt whose heads are not the entry's own hash", a_receipt_with_both_heads_zeroed,
+     Expect("problems", required=("its ledger_head is not the entry's own hash",), allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: a receipt whose index is beyond the ledger", a_receipt_with_an_index_beyond_its_ledger_and_its_checkpoint,
+     Expect("problems", required=("index 4 is not within a ledger of 1 entries",),
+            allowed_extra=("is not covered by its checkpoint_length 1", CHAIN_NOT_SHOWN))),
+    ("strict: a receipt for entry 4 of 9 under a checkpoint that covers one", a_receipt_for_entry_four_of_nine_under_a_checkpoint_that_covers_one,
+     Expect("problems", required=("index 4 is not covered by its checkpoint_length 1",), allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: a receipt that names another entry's hashes", a_receipt_naming_another_entrys_hashes,
+     Expect("problems", required=("entry_hash is not the delta content's immutable_hash",
+                                  "previous_hash is not the delta content's previous_hash"),
+            allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: another run's receipt relabelled, its entry digest a lying str subclass",
+     a_receipt_relabelled_with_another_runs_context_and_a_lying_entry_digest,
+     Expect("problems", required=("the ledger receipt's entry_digest is not a full lowercase SHA-256 (an exact str)",),
+            allowed_extra=("entry_hash is not the delta content's immutable_hash", CHAIN_NOT_SHOWN))),
+    ("strict: a receipt with a str-subclass head", a_receipt_with_a_str_subclass_head,
+     Expect("problems", required=("the ledger receipt's ledger_head is not a full lowercase SHA-256 (an exact str)",),
+            allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: a receipt with an extra key that prints as a field", a_receipt_with_an_extra_key_that_prints_as_a_field,
+     Expect("problems", required=("as plain str keys; these differ",), allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: a receipt whose real key is replaced by one that prints alike", a_receipt_whose_real_key_is_replaced_by_one_that_prints_alike,
+     Expect("problems", required=("as plain str keys; these differ",), allowed_extra=(CHAIN_NOT_SHOWN,))),
     # --- attacks on the hardened components (the matrix rows), each with the boundary that must refuse it ---
     ("strict: delta refuses a narrative edit that keeps the old content fingerprint", a_narrative_edit_under_the_old_content_fingerprint,
      Expect("refused", required=("Decision.content_fingerprint does not match the Decision's own fields",), raises=("ValueError",))),

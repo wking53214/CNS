@@ -193,9 +193,13 @@ the strict check takes, and what each part is worth:
 - **A delta verification receipt** (`chain=`; the `chain_verified` boolean is a deprecated alias that warns and is never
   evidence). Delta issues the receipt (`delta.cns_connector.verification_receipt`) only when its own chain verifies and a
   checkpoint held outside the ledger is still contained in it; an empty, mistyped or foreign checkpoint gets none. CNS
-  checks the receipt against the contents it already holds (the entry digest is the digest of the delta content given,
-  the context is the run's, the lengths and index are ints that fit one another, the heads are 64 lowercase hex digits).
-  The receipt is not signed.
+  reads the receipt once and checks it against the contents it already holds: exactly ten plain-str keys (`schema`,
+  `entry_digest`, `index`, `entry_hash`, `previous_hash`, `ledger_length`, `ledger_head`, `checkpoint_length`,
+  `checkpoint_head`, `context`), each value of its exact type (a str or int subclass is refused), the entry digest is the
+  digest of the delta content given, `entry_hash` and `previous_hash` are the delta content's own, the context is the
+  run's, `0 <= index < checkpoint_length <= ledger_length`, the heads are 64 lowercase hex digits, the ledger head is the
+  entry's hash when the entry is the last, and the checkpoint head is the ledger head when the checkpoint covers the whole
+  ledger. The receipt is not signed: a hand-built consistent one passes.
 - **An optional recomputation of alpha's KeySet fingerprint** (`keyset_fingerprint_of`, built by the caller from zeta, which
   owns the rule; CNS imports nothing from zeta). The runner supplies it. Without it only the fingerprint strings alpha,
   zeta and beta carry are compared, and substituted alpha content that copies the original string passes.
