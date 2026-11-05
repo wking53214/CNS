@@ -816,3 +816,106 @@ def test_the_recomputation_is_not_called_when_none_is_given_and_alpha_without_a_
                             keyset_fingerprint_of=lambda alpha: calls.append(1) or "x")
     has(found, "alpha carries no keyset_fingerprint")
     assert MISMATCH not in found and calls == []
+
+
+# --- origin: the producer's own record of where a KeySet came from. Well-formedness and order only. -------------------
+
+ORIGIN = {"source": "ward monitor 4", "producer": "vitals-ingest 2.1", "observed_at": "2026-01-01T11:59:30",
+          "collection_context": "bedside, continuous", "transformation": "none"}
+# the root of build() with no origin, as it was before the origin check existed: pinned so that the check can never
+# move the digest of a run that carries none
+BUILD_ROOT = "9b362dfcb5670ba84398f0539590e4c506dafee3d84d235582c873dd874e9341"
+
+
+def with_origin(origin, **over):
+    parts = build(**over)
+    parts["alpha"]["origin"] = origin
+    return relink(parts)
+
+
+def test_alpha_content_without_an_origin_is_unchanged_and_clean():
+    parts = build()
+    assert "origin" not in parts["alpha"]
+    assert problems_of(parts) == []
+    assert root_of(parts) == BUILD_ROOT
+
+
+def test_a_well_formed_origin_observed_before_the_decision_is_clean():
+    parts = with_origin(dict(ORIGIN))
+    assert problems_of(parts) == []
+    assert root_of(parts) != root_of(build())  # the origin is bound into alpha's digest, so into the root
+
+
+def test_an_origin_observed_at_the_instant_of_the_decision_is_clean():
+    assert problems_of(with_origin({**ORIGIN, "observed_at": "2026-01-01T12:00:00"})) == []
+
+
+@pytest.mark.parametrize("origin, text", [
+    ("ward monitor", "alpha origin must be a mapping"),
+    (None, "alpha origin must be a mapping"),
+    ([], "alpha origin must be a mapping"),
+    ({k: v for k, v in ORIGIN.items() if k != "producer"}, "alpha origin has exactly the fields"),
+    ({**ORIGIN, "signed_by": "nobody"}, "alpha origin has exactly the fields"),
+    ({}, "alpha origin has exactly the fields"),
+    ({**ORIGIN, "source": ""}, "alpha origin source must be non-empty"),
+    ({**ORIGIN, "producer": 7}, "alpha origin producer must be a str"),
+    ({**ORIGIN, "transformation": None}, "alpha origin transformation must be a str"),
+    ({**ORIGIN, "collection_context": _Id("bedside")}, "alpha origin collection_context must be a str"),
+    ({**ORIGIN, "observed_at": "yesterday evening"}, "not ISO 8601 text"),
+    ({**ORIGIN, "observed_at": "2026-13-45T99:00:00"}, "not ISO 8601 text"),
+    ({**ORIGIN, "observed_at": 1767268800}, "alpha origin observed_at must be a str"),
+])
+def test_a_malformed_origin_is_a_named_problem(origin, text):
+    parts = with_origin(origin)
+    has(problems_of(parts), text)
+    with pytest.raises(ValueError, match="does not hold together"):
+        root_of(parts)
+
+
+def test_an_origin_observed_after_the_decision_is_a_named_problem():
+    found = problems_of(with_origin({**ORIGIN, "observed_at": "2026-01-01T12:00:01"}))
+    assert any("is later than the Decision's timestamp" in p for p in found), found
+
+
+def test_an_origin_in_the_future_by_a_day_is_refused_even_with_a_time_zone():
+    parts = build()
+    parts["beta"]["timestamp"] = parts["delta"]["decision"]["timestamp"] = "2026-01-01T12:00:00+00:00"
+    parts["alpha"]["origin"] = {**ORIGIN, "observed_at": "2026-01-02T12:00:00+00:00"}
+    found = problems_of(relink(parts))
+    assert any("is later than the Decision's timestamp" in p for p in found), found
+
+
+def test_time_zones_are_compared_as_instants_not_as_clock_text():
+    parts = build()
+    parts["beta"]["timestamp"] = parts["delta"]["decision"]["timestamp"] = "2026-01-01T12:00:00+00:00"
+    # 13:30 in UTC+2 is 11:30 UTC, before the Decision; 11:30 in UTC-2 is 13:30 UTC, after it
+    parts["alpha"]["origin"] = {**ORIGIN, "observed_at": "2026-01-01T13:30:00+02:00"}
+    assert problems_of(relink(parts)) == []
+    parts["alpha"]["origin"] = {**ORIGIN, "observed_at": "2026-01-01T11:30:00-02:00"}
+    assert any("is later than" in p for p in problems_of(relink(parts)))
+
+
+@pytest.mark.parametrize("observed, decided", [("2026-01-01T11:00:00+00:00", "2026-01-01T12:00:00"),
+                                               ("2026-01-01T11:00:00", "2026-01-01T12:00:00+00:00")])
+def test_a_naive_and_an_aware_timestamp_cannot_be_ordered_and_that_is_a_named_problem_not_a_crash(observed, decided):
+    parts = build()
+    parts["beta"]["timestamp"] = parts["delta"]["decision"]["timestamp"] = decided
+    parts["alpha"]["origin"] = {**ORIGIN, "observed_at": observed}
+    found = problems_of(relink(parts))
+    assert any("cannot be ordered: one carries a time zone and the other does not" in p for p in found), found
+
+
+@pytest.mark.parametrize("bad", [None, 5, "", "noon", ["2026-01-01T12:00:00"]])
+def test_a_decision_timestamp_that_cannot_be_read_is_a_named_problem_not_a_crash(bad):
+    parts = build()
+    parts["beta"]["timestamp"] = parts["delta"]["decision"]["timestamp"] = bad
+    parts["alpha"]["origin"] = dict(ORIGIN)
+    found = problems_of(relink(parts))
+    assert any("cannot be ordered against the Decision" in p for p in found), found
+
+
+def test_the_origin_check_claims_nothing_about_who_made_the_origin():
+    """A producer that writes whatever it likes, consistently, passes: no authorship, authorization or truth is checked."""
+    parts = with_origin({"source": "nowhere", "producer": "anyone", "observed_at": "1970-01-01T00:00:00",
+                         "collection_context": "invented", "transformation": "invented"})
+    assert problems_of(parts) == []

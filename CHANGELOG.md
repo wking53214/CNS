@@ -59,7 +59,14 @@ not a release.
   KeySet fingerprint from alpha's keys; a result that differs, or a function that raises, is the problem "alpha's KeySet
   fingerprint does not match a recomputation from alpha's keys". CNS never implements the rule and imports nothing from
   zeta; without the function, substituted alpha content that copies the original fingerprint string passes (a recorded
-  gap). They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
+  gap).
+  When alpha content carries an `origin` (alpha's optional `keyset_content(origin=...)`), the strict check requires exactly
+  its five fields (`source`, `producer`, `observed_at`, `collection_context`, `transformation`), each a non-empty exact
+  `str`, `observed_at` ISO 8601 text and not later than the Decision's timestamp; a malformed origin, a time zone mixed
+  with none, or an unreadable Decision time is a named problem, never a crash. It checks form and order only: the
+  origin is the producer's own claim, and CNS makes no authenticity, authorization or truthfulness claim about it.
+  Content with no origin is unchanged and every digest and root stays as it was.
+  They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
   alpha, zeta, beta and delta. `blame` names alpha's run as the reference.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.

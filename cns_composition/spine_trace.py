@@ -54,6 +54,10 @@ requires:
     with consistent ints and 64-hex heads. The receipt is not signed: a forger who writes a consistent one passes. The old
     `chain_verified` boolean is a deprecated alias and never counts.
 
+When alpha content carries an `origin` (source, producer, observed_at, collection_context, transformation) it is checked
+for well-formedness and for `observed_at` not being later than the Decision's timestamp, and for nothing else: these are
+the producer's own claims, and CNS makes no authenticity, authorization or truthfulness claim about them.
+
 A missing field is a problem, not a skip. Content that cannot be digested or read is a problem, not an exception.
 
 WHAT STRICT DOES NOT PROVE (recorded as facts in `chains/spine_run.py`, scenarios marked GAP)
@@ -73,6 +77,7 @@ from __future__ import annotations
 import re
 import warnings
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from cns.gate import subject_digest
@@ -187,6 +192,7 @@ CHAIN_NOT_SHOWN = ("the ledger chain was not shown to verify (delta's verify_cha
                    "as a member of that chain), so the entry may not belong to the chain")
 BARE_ASSERTION = "chain_verified is a bare assertion and is not evidence; pass chain= a delta verification receipt"
 FINGERPRINT_NOT_RECOMPUTED = "alpha's KeySet fingerprint does not match a recomputation from alpha's keys"
+_ORIGIN_FIELDS = ("source", "producer", "observed_at", "collection_context", "transformation")
 _RECEIPT_FIELDS = ("schema", "entry_digest", "index", "ledger_length", "ledger_head", "checkpoint_length",
                    "checkpoint_head", "context")
 _UNSET: Any = object()
@@ -325,6 +331,43 @@ def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, 
             unread.append(f"{name} content could not be read: {type(exc).__name__}: {exc}")
             copies.append(None)
     return (copies[0], copies[1], copies[2], copies[3]), unread
+
+
+def _origin_problems(origin: Any, decided_at: Any) -> List[str]:
+    """What is wrong with the origin record alpha carries, or about its ordering against the Decision. Empty if none.
+
+    Well-formedness and order only: exactly the five fields, each a non-empty exact str, `observed_at` ISO 8601 text
+    (`datetime.fromisoformat`) that is not later than the Decision's timestamp. These are the producer's own assertions.
+    Nothing here says who the producer is, that the source is real, that the observation is true, or that anyone was
+    authorized: CNS makes no authenticity claim."""
+    if not isinstance(origin, Mapping):
+        return [f"alpha origin must be a mapping; got {type(origin).__name__}"]
+    out: List[str] = []
+    if set(map(str, origin)) != set(_ORIGIN_FIELDS) or len(origin) != len(_ORIGIN_FIELDS):
+        return [f"alpha origin has exactly the fields {list(_ORIGIN_FIELDS)}; got {sorted(map(str, origin))}"]
+    for name in _ORIGIN_FIELDS:
+        value = origin[name]
+        if type(value) is not str:
+            out.append(f"alpha origin {name} must be a str; got {type(value).__name__}")
+        elif not value:
+            out.append(f"alpha origin {name} must be non-empty")
+    if out:
+        return out
+    try:
+        observed = datetime.fromisoformat(origin["observed_at"])
+    except ValueError:
+        return [f"alpha origin observed_at is not ISO 8601 text: {origin['observed_at']!r}"]
+    if not isinstance(decided_at, str):
+        return ["alpha origin observed_at cannot be ordered against the Decision: beta carries no timestamp text"]
+    try:
+        decided = datetime.fromisoformat(decided_at)
+    except ValueError:
+        return [f"alpha origin observed_at cannot be ordered against the Decision: beta's timestamp {decided_at!r} is not ISO 8601 text"]
+    if (observed.utcoffset() is None) != (decided.utcoffset() is None):
+        return ["alpha origin observed_at and the Decision's timestamp cannot be ordered: one carries a time zone and the other does not"]
+    if observed > decided:
+        return [f"alpha origin observed_at {origin['observed_at']!r} is later than the Decision's timestamp {decided_at!r}"]
+    return []
 
 
 def _is_int(value: object) -> bool:
@@ -514,6 +557,8 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
         unseen_new = sorted(set(newly) - set(zeta))
         if unseen_new:
             out.append(f"the Decision names newly triggered lock(s) zeta never evaluated: {', '.join(unseen_new)}")
+    if "origin" in alpha:
+        out += _origin_problems(alpha["origin"], beta.get("timestamp"))
     # Zeta's own record of the KeySet it evaluated, against the fingerprint alpha reports for the KeySet it produced.
     # A digest a binder names can be made to chain; this is a fact each component computed about its own object.
     fa = alpha.get("keyset_fingerprint")

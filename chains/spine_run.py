@@ -135,13 +135,13 @@ CTX = {"schema": CONTEXT_SCHEMA, "entity_id": "patient_1", "event_id": "event_1"
 SICK_ELSEWHERE = VitalsObservation(heart_rate=149, oxygen_saturation=90.0, respiratory_rate=36, temperature=39.6, age_months=14)
 
 
-def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None) -> Dict[str, Any]:
+def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None, origin=None) -> Dict[str, Any]:
     """Run the four stages for real, binding each to the context and to the digest of the stage before it."""
     locks, engine = build()
     ledger = DecisionLedger(require_context=True)
     entity = ctx["entity_id"]
     keys = observe(vitals)
-    alpha = alpha_cns.keyset_content(keys, context=ctx)
+    alpha = alpha_cns.keyset_content(keys, context=ctx, origin=origin)
     # zeta and beta are told which KeySet digest to name; nothing in either can check it against what they evaluated.
     da = subject_digest(alpha if bind_keyset_of is None else alpha_cns.keyset_content(observe(bind_keyset_of), context=ctx))
     results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
@@ -399,6 +399,20 @@ def zeta_and_beta_named_the_digest_of_another_keyset() -> List[str]:
     return check(p)
 
 
+def origin_observed(at: datetime) -> Dict[str, str]:
+    """An origin record as alpha's producer states it. Its claims are the producer's own: nothing authenticates them."""
+    return {"source": "ward monitor 4", "producer": "vitals-ingest 2.1", "observed_at": at.isoformat(),
+            "collection_context": "bedside, continuous", "transformation": "none"}
+
+
+def an_origin_observed_before_the_decision() -> List[str]:
+    return check(stages(SICK, origin=origin_observed(T0 - timedelta(seconds=30))))
+
+
+def an_origin_observed_after_the_decision() -> List[str]:
+    return check(stages(SICK, origin=origin_observed(T0 + timedelta(minutes=1))))
+
+
 def rechain_from_alpha(p, alpha):
     """Recompute every downstream digest with the real connectors, from the real objects, given another alpha content."""
     da = subject_digest(alpha)
@@ -649,6 +663,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
     # --- strict ---
     ("strict: a sick patient, end to end", lambda: strict_clean(SICK), CLEAN),
     ("strict: a well patient, end to end", lambda: strict_clean(WELL), CLEAN),
+    ("strict: a sick patient with an origin record, end to end", an_origin_observed_before_the_decision, CLEAN),
     ("strict: the same readings in two runs have different roots", strict_roots_differ_by_run, CLEAN),
     ("strict: a strict root is never a lenient root", strict_root_is_not_a_lenient_root, CLEAN),
     ("strict: the four connectors agree with CNS on the context", connectors_agree_with_cns_on_what_a_context_is, CLEAN),
@@ -737,6 +752,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
             required=("zeta lock sepsis_lock was evaluated from a different KeySet than alpha produced (its recorded KeySet fingerprint differs",
                       "zeta lock abnormal_vitals_lock was evaluated from a different KeySet than alpha produced (its recorded KeySet fingerprint differs",
                       "beta's Decision was made from a different KeySet than alpha produced (its recorded KeySet fingerprint differs"))),
+    ("strict: alpha's origin says it was observed after the Decision", an_origin_observed_after_the_decision,
+     Expect("problems", required=("alpha origin observed_at", "is later than the Decision's timestamp"))),
     ("strict: a KeySet substituted under a copied fingerprint string is recomputed", a_keyset_substituted_under_a_copied_fingerprint_is_recomputed,
      Expect("problems", required=("alpha's KeySet fingerprint does not match a recomputation from alpha's keys",))),
     # Each of the next five fails to verify, and now says why. Delta refuses to issue a receipt where the ledger is not
