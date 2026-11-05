@@ -101,7 +101,8 @@ def test_a_refusal_that_mutated_state_fails():
     found = refused(mutate_then_refuse, state=lambda: len(ledger))
     assert found[0].startswith("ValueError:") and found[1].startswith(oracle.STATE_CHANGED)
     expect = Expect("refused", required=(ATTACK,), raises=("ValueError",))
-    assert judge(expect, lambda: found)[1]
+    ledger.clear()
+    assert any(oracle.STATE_CHANGED in w for w in judge(expect, lambda: refused(mutate_then_refuse, state=lambda: len(ledger)))[1])
 
 
 def test_a_refusal_that_left_state_alone_passes():
@@ -111,7 +112,7 @@ def test_a_refusal_that_left_state_alone_passes():
         raise ValueError(ATTACK)
     found = refused(refuse, state=lambda: tuple(ledger))
     assert len(found) == 1
-    assert judge(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lambda: found)[1] == []
+    assert judge(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lambda: refused(refuse, state=lambda: tuple(ledger)))[1] == []
 
 
 def test_refused_catches_overflow_error_as_a_refusal():
@@ -151,3 +152,104 @@ def test_an_expect_that_names_nothing_is_refused_when_built():
         Expect("clean", required=(ATTACK,))
     with pytest.raises(TypeError):
         Expect("problems", required=ATTACK)  # type: ignore[arg-type]
+
+
+# --- F-08 (hacker1 F58 to F66): what the oracle must not let through ------------------------------------------------
+
+class _Text(str):
+    pass
+
+
+def _exits():
+    raise SystemExit(0)
+
+
+def _interrupted():
+    raise KeyboardInterrupt()
+
+
+@pytest.mark.parametrize("scenario", [_exits, _interrupted])
+def test_a_scenario_that_exits_or_is_interrupted_fails_and_does_not_end_the_run(scenario):
+    for expect in (Expect("clean"), Expect("problems", required=(ATTACK,)),
+                   Expect("refused", required=(ATTACK,), raises=("ValueError",))):
+        found, why = verdict(expect, scenario)
+        assert why and found, (expect, why)
+    # even a refused row that names the class cannot accept a BaseException that is not an Exception
+    assert verdict(Expect("refused", required=("SystemExit",), raises=("SystemExit", "KeyboardInterrupt")), scenario)[1]
+    rows = [("exits", scenario, Expect("clean")), ("after", lambda: [], Expect("clean"))]
+    oracle.check_table(rows)
+    assert [bool(judge(e, f)[1]) for _, f, e in rows] == [True, False]
+
+
+def test_an_entry_edited_in_content_with_its_hash_kept_changes_the_ledger_state_digest():
+    import dataclasses
+
+    @dataclasses.dataclass(frozen=True)
+    class Inner:
+        instructions: str
+
+    @dataclasses.dataclass(frozen=True)
+    class Entry:
+        immutable_hash: str
+        decision: Inner
+
+    before = oracle.entries_digest([Entry("a" * 64, Inner("Admit.")), Entry("b" * 64, Inner("Observe."))])
+    assert before == oracle.entries_digest([Entry("a" * 64, Inner("Admit.")), Entry("b" * 64, Inner("Observe."))])
+    edited = [Entry("a" * 64, Inner("Send home.")), Entry("b" * 64, Inner("Observe."))]  # same hashes, other content
+    assert oracle.entries_digest(edited) != before
+    assert oracle.entries_digest(list(reversed([Entry("a" * 64, Inner("Admit.")), Entry("b" * 64, Inner("Observe."))]))) != before
+
+
+def test_a_refusal_that_edited_an_entrys_content_but_not_its_hash_fails_the_state_comparison():
+    import dataclasses
+
+    @dataclasses.dataclass(frozen=True)
+    class Inner:
+        instructions: str
+
+    @dataclasses.dataclass(frozen=True)
+    class Entry:
+        immutable_hash: str
+        decision: Inner
+
+    entries = [Entry("a" * 64, Inner("Admit."))]
+
+    def tamper_then_refuse():
+        entries[0] = Entry("a" * 64, Inner("Send home."))
+        raise ValueError(ATTACK)
+    found = lambda: refused(tamper_then_refuse, state=lambda: (len(entries), oracle.entries_digest(entries)))  # noqa: E731
+    assert verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), found)[1]
+
+
+def test_expect_texts_must_be_exact_non_blank_strings():
+    for bad in (_Text("x"), "", " ", "\n\t "):
+        for field in ("required", "allowed_extra", "forbidden"):
+            with pytest.raises(TypeError):
+                Expect("problems", **{"required": (ATTACK,), field: (bad,)} if field != "required" else {"required": (bad,)})
+    with pytest.raises(TypeError):
+        Expect("refused", required=(ATTACK,), raises=(_Text("ValueError"),))
+    assert Expect("problems", required=("a text",)).required == ("a text",)
+
+
+def test_a_refusal_text_the_scenario_made_up_while_the_attack_succeeded_fails():
+    ledger = []
+
+    def lies():
+        ledger.append("recorded")  # the attack call succeeded
+        return [f"ValueError: {ATTACK}"]
+    assert verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lies)[1]
+
+
+def test_an_attack_call_that_went_through_and_then_a_refusal_text_fails():
+    def lies_after_an_attempt():
+        assert refused(lambda: None) == []  # the attack call ran and was not refused
+        return [f"ValueError: {ATTACK}"]
+    found, why = verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lies_after_an_attempt)
+    assert any("no refusal" in w for w in why)
+
+
+def test_a_refusal_from_the_attack_call_is_evidence_and_is_not_an_extra_problem():
+    def thunk():
+        raise ValueError(ATTACK)
+    found, why = verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lambda: refused(thunk))
+    assert why == [] and len(found) == 1

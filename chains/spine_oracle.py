@@ -13,13 +13,23 @@ An `Expect` says which of four things the scenario must do:
   refused   as `problems`, for a boundary that raised. `raises` names the exception classes accepted; at least one
             problem must start with one of them.
 `forbidden` texts must appear in no problem, whatever the outcome. A scenario that raises fails, unless its outcome is
-`refused` and the exception class name is one of `raises`.
+`refused` and the exception class name is one of `raises`. Anything raised that is not an `Exception` (SystemExit,
+KeyboardInterrupt, GeneratorExit) is a crash of that scenario: it always fails the scenario and never ends the run.
+
+A `refused` scenario must also show that the attack call was made and refused. Text a scenario returns is not that
+evidence (a scenario that let the attack through can return the refusal text), so `refused()` records every call it
+makes and every refusal it catches, and `judge` requires a refusal recorded while the scenario ran (or the scenario
+itself raising an exception class it declares). The record is a counter, not an element of the returned list, because
+rows branch on whether `refused()` returned anything.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import threading
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
 
 OUTCOMES = ("clean", "problems", "refused", "gap")
 STATE_CHANGED = "state changed after refusal"
@@ -38,8 +48,9 @@ class Expect:
             raise ValueError(f"Expect.outcome must be one of {OUTCOMES}, not {self.outcome!r}")
         for name in ("required", "allowed_extra", "forbidden", "raises"):
             value = getattr(self, name)
-            if not isinstance(value, tuple) or not all(isinstance(t, str) and t for t in value):
-                raise TypeError(f"Expect.{name} must be a tuple of non-empty strings")
+            if not isinstance(value, tuple) or not all(type(t) is str and t.strip() for t in value):
+                raise TypeError(f"Expect.{name} must be a tuple of exact, non-blank str (a str subclass or a text of "
+                                "only whitespace matches anything it should not)")
         if self.outcome in ("problems", "refused") and not self.required:
             raise ValueError(f"an Expect with outcome {self.outcome!r} must name the problem it requires")
         if self.outcome in ("clean", "gap") and (self.required or self.allowed_extra or self.raises):
@@ -51,16 +62,42 @@ class Expect:
 Expectation = Expect
 CAUGHT = (ValueError, TypeError, OverflowError)
 
+_EVIDENCE_LOCK = threading.Lock()
+_CALLS = 0
+_REFUSALS = 0
+
+
+def _evidence() -> Tuple[int, int]:
+    with _EVIDENCE_LOCK:
+        return _CALLS, _REFUSALS
+
+
+def entries_digest(entries: Iterable[Any]) -> str:
+    """A digest of the whole content of every entry, in order, so a refusal that edited an entry and kept its hash shows.
+
+    A dataclass entry is read field by field (nested dataclasses included); anything else by its repr. The hashes an entry
+    carries are part of its content, so a swapped or reordered entry shows too."""
+    h = hashlib.sha256()
+    for entry in entries:
+        body = repr(dataclasses.asdict(entry)) if dataclasses.is_dataclass(entry) and not isinstance(entry, type) else repr(entry)
+        h.update(hashlib.sha256(body.encode("utf-8", "surrogatepass")).digest())
+    return h.hexdigest()
+
 
 def refused(thunk: Callable[[], Any], *, catch: Tuple[type, ...] = (), state: Optional[Callable[[], Any]] = None) -> List[str]:
     """What a boundary refused, as a problem string, or nothing if it let the call through.
 
     `state`, when given, is read before and after; a refusal that left the state different is reported as a second
     problem, because a refused call must change nothing."""
+    global _CALLS, _REFUSALS
     before = state() if state is not None else None
+    with _EVIDENCE_LOCK:
+        _CALLS += 1
     try:
         thunk()
     except CAUGHT + tuple(catch) as exc:
+        with _EVIDENCE_LOCK:
+            _REFUSALS += 1
         out = [f"{type(exc).__name__}: {exc}"]
         if state is not None:
             after = state()
@@ -94,12 +131,15 @@ def judge(expect: Expect, scenario: Callable[[], List[str]]) -> Tuple[List[str],
     if not isinstance(expect, Expect):
         raise TypeError(f"a scenario must declare an Expect, not {type(expect).__name__}")
     raised: Optional[BaseException] = None
+    refusals_before = _evidence()[1]
     try:
         found = list(scenario())
-    except Exception as exc:  # noqa: BLE001 - a scenario that crashes is judged, not propagated
+    except BaseException as exc:  # noqa: BLE001 - a scenario that crashes (SystemExit and KeyboardInterrupt too) is judged, not propagated
         raised, found = exc, [f"{type(exc).__name__}: {exc}"]
     why: List[str] = []
     if raised is not None:
+        if not isinstance(raised, Exception):
+            return found, [f"the scenario ended with {found[0]}, which is not an exception a scenario may raise; it is a crash of the scenario"]
         if expect.outcome != "refused" or type(raised).__name__ not in expect.raises:
             return found, [f"the scenario raised {found[0]}, which this scenario does not declare"]
     if expect.outcome in ("clean", "gap"):
@@ -115,6 +155,9 @@ def judge(expect: Expect, scenario: Callable[[], List[str]]) -> Tuple[List[str],
         for p in found:
             if not any(t in p for t in listed):
                 why.append(f"unlisted extra problem {p!r}")
+        if expect.outcome == "refused" and raised is None and _evidence()[1] == refusals_before:
+            why.append("no refusal was recorded while the scenario ran: it returned refusal text without making an attack call "
+                       "that a boundary refused (use refused() around the attack call)")
         if expect.outcome == "refused" and expect.raises and found and not any(
                 p.startswith(c + ":") for p in found for c in expect.raises):
             why.append(f"no problem starts with an accepted exception class {expect.raises}")
