@@ -428,6 +428,29 @@ def test_many_callers_at_once_get_exactly_one_yes_from_a_one_use_permission():
         assert answers.count(True) == 1 and g.spent
 
 
+def test_many_decisions_authorizing_one_guard_at_once_leave_exactly_one_of_them_in_charge():
+    """`authorize` runs under the guard's lock: of several decisions racing for one guard, exactly one authorizes it,
+    the rest are refused, and the guard answers only for the winner's document."""
+    for _ in range(20):
+        g = DecisionGuard(lambda artifact: Judged(*artifact))
+        decided = [decision() for _ in range(8)]
+        outcomes, ready = [], threading.Barrier(len(decided))
+
+        def race(one):
+            ready.wait()
+            try:
+                g.authorize(one)
+                outcomes.append("won")
+            except ValueError:
+                outcomes.append("refused")
+
+        threads = [threading.Thread(target=race, args=(one,)) for one in decided]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        assert outcomes.count("won") == 1 and outcomes.count("refused") == len(decided) - 1
+        assert g(("doc-1", "abc")) is True
+
+
 # -- commit and abort: a write that fails can give the permission back, one that finished cannot ------------------------
 
 def test_a_committed_permission_stays_used():

@@ -165,6 +165,12 @@ class DecisionGuard:
                 self._spent = False
 
     def authorize(self, decision: Decision) -> None:
+        """Open the guard for the document `decision` approved (see `_authorize`). Held under the same lock as a call,
+        so two callers cannot authorize one guard at once and leave it half one decision and half the other."""
+        with self._lock:
+            self._authorize(decision)
+
+    def _authorize(self, decision: Decision) -> None:
         """Open the guard for the document `decision` approved. Raises ValueError, leaving the guard closed and the
         decision unspent, unless the decision was issued by a SuperGate, is allowed, carries a subject, binds its own
         root, has not expired, covers every seat in `expected_seats` and was made for `expected_context` when this
