@@ -32,17 +32,57 @@ WHAT IT DOES NOT CHECK
 That the Decision is the right one (that is beta's rules), or that a Lock should have opened (zeta's), or
 that the ledger chain verifies (delta's own `verify_chain_integrity`). It checks that the stages describe
 one run.
+
+STRICT VERIFICATION (`strict_problems`, `strict_root`)
+
+`problems` trusts what the caller read off the objects: digests and summaries it never recomputes. A caller can
+hand it a set that agrees with itself and describes nothing, and it issues a root. The strict check takes each
+stage's CONTENT (the plain mapping its connector produces: `keyset_content`, `lock_result_content`,
+`decision_content`, `entry_content`, each called with a pipeline context), recomputes every digest itself, and
+requires:
+
+  - every stage carries a pipeline context (`CONTEXT_SCHEMA`: schema, entity_id, event_id, run_id) and all of
+    them are the same: one subject, one event, one run;
+  - zeta's results and beta's Decision each name the digest of alpha's KeySet content, beta names the digest of
+    each of zeta's lock-result contents (exactly those, none missing or extra), and delta names the digest of
+    beta's Decision content, whose fields its own embedded copy must equal;
+  - the Decision cites only Keys alpha listed as present (`present_names`, which alpha states so that CNS never
+    re-implements zeta's confidence rule) and only Locks zeta evaluated;
+  - delta's entry was recorded under that run and event.
+
+A missing field is a problem, not a skip. Content that cannot be digested or read is a problem, not an exception.
+
+WHAT STRICT DOES NOT PROVE (recorded as facts in `chains/spine_run.py`, scenarios marked GAP)
+
+It verifies that the supplied contents AGREE with each other and chain by digest. It does not prove where they came
+from. There is no key in it, so four contents made up by someone who recomputes the digests pass. And zeta never
+sees the KeySet a result is bound to: `keyset_digest` is asserted by whoever binds it, so a result evaluated from
+one KeySet and bound to another's digest passes. Closing the second needs zeta to record the KeySet it evaluated.
+CNS
+reads fields by their documented names and applies no decision policy: it does not say which Key should be
+present, which Lock should open, or whether the Decision is right. `strict_root` is domain-separated
+(`TRACE_SCHEMA`), so it can never equal a lenient `root`, and it is never a native digest of any stage.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from cns.gate import subject_digest
 
-__all__ = ["SPINE", "SpineRecord", "problems", "root"]
+__all__ = [
+    "CONTEXT_SCHEMA",
+    "SPINE",
+    "SpineRecord",
+    "TRACE_SCHEMA",
+    "context_problems",
+    "problems",
+    "root",
+    "strict_problems",
+    "strict_root",
+]
 
 #: The repositories of the spine, in the order a run passes through them, and the package each ships.
 SPINE: Mapping[str, str] = {
@@ -52,7 +92,7 @@ SPINE: Mapping[str, str] = {
     "interconnected_delta": "delta",
 }
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 @dataclass(frozen=True)
@@ -88,7 +128,7 @@ def problems(record: SpineRecord) -> List[str]:
     for lock_id, digest in record.lock_result_digests.items():
         digests[f"zeta lock {lock_id}"] = digest
     for name, digest in digests.items():
-        if not isinstance(digest, str) or not _SHA256.match(digest):
+        if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
             out.append(f"{name} digest is not a full SHA-256")
     if not record.lock_result_digests:
         out.append("zeta evaluated no lock, so the Decision has nothing to rest on")
@@ -123,4 +163,309 @@ def root(record: SpineRecord) -> str:
         "zeta": dict(record.lock_result_digests),
         "beta": record.decision_digest,
         "delta": record.entry_digest,
+    })
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Strict verification: the actual contents, not a caller's account of them.
+# ---------------------------------------------------------------------------------------------------------------
+
+#: The pipeline context every stage binds: one subject, one event, one run. Each of the four repositories' connectors
+#: validates its own copy of this contract; `chains/spine_run.py` holds those copies to `context_problems`.
+CONTEXT_SCHEMA = "spine-context/1"
+#: Names the strict root, so it can never equal a lenient `root`.
+TRACE_SCHEMA = "spine-trace/2"
+
+_CONTEXT_FIELDS = ("schema", "entity_id", "event_id", "run_id")
+_RUN_FIELDS = ("entity_id", "event_id", "run_id")
+#: Fields beta's content carries only when bound to a run; the ledger's embedded copy of the Decision has none of them.
+_BETA_RUN_FIELDS = ("context", "keyset_digest", "lock_result_digests")
+
+
+def context_problems(context: object) -> List[str]:
+    """What is wrong with a pipeline context. Empty when it is exactly the four fields, non-empty strings, a known schema."""
+    if not isinstance(context, Mapping):
+        return [f"a pipeline context must be a mapping; got {type(context).__name__}"]
+    out: List[str] = []
+    if set(context) != set(_CONTEXT_FIELDS):
+        out.append(f"a pipeline context has exactly the fields {list(_CONTEXT_FIELDS)}; got {sorted(map(str, context))}")
+        return out
+    for name in _CONTEXT_FIELDS:
+        value = context[name]
+        if not isinstance(value, str):
+            out.append(f"context field {name} must be a str; got {type(value).__name__}")
+        elif not value:
+            out.append(f"context field {name} must be non-empty")
+    if not out and context["schema"] != CONTEXT_SCHEMA:
+        out.append(f"unsupported schema {context['schema']!r}; this check speaks {CONTEXT_SCHEMA!r}")
+    return out
+
+
+def _digest(content: Mapping[str, Any], who: str, out: List[str]) -> Optional[str]:
+    try:
+        return subject_digest(content)
+    except (TypeError, ValueError) as exc:
+        out.append(f"{who} content cannot be digested: {exc}")
+        return None
+
+
+def _same(a: Any, b: Any) -> bool:
+    """Whether two values are the same content as CNS binds it. Python calls True, 1 and 1.0 equal; CNS does not."""
+    try:
+        return subject_digest({"v": a}) == subject_digest({"v": b})
+    except (TypeError, ValueError):
+        return False
+
+
+def _differing(a: Mapping[str, Any], b: Mapping[str, Any]) -> List[str]:
+    return sorted(k for k in set(a) | set(b) if k not in a or k not in b or not _same(a[k], b[k]))
+
+
+def _plain(value: Any) -> Any:
+    """A copy made by reading each mapping and sequence exactly once, so what is checked is what is hashed."""
+    if isinstance(value, Mapping):
+        return {k: _plain(v) for k, v in list(value.items())}
+    if isinstance(value, list):
+        return [_plain(v) for v in list(value)]
+    if isinstance(value, tuple):
+        return tuple(_plain(v) for v in value)
+    return value
+
+
+def _is_sha256(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _strings(value: object) -> Optional[List[str]]:
+    if isinstance(value, (list, tuple)) and all(isinstance(v, str) for v in value):
+        return list(value)
+    return None
+
+
+def strict_problems(
+    alpha: Mapping[str, Any],
+    zeta: Mapping[str, Mapping[str, Any]],
+    beta: Mapping[str, Any],
+    delta: Mapping[str, Any],
+    *,
+    chain_verified: bool = False,
+) -> List[str]:
+    """Everything that does not hold together in four stages' contents. Empty when they describe one run.
+
+    `alpha` is `keyset_content(keys, context=...)`, `zeta` maps each lock id to
+    `lock_result_content(result, context=..., keyset_digest=...)`, `beta` is `decision_content(decision,
+    context=..., keyset_digest=..., lock_result_digests=...)` and `delta` is `entry_content(entry, context=...,
+    decision_digest=...)`. Every digest is recomputed here.
+
+    `chain_verified` is the one fact the contents cannot carry: that delta's own `verify_chain_integrity()` held and
+    the recorded entry is a member of that chain. CNS imports no repository, so the caller (the integration runner,
+    which holds the real ledger) states it. It defaults to False, and anything but exactly True is a problem, so a
+    caller that never asked delta cannot get a clean result.
+    """
+    snap, unread = _snapshot(alpha, zeta, beta, delta)
+    if unread:
+        return unread
+    return _strict_problems(*snap, chain_verified=chain_verified)
+
+
+def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, Any, Any, Any], List[str]]:
+    """Read each stage once into plain copies. A stage that cannot be read is a problem, not an exception."""
+    unread: List[str] = []
+    copies: List[Any] = []
+    for name, content in (("alpha", alpha), ("zeta", zeta), ("beta", beta), ("delta", delta)):
+        try:
+            copies.append(_plain(content))
+        except Exception as exc:  # noqa: BLE001 - any failure to read is a failure to verify
+            unread.append(f"{name} content could not be read: {type(exc).__name__}: {exc}")
+            copies.append(None)
+    return (copies[0], copies[1], copies[2], copies[3]), unread
+
+
+def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain_verified: Any = False) -> List[str]:
+    out: List[str] = []
+    stages = {"alpha": alpha, "beta": beta, "delta": delta}
+    for name, content in stages.items():
+        if not isinstance(content, Mapping):
+            out.append(f"{name} content is not a mapping")
+    if not isinstance(zeta, Mapping) or not zeta:
+        out.append("zeta evaluated no lock, so the Decision has nothing to rest on")
+    else:
+        for lock_id, content in zeta.items():
+            if not isinstance(content, Mapping):
+                out.append(f"zeta lock {lock_id} content is not a mapping")
+    if out:
+        return out
+
+    # Who is bound to what run. Every stage must carry a valid context; the run is the one most stages name.
+    contexts: Dict[str, Mapping[str, Any]] = {}
+    labelled: List[Tuple[str, Mapping[str, Any]]] = [("alpha", alpha)]
+    labelled += [(f"zeta lock {lock_id}", content) for lock_id, content in zeta.items()]
+    labelled += [("beta", beta), ("delta", delta)]
+    for who, content in labelled:
+        if "context" not in content:
+            out.append(f"{who} carries no context, and strict verification needs one")
+            continue
+        issues = context_problems(content["context"])
+        if issues:
+            out += [f"{who} context: {issue}" for issue in issues]
+            continue
+        contexts[who] = content["context"]
+    # The run is alpha's context: alpha is the stage that holds the observation, so every other stage is judged against
+    # it. (A vote among stages named the honest stages when one outlier outnumbered them, e.g. a registry of many locks.)
+    run: Optional[Mapping[str, Any]] = contexts.get("alpha")
+    if run is not None:
+        for who, c in contexts.items():
+            if who != "alpha" and dict(c) != dict(run):
+                wrong = [f"{f} {c[f]!r} vs {run[f]!r}" for f in _CONTEXT_FIELDS if c[f] != run[f]]
+                out.append(f"{who} is bound to a different run than alpha's: {', '.join(wrong)}")
+
+    # Lineage: each stage names the digest of the one before it, and CNS recomputes that digest from the content.
+    da = _digest(alpha, "alpha", out)
+    dz: Dict[str, str] = {}
+    for lock_id, content in zeta.items():
+        digest = _digest(content, f"zeta lock {lock_id}", out)
+        if digest is not None:
+            dz[lock_id] = digest
+    db = _digest(beta, "beta", out)
+    dd = _digest(delta, "delta", out)
+    for lock_id, content in zeta.items():
+        if content.get("stale"):
+            out.append(f"zeta lock {lock_id} was refused as stale; a Decision cannot rest on an observation zeta declined to apply")
+        if "lock_id" in content and content["lock_id"] != lock_id:
+            out.append(f"zeta lock {lock_id} carries lock_id {content['lock_id']!r}; a result is filed under its own lock id")
+    if da is not None:
+        for lock_id, content in zeta.items():
+            if "keyset_digest" not in content:
+                out.append(f"zeta lock {lock_id} names no keyset_digest")
+            elif content["keyset_digest"] != da:
+                out.append(f"zeta lock {lock_id} was evaluated from a different KeySet than alpha produced")
+        if "keyset_digest" not in beta:
+            out.append("beta names no keyset_digest")
+        elif beta["keyset_digest"] != da:
+            out.append("beta's Decision was made from a different KeySet than alpha produced")
+    named = beta.get("lock_result_digests")
+    if not isinstance(named, Mapping):
+        out.append("beta names no lock_result_digests")
+    else:
+        for lock_id in sorted(set(dz) & set(named)):
+            if named[lock_id] != dz[lock_id]:
+                out.append(f"beta's Decision rests on a different lock result than zeta produced for {lock_id}")
+        absent = sorted(set(zeta) - set(named))
+        if absent:
+            out.append(f"beta's Decision does not digest zeta's lock result(s): {', '.join(absent)}")
+        extra = sorted(set(named) - set(zeta))
+        if extra:
+            out.append(f"beta's Decision names lock result(s) zeta did not produce: {', '.join(extra)}")
+    if "decision_digest" not in delta:
+        out.append("delta names no decision_digest")
+    elif db is not None and delta["decision_digest"] != db:
+        out.append("delta recorded a Decision other than the one beta produced")
+    embedded = delta.get("decision")
+    if not isinstance(embedded, Mapping):
+        out.append("delta's entry carries no decision content")
+    else:
+        core = {k: v for k, v in beta.items() if k not in _BETA_RUN_FIELDS}
+        drift = _differing(core, embedded)
+        if drift:
+            out.append(f"the Decision delta recorded differs from beta's in: {', '.join(drift)}")
+
+    # Identity and what the Decision cites.
+    if run is not None:
+        entity = run["entity_id"]
+        for lock_id, content in zeta.items():
+            if "entity_id" in content and content["entity_id"] != entity:
+                out.append(f"zeta lock {lock_id} records entity {content['entity_id']!r} but the run is about {entity!r}")
+        if beta.get("entity_id") != entity:
+            out.append(f"beta's Decision is about {beta.get('entity_id')!r} but the run is about {entity!r}")
+        for field in ("run_id", "event_id"):
+            if field not in delta:
+                out.append(f"delta's entry records no {field}")
+            elif delta[field] != run[field]:
+                out.append(f"delta's entry was recorded under {field} {delta[field]!r} but the run is {run[field]!r}")
+    present = _strings(alpha.get("present_names"))
+    keys = alpha.get("keys")
+    held: Optional[set] = None
+    if isinstance(keys, list) and all(isinstance(k, Mapping) and isinstance(k.get("name"), str) for k in keys):
+        held = {k["name"] for k in keys if k.get("present") is True}
+    else:
+        out.append("alpha keys are not a list of named keys")
+    if present is None:
+        out.append("alpha lists no present_names, so what the Decision cites cannot be checked")
+    else:
+        if held is not None:
+            unheld = sorted(set(present) - held)
+            if unheld:
+                out.append(f"alpha lists present_names that its own keys do not hold as present: {', '.join(unheld)}")
+        cited_keys = _strings(beta.get("triggered_by_keys"))
+        if cited_keys is None:
+            out.append("beta's Decision lists no triggered_by_keys")
+        else:
+            unseen = sorted(set(cited_keys) - set(present))
+            if unseen:
+                out.append(f"the Decision cites key(s) alpha did not list as present: {', '.join(unseen)}")
+    cited_locks = _strings(beta.get("triggered_by_locks"))
+    if cited_locks is None:
+        out.append("beta's Decision lists no triggered_by_locks")
+    else:
+        unevaluated = sorted(set(cited_locks) - set(zeta))
+        if unevaluated:
+            out.append(f"the Decision cites lock(s) zeta never evaluated: {', '.join(unevaluated)}")
+    newly = _strings(beta.get("newly_triggered_locks"))
+    if newly is None:
+        out.append("beta's Decision lists no newly_triggered_locks")
+    else:
+        unseen_new = sorted(set(newly) - set(zeta))
+        if unseen_new:
+            out.append(f"the Decision names newly triggered lock(s) zeta never evaluated: {', '.join(unseen_new)}")
+    # Zeta's own record of the KeySet it evaluated, against the fingerprint alpha reports for the KeySet it produced.
+    # A digest a binder names can be made to chain; this is a fact each component computed about its own object.
+    fa = alpha.get("keyset_fingerprint")
+    if not _is_sha256(fa):
+        out.append("alpha carries no keyset_fingerprint (a full lowercase SHA-256), so a lock result cannot be matched to its KeySet")
+    else:
+        for lock_id, content in zeta.items():
+            fz = content.get("keyset_fingerprint")
+            if not _is_sha256(fz):
+                out.append(f"zeta lock {lock_id} carries no keyset_fingerprint, so it cannot be matched to alpha's KeySet")
+            elif fz != fa:
+                out.append(f"zeta lock {lock_id} was evaluated from a different KeySet than alpha produced "
+                           "(its recorded KeySet fingerprint differs from alpha's)")
+        fb = beta.get("keyset_fingerprint")
+        if not _is_sha256(fb):
+            out.append("beta carries no keyset_fingerprint, so its Decision cannot be matched to alpha's KeySet")
+        elif fb != fa:
+            out.append("beta's Decision was made from a different KeySet than alpha produced "
+                       "(its recorded KeySet fingerprint differs from alpha's)")
+    if chain_verified is not True:
+        out.append("the ledger chain was not shown to verify (delta's verify_chain_integrity, with the recorded entry "
+                   "as a member of that chain), so the entry may not belong to the chain")
+    stage_digests = [d for d in (da, db, dd) if d is not None]
+    if len(set(stage_digests)) != len(stage_digests):
+        out.append("two stages are bound to the same digest; each stage must be bound to its own output")
+    return out
+
+
+def strict_root(
+    alpha: Mapping[str, Any],
+    zeta: Mapping[str, Mapping[str, Any]],
+    beta: Mapping[str, Any],
+    delta: Mapping[str, Any],
+    *,
+    chain_verified: bool = False,
+) -> str:
+    """One digest over the whole run, from the contents. Raises ValueError if the stages do not hold together.
+
+    Without `chain_verified=True` (delta's chain shown to verify, see `strict_problems`) no root is issued."""
+    (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
+    found = unread or _strict_problems(alpha, zeta, beta, delta, chain_verified=chain_verified)
+    if found:
+        raise ValueError("the spine run does not hold together: " + "; ".join(found))
+    context = alpha["context"]
+    return subject_digest({
+        "schema": TRACE_SCHEMA,
+        "context": {f: context[f] for f in _CONTEXT_FIELDS},
+        "alpha": subject_digest(alpha),
+        "zeta": {lock_id: subject_digest(content) for lock_id, content in zeta.items()},
+        "beta": subject_digest(beta),
+        "delta": subject_digest(delta),
     })

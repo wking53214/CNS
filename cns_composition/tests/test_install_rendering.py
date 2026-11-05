@@ -1,5 +1,6 @@
 """install_stack: the install file is a rendering of the manifest and the release table, held and regenerated."""
 
+import importlib
 import json
 import subprocess
 import sys
@@ -346,6 +347,7 @@ def test_an_install_without_a_commit_record_or_not_installed_is_a_problem_not_a_
     assert len(problems) == 1 and problems[0].startswith("judge: no commit is recorded")
     (site / "judge-0.4.7.dist-info" / "METADATA").unlink()
     (site / "judge-0.4.7.dist-info").rmdir()
+    importlib.invalidate_caches()
     problems = I.installed_commit_problems(CNS_TAG_TEXT, table(tmp_path))
     assert len(problems) == 1 and problems[0].startswith("judge is not installed")
 

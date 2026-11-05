@@ -28,6 +28,26 @@ the spent set lives in this module, so two processes can each spend the same dec
 Anything else is False: nothing authorized, a refused or unbound decision, a second use, another document, a reader
 that raises. A refusal does not spend the permission; only a yes does.
 
+WHO SETS THE ROSTER
+
+A SuperGate refuses a roster built without the seats its builder named, and cannot refuse a builder who names fewer.
+The party that ACTS is the one that knows which seats it needs, so it says so here, in its own file:
+
+  `expected_seats`   the seats (`repository:gate`) this action needs. A decision whose roster lacks any of them is
+                     refused, and the refusal names the missing ones. Seats beyond these are fine: more gates never
+                     weaken a decision. Written by hand, never built from the roster being checked, or a missing seat
+                     is missing from both.
+  `expected_context` what this action is (the action, the tenant, the policy version). A decision made for another
+                     context, or for none, is refused.
+
+Left out, either check is simply not made: a guard with no `expected_seats` accepts whatever roster the issuer chose,
+and `expected_seats` is None so a test can assert it was set.
+  `require_strict_binding`  the decision came from a roster built with `strict_binding=True`, so each PASS was checked
+                     against the candidate its own seat was handed and not taken on the gate's word.
+
+A name is still not the code behind it: nothing here
+can tell that a seat's gate is the one the repository ships.
+
 BOUND TO A SEAT'S VERDICT, NOT ONLY TO A DOCUMENT
 
 The document check says which text the decision was about. It does not say which thing is about to happen to it: two
@@ -37,15 +57,6 @@ the decision and keeps what it is bound to, `(subject, subject_digest)`; the gua
 `binding_of(artifact)` is that pair. `binding_of` should use the digest function the seat's own repository exports
 (the one that repository's gate binds its verdict with), so the permission is for the same object the gate judged,
 every field of it. Without `seat`, the guard checks the document only, as before.
-
-BOUND TO A ROSTER
-
-`Decision.issued` proves that some SuperGate in this process issued the decision, not that the roster the caller
-meant to consult did. A guard built with `required_seats` refuses a decision whose roster does not seat every one of
-them, so a short roster of gates that pass anything cannot open it. This checks seat names, which the decision's root
-covers, not what stands behind a name: a roster that reuses the names with other gates is not caught here, because
-nothing in a decision says which gate objects ran. Treat it as closing the careless and the lazy substitution, and
-keep the guard and the roster's construction in the same reviewed file.
 
 WHAT IT DOES NOT DO
 
@@ -59,11 +70,11 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Callable, Iterable, Optional, Set, Tuple
+from typing import Callable, Iterable, Mapping, Optional, Set, Tuple
 
 from cns.gate import GateOutcome
 
-from .super_gate import Decision, Judged
+from .super_gate import Decision, Judged, digest_context
 
 __all__ = ["DecisionGuard"]
 
@@ -77,9 +88,10 @@ class DecisionGuard:
     """Closed until authorized by an approved decision; then opens once, for the one document that decision judged."""
 
     def __init__(self, subject_of: Callable[[object], Judged], *, clock: Callable[[], float] = time.time,
+                 expected_seats: Optional[Iterable[str]] = None,
+                 expected_context: Optional[Mapping[str, str]] = None, require_strict_binding: bool = False,
                  seat: Optional[str] = None,
-                 binding_of: Optional[Callable[[object], Tuple[str, str]]] = None,
-                 required_seats: Iterable[str] = ()) -> None:
+                 binding_of: Optional[Callable[[object], Tuple[str, str]]] = None) -> None:
         if not callable(subject_of):
             raise ValueError("subject_of must be a function that reads which document an artifact is")
         if not callable(clock):
@@ -90,17 +102,29 @@ class DecisionGuard:
             raise ValueError("seat must name a seat of the roster as 'repository:gate'")
         if binding_of is not None and not callable(binding_of):
             raise ValueError("binding_of must be a function that reads what an artifact's verdict is bound to")
-        required = tuple(required_seats)
-        if any(not isinstance(name, str) or not name for name in required) or len(set(required)) != len(required):
-            raise ValueError("required_seats must be distinct, non-empty seat names")
         self._subject_of = subject_of
         self._clock = clock
-        self._required_seats = required
         self._seat = seat
         self._binding_of = binding_of
         self._bound_to: Optional[Tuple[str, str]] = None
         #: Held across the whole of `__call__`, so two callers cannot both read "not spent" and both be told yes.
         self._lock = threading.Lock()
+        self._expected_seats: Optional[Tuple[str, ...]] = None
+        if expected_seats is not None:
+            if isinstance(expected_seats, (str, bytes)):
+                raise ValueError("expected_seats must be a collection of seat names, not one string")
+            seats = tuple(expected_seats)
+            if not seats:
+                raise ValueError("expected_seats is empty, so it would expect nothing; leave it out to pin no roster")
+            if any(not isinstance(s, str) or not s for s in seats):
+                raise ValueError("expected_seats names must be non-empty text")
+            if len(set(seats)) != len(seats):
+                raise ValueError("expected_seats names a seat twice")
+            self._expected_seats = seats
+        self._require_strict_binding = bool(require_strict_binding)
+        self._expected_context = digest_context(expected_context) if expected_context is not None else ""
+        if expected_context is not None and not self._expected_context:
+            raise ValueError("expected_context binds nothing")
         self._expires_at: Optional[float] = None
         self._approved: Optional[Judged] = None
         self._spent = False
@@ -113,6 +137,11 @@ class DecisionGuard:
     @property
     def spent(self) -> bool:
         return self._spent
+
+    @property
+    def expected_seats(self) -> Optional[Tuple[str, ...]]:
+        """The seats this guard holds a decision to, or None when it pins no roster."""
+        return self._expected_seats
 
     @property
     def committed(self) -> bool:
@@ -136,9 +165,10 @@ class DecisionGuard:
                 self._spent = False
 
     def authorize(self, decision: Decision) -> None:
-        """Open the guard for the document `decision` approved. Raises ValueError, leaving the guard closed, unless
-        the decision was issued by a SuperGate, is allowed, carries a subject, binds its own root, has not expired,
-        has not already authorized a guard, and this guard has not been authorized."""
+        """Open the guard for the document `decision` approved. Raises ValueError, leaving the guard closed and the
+        decision unspent, unless the decision was issued by a SuperGate, is allowed, carries a subject, binds its own
+        root, has not expired, covers every seat in `expected_seats` and was made for `expected_context` when this
+        guard has them, has not already authorized a guard, and this guard has not been authorized."""
         if self._approved is not None:
             raise ValueError("this guard was already authorized; one guard serves one decision")
         if not decision.allowed:
@@ -152,10 +182,16 @@ class DecisionGuard:
                              "anything")
         if decision.expires_at is not None and self._clock() >= decision.expires_at:
             raise ValueError("the decision has expired, so it cannot authorize anything")
-        absent = [name for name in self._required_seats if name not in decision.seats]
-        if absent:
-            raise ValueError("the decision's roster lacks required seat(s), so it cannot authorize this guard: "
-                             + ", ".join(absent))
+        if self._expected_seats is not None:
+            absent = [seat for seat in self._expected_seats if seat not in decision.seats]
+            if absent:
+                raise ValueError("the decision was not made on the roster this action needs; its roster lacks: "
+                                 + ", ".join(absent))
+        if self._require_strict_binding and not decision.strict_binding:
+            raise ValueError("this guard requires strict binding, and the roster that decided did not check each "
+                             "seat's verdict against its own candidate")
+        if self._expected_context and decision.context_digest != self._expected_context:
+            raise ValueError("the decision was made for a different context than this action, or for none")
         bound_to = self._seat_binding(decision)
         with _SPENT_LOCK:
             if decision.nonce in _SPENT:

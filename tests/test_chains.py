@@ -143,7 +143,9 @@ def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repo
     tree = ast.parse(text)
     assert "SCENARIOS" in text and "return 1 if" in text and "raise SystemExit(main())" in text
     imported = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-    assert imported == {"__future__", "ccc", "cns", "cns_composition", "conservation_kernel", "governance_gateway", "herald", "tie", "typing"}
+    # cryptography: the spine generates its HERALD export key per run (Ed25519), the one addition since the four-repository rule.
+    assert imported == {"__future__", "ccc", "cns", "cns_composition", "cns_interop", "conservation_kernel", "cryptography",
+                        "governance_gateway", "herald", "tie", "typing"}
 
 
 def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact():
@@ -151,8 +153,18 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
-    assert sum(name.startswith("GAP: ") for name in names) == 2
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 39
+    assert sum(name.startswith("GAP: ") for name in names) == 3
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 44
+
+
+def test_the_evidence_script_carries_the_roster_decision_across_the_process_boundary():
+    """The PORTABLE scenarios: the roster's decision signed with UAI-1 and acted on by a RemoteDecisionGuard."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
+             and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
+    assert sum(name.startswith("PORTABLE: ") for name in names) == 4
+    assert "RemoteDecisionGuard(" in text and "request_judgment(" in text and "interop" in text
 
 
 def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
@@ -164,7 +176,13 @@ def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_aga
     assert set(policy) == {"WRITES_A_DOCUMENT", "WRITES_NO_DOCUMENT"}
     assert policy["WRITES_A_DOCUMENT"] == ("ingest", "record")
     assert set(policy["WRITES_NO_DOCUMENT"]) == {"derive", "infer", "interpret", "record_external_finding", "discover",
-                                                 "detect_road_sign", "record_road_sign"}
+                                                 "detect_road_sign", "record_road_sign",
+                                                 # CCC #51 (single write funnel): doors that act on an existing record or are a
+                                                 # person's act. Reviewed 2026-10-31: no roster decision reads a document from them.
+                                                 "accept", "adopt_discovery", "advance_discovery", "amend", "attach_evidence",
+                                                 "classify", "correct", "decide", "erase", "establish_provenance", "ratify",
+                                                 "record_resolution", "redact", "reject", "relate", "resolve_uncertainty",
+                                                 "supersede"}
     assert not set(policy["WRITES_A_DOCUMENT"]) & set(policy["WRITES_NO_DOCUMENT"])
     text = EVIDENCE.read_text(encoding="utf-8")
     assert "ccc_doors_all_named()" in text and "def ccc_gated_doors" in text and "__wrapped__" in text
@@ -223,7 +241,7 @@ def test_the_evidence_script_binds_each_permission_to_its_seat_and_to_the_requir
         assert len(calls) == 1, name
         given = {k.arg: k.value for k in calls[0].keywords}
         assert isinstance(given.get("seat"), ast.Constant) and given["seat"].value == seat, name
-        assert isinstance(given.get("required_seats"), ast.Name) and given["required_seats"].id == "REQUIRED_SEATS", name
+        assert isinstance(given.get("expected_seats"), ast.Name) and given["expected_seats"].id == "REQUIRED_SEATS", name
         assert "binding_of" in given, name
     gates = [c for c in ast.walk(functions["decide"]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "SuperGate"]
     assert len(gates) == 1
@@ -256,8 +274,8 @@ def test_the_evidence_script_accepts_only_the_guards_it_builds_and_requires_a_cc
     assert [kernel[a].id for a in ("accept_guard", "accept_evidence_guard")] == ["is_root_guard", "is_evidence_guard"]
     ccc = {k.arg: k.value for k in calls["CccGate"][0].keywords}
     assert ccc["require_permission"].value is True and ccc["accept_permission"].id == "is_write_permission"
-    for name, kind in (("is_root_guard", "DecisionGuard"), ("is_evidence_guard", "TieEvidenceGuard"),
-                       ("is_write_permission", "DecisionGuard")):
+    for name, kind in (("is_root_guard", "(DecisionGuard, RemoteDecisionGuard)"), ("is_evidence_guard", "TieEvidenceGuard"),
+                       ("is_write_permission", "(DecisionGuard, RemoteDecisionGuard)")):
         assert f"isinstance({'guard' if name != 'is_write_permission' else 'permission'}, {kind})" in ast.get_source_segment(text, functions[name])
     assert "refuse_inactive_root_evidence=True" in ast.get_source_segment(text, functions["kernel_root"])
 

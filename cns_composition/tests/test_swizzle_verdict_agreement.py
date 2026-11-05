@@ -17,6 +17,12 @@ from cns_composition.compose import CompositionStep as SingleStep
 from cns_composition.compose_library import CompositionStep, LibraryComposer, SystemModel
 from cns_composition.herald_passthrough import translate_swizzle_to_canonical
 
+def legacy_composer():
+    """Construct the retired composer while explicitly asserting its warning."""
+    with pytest.warns(DeprecationWarning, match="SuperGate"):
+        return LibraryComposer()
+
+
 SWIZZLES_OWN_TABLE = {
     "banished": GateOutcome.PASS,
     "dismissed": GateOutcome.PASS,
@@ -36,7 +42,7 @@ def test_the_herald_table_agrees_with_swizzle(verdict, expected):
 def test_the_library_composer_agrees_with_swizzle(verdict, expected):
     step = CompositionStep(system_name="swizzle", output_outcome=verdict,
                            output_model=SystemModel.SWIZZLE_VERDICT)
-    assert LibraryComposer()._canonicalize(step) is expected
+    assert legacy_composer()._canonicalize(step) is expected
 
 
 @pytest.mark.parametrize("verdict,expected", sorted(SWIZZLES_OWN_TABLE.items()))

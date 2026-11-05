@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import time
 from typing import Callable, List, Tuple
 
-from cns.gate import GateOutcome
+from cns.gate import GateOutcome, subject_digest
 from cns_composition.repo_gates import Lazy
-from cns_composition.super_gate import SuperGate
+from cns_composition.super_gate import Judged, SuperGate
 from dgk.cns_connector import HealthGate, PerimeterGate
 from dit.cns_connector import CnsGate as DitGate
 from dit.gates import GSA_V13_STACK, build_stack
@@ -46,7 +47,24 @@ REQUIRED_SEATS = (
     "DIT:hedging",
     "DIT:causality",
     "URE:ure.assessment",
+    "CNS:same_subject",
 )
+
+
+def reads_door(door: Artifact) -> Judged:
+    """Which request the gateway's artifact is. The label is the same for both readers on purpose: it is the one
+    request this decision is about, and the digest is of the text each seat was actually shown."""
+    return Judged("request", subject_digest({"text": door.payload["text"]}))
+
+
+def reads_request(request: str) -> Judged:
+    """Which request DGK's perimeter was handed."""
+    return Judged("request", subject_digest({"text": request}))
+
+
+#: How each seat that judges the request says what it was shown. Policy, like REQUIRED_SEATS: reviewed with it. Without
+#: this the gateway can judge one request while the perimeter judges another, and every verdict is bound and PASS.
+READERS = {"Governance_Gateway:governance_gateway": reads_door, "DGK:dgk.perimeter": reads_request}
 
 
 def artifact(text: str) -> Artifact:
@@ -61,9 +79,11 @@ def tampered(text: str) -> Artifact:
 
 
 def assessment(latency: float, error: float):
+    """An assessment from twelve observations ending now: URE's gate refuses a stale or future-dated one."""
     engine = UREEngine()
+    start = time.time() - 12
     for i in range(12):
-        seen = engine.observe({"latency_ms": latency, "error_rate": error}, now=1000.0 + i)
+        seen = engine.observe({"latency_ms": latency, "error_rate": error}, now=start + i)
     return seen
 
 
@@ -76,7 +96,7 @@ def chain(door: Artifact, request: str, telemetry: dict, produced: str, load: Tu
     steps = [step for step in steps if f"{step[0]}:{step[1].name}" != drop]
     seats = [(repo, gate) for repo, gate, _ in steps]
     candidates = {f"{repo}:{gate.name}": candidate for repo, gate, candidate in steps if f"{repo}:{gate.name}" != leave_out}
-    return SuperGate(seats, required=REQUIRED_SEATS).decide(candidates)
+    return SuperGate(seats, required=REQUIRED_SEATS, same_subject=READERS).decide(candidates)
 
 
 def dropped_gate_is_refused() -> str:
@@ -102,6 +122,8 @@ SCENARIOS: List[Tuple[str, Callable[[], object], GateOutcome, bool, str]] = [
      RETRY, True, "ure.assessment"),
     ("produced text breaks DIT's rules", lambda: chain(artifact("summarise"), "summarise", HEALTHY, "I think, as an AI, I feel I should say I am great!!", (50, 0.0)),
      RETRY, True, "identity"),
+    ("the gateway and the perimeter are shown different requests", lambda: chain(artifact("approve the transfer"), "summarise", HEALTHY, GOOD_TEXT, (50, 0.0)),
+     BREACH, False, "same_subject"),
     ("a gate is left out of the request", lambda: chain(artifact("summarise"), "summarise", HEALTHY, GOOD_TEXT, (50, 0.0), leave_out="DIT:identity"),
      BREACH, True, "identity"),
 ]

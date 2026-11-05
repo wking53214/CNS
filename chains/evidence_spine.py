@@ -13,8 +13,9 @@ THE FIVE HOPS, AND WHAT CONNECTS THEM
 
   HERALD             reads the document and extracts claims (`herald.cns_connector.run_governed`), judging the
                      document at ALPHA and each claim at OMEGA, then exports the admitted claims (`herald.build_handoff`).
-  TIE                takes the export as evidence (`tie.evidence.herald_intake.evidence_from_herald_export`), checked
-                     with HERALD's own `verify_export`. This is real code on both sides: TIE reads HERALD's export by key.
+  TIE                takes the export as evidence (`tie.evidence.herald_intake.evidence_from_herald_export`). The export
+                     must be signed (Ed25519) by a key TIE pins; TIE checks the signature itself. The spine's export key
+                     is generated per run; a separate process holding only its public key verifies the export too.
   Conservation_Kernel  judges a root artifact before it becomes ancestry (`CnsRootAdmissionGate`).
   Governance_Gateway   judges the artifact at the admission door (`CnsGate`).
   CCC                  judges the attempt to ingest the document into its store (`CccGate`, ALPHA only), on a scratch
@@ -64,9 +65,11 @@ THE EVIDENCE: A PERMISSION THAT CHECKS WHERE A RECORD CAME FROM
 The kernel's registry holds the evidence a root cites, and the root seat checks that a citation exists, so the
 evidence has to be added before the roster can decide. No decision exists yet, so a decision guard cannot be the
 permission here. The kernel is built with `evidence_guard=tie_evidence_guard(...)` instead: it takes a record only if
-TIE produced its id from the verified export of this document, it is a source observation, and it names this source
-and this text's SHA-256. A record TIE never produced, one carrying another document's text or source, or one of
-another kind is refused, and a FACT root citing the forged id is then not admissible. This guard is not spent by a yes,
+TIE produced its id, it is a source observation, and its source and the source-text hash TIE recorded for it match what
+TIE wrote (the caller's account of the text is not consulted). A record TIE never produced, one carrying another
+document's source or text, or one of another kind is refused, and a FACT root citing the forged id is then not
+admissible. Each root's claims are also bound to the statement of the evidence they cite (the kernel's admission
+refuses a claim that says $4,120.00 while its evidence says $412.00). This guard is not spent by a yes,
 because one document gives TIE many records. It checks provenance, not a person's approval. A kernel built without an
 evidence guard takes any evidence, and a scenario records that as the second GAP. As with the root guard, the roster
 refuses to approve such a kernel (the kernel's seat is built with `require_evidence_guard=True`), so no approval is
@@ -79,21 +82,36 @@ confidence gate is given its document, so it re-checks each claim's citation ins
 A scenario hands it the text HERALD read as a record relabelled as an attestation: same_subject compares identity
 and text, not standing, so only the re-check can refuse it, and it does.
 
+THE PERMISSION, PORTABLE
+
+`DecisionGuard` proves an approval with a key only this process holds, so on its own the spine's authorization ends
+at the process boundary. The PORTABLE scenarios carry the same roster decision across it with UAI-1
+(`cns_interop`, docs/interop/UAI-1.md). The party that acts (an operator identity) asks the roster, over signed JSON
+messages, for a judgment of the document the roster already holds; the roster runs the same SuperGate and signs what
+it decided, root included (`from_super_gate` refuses a decision this process did not issue). The kernel's
+`root_guard` and CCC's `write_permission` are then a `RemoteDecisionGuard`: it holds the roster's public identity,
+the identity it acts for and a ledger file, nothing secret, so any process can run it. A forged or edited decision is
+refused, a refusal opens nothing, and a second process sharing the ledger (`interop/act.py`, run as its own program)
+cannot spend the approval again. Single use holds per shared ledger: a process acting for the operator with a ledger
+of its own accepts the spent approval again, and a GAP records that. Neither the kernel nor CCC changed; each takes
+any callable as its permission.
+
 WHAT THIS DOES NOT COVER
 
 ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need PostgreSQL, Redis and a vendored kernel to
 run). Their seams are not exercised here and nothing below speaks for them.
 
 CCC is covered as far as its gate goes and as far as its write permission goes. The gate judges an attempted `ingest`.
-CCC built with the roster's guard as its `write_permission` asks that guard before `ingest`, `record`, `derive`,
-`infer`, `interpret`, `record_external_finding`, `discover`, `detect_road_sign` and `record_road_sign`, so a direct call
-after a "no" is refused. An approved decision opens `ingest` and `record` once, for the one document it judged. The
-other seven carry a conclusion, a finding or an observation, which no seat judges, so they stay refused after any
-decision. The doors CCC gates are read off CCC itself and compared with the reader's two lists, so a door CCC starts
-gating later turns this script red until the reader names it. A CCC built without a permission is not stopped, and
-nothing here can see that. `decide` and the versioning methods are not gated, by CCC's design: a human's action is
-never held up by a machine's roster. CCC also leaves open, on purpose, the methods that change a record that already
-exists and `detect_conflict`, `ask`, `attach_evidence` and `relate`; nothing here speaks for them.
+CCC built with the roster's guard as its `write_permission` asks that guard before every write, since CCC #51 made them
+one funnel: `ingest` and `record`, which carry a document, and the rest, which do not. An approved decision opens
+`ingest` and `record` once, for the one document it judged. Every other door carries a conclusion, a finding, an
+observation, or acts on a record that already exists or is a person's act, none of which any seat judges, so those stay
+refused after any decision: under this permission a person's act is not let through by a machine's roster. The doors CCC
+gates are read off CCC itself and compared with the reader's two lists, so a door CCC starts gating later turns this
+script red until the reader names it, which is how CCC #51's seventeen new doors were found. A CCC built without a
+permission is not stopped, and nothing here can see that. `ingest` takes the document in as UNKNOWN: CCC refuses to
+ingest a conclusion and a model may not enter material as evidence. Methods CCC still leaves open (`detect_conflict`,
+`ask`) are not spoken for here.
 
 This is a check, not a demonstration: every scenario states the facts it must produce, and the script exits 1 if any
 differs, naming the scenario and the fact. Run with HERALD (at its root), TIE, Conservation_Kernel and
@@ -105,10 +123,15 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import hashlib
+import json
 import logging
+import os
+import secrets
+import subprocess
 import sys
+import tempfile
 import time
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ccc.cns_connector import Attempt, CccGate
 from ccc.cns_connector import attempt as ccc_attempt
@@ -120,8 +143,17 @@ from ccc.models import ProvenanceStatus, RoadSignCategory
 from ccc.permission import WriteRequest
 from ccc.system import CCCSystem
 from cns.gate import GateOutcome
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cns_composition.decision_guard import DecisionGuard
 from cns_composition.super_gate import Decision, Judged, SuperGate
+from cns_interop.decision import RemoteDecisionGuard
+from cns_interop.envelope import Envelope, Refused, sign_envelope
+from cns_interop.identity import Signer
+from cns_interop.ledger import FileLedger
+from cns_interop.manifest import Capability
+from cns_interop.session import Decider, Requester
+from cns_interop.trust import TrustPolicy
+from cns_interop.wire import dumps, loads
 from conservation_kernel import Actor, Artifact as RootArtifact, ConservationKernel, EvidenceRecord, Proposition
 from conservation_kernel.cns_connector import DEFAULT_ROOT_SUBJECT, CnsRootAdmissionGate, root_digest
 from conservation_kernel.enums import EpistemicStatus as RootStatus
@@ -132,17 +164,38 @@ from conservation_kernel.registry import EvidenceRegistry
 from governance_gateway.cns_connector import CnsGate as GatewayGate
 from governance_gateway.cns_connector import artifact_digest as door_digest
 from governance_gateway.cns_connector import artifact_subject as door_subject
+from governance_gateway.gateway import GovernanceGateway
 from governance_gateway.models import Artifact as DoorArtifact
 from governance_gateway.models import Authority, EpistemicStatus, Scope
 from herald import ConfidenceGate, HumanConfirmation, build_handoff
 from herald.cns_connector import (DEFAULT_SOURCE_SUBJECT, DEFAULT_SUBJECT, HeraldConfidenceGate, HeraldSourceGate,
                                   claim_digest, run_governed, source_digest)
-from herald.handoff import verify_export
+from herald.handoff import export_key_id as herald_export_key_id
+from herald.handoff import export_public_pem
 from herald.source import STANDING_ATTESTATION, STANDING_RECORD, SourceDocument
 from tie.evidence.herald_intake import HeraldIntakeRefused, evidence_from_herald_export, signoffs_from_herald_export
+from tie.evidence.herald_intake import export_key_id as tie_export_key_id
 from tie.models import SourceRecord
 
 PASS, BREACH = GateOutcome.PASS.value, GateOutcome.TERMINAL_BREACH.value
+
+#: HERALD's export key for this run: generated fresh, never stored. TIE pins only its public half. The spine checks
+#: that HERALD and TIE agree on the label the key is known by, so a drift between the two repositories fails here.
+EXPORT_KEY = Ed25519PrivateKey.generate()
+TRUSTED_KEYS = {tie_export_key_id(EXPORT_KEY.public_key()): EXPORT_KEY.public_key()}
+assert tie_export_key_id(EXPORT_KEY.public_key()) == herald_export_key_id(EXPORT_KEY.public_key())
+
+#: The one authority the spine's door carries. The gateway is given a verifier that accepts only this, because the
+#: gateway accepts any well-formed authority unless it is told how to check one.
+SPINE_AUTHORITY = Authority(actor="evidence-spine", grant="read")
+
+
+def spine_authority_verifier(authority: Authority) -> bool:
+    return authority == SPINE_AUTHORITY
+
+
+def spine_gateway_gate() -> GatewayGate:
+    return GatewayGate(inner=GovernanceGateway(authority_verifier=spine_authority_verifier))
 
 #: The gates policy requires in every decision, written out by hand. It is deliberately not built from the seats
 #: below: a roster checked against itself passes with a gate missing, because whatever is missing is missing from
@@ -179,7 +232,8 @@ class Read:
         return next(c for c in self.claims if c.kind == "amount")
 
 
-def herald(text: str, source_id: str = "doc-1", gate: Optional[ConfidenceGate] = None, confirm: bool = False) -> Read:
+def herald(text: str, source_id: str = "doc-1", gate: Optional[ConfidenceGate] = None, confirm: bool = False,
+           signing_key: Optional[Ed25519PrivateKey] = None) -> Read:
     """HERALD's governed run, then its export. With `confirm`, a named human signs off every refused claim first."""
     document = SourceDocument(source_id=source_id, text=text, standing=STANDING_RECORD)
     gate = gate if gate is not None else ConfidenceGate()
@@ -192,13 +246,15 @@ def herald(text: str, source_id: str = "doc-1", gate: Optional[ConfidenceGate] =
                 claim_id=claim.claim_id, confirmed_value=claim.value, confirmed_by="dana.reviewer",
                 rationale="checked against the paper invoice"))
         decisions.append(gate.submit(claim, document=document, confirmation=confirmation))
-    return Read(document, gate, claims, build_handoff(claims, decisions, document).to_dict())
+    key = EXPORT_KEY if signing_key is None else signing_key
+    return Read(document, gate, claims, build_handoff(claims, decisions, document, export_signing_key=key).to_dict())
 
 
 def tie(export: dict, source_id: str, text: str) -> Tuple[list, str]:
     """TIE's intake of a HERALD export: (evidence, refusal). Exactly one of the two is empty."""
     try:
-        return evidence_from_herald_export(SourceRecord(source_id=source_id, content=text), export, verify=verify_export), ""
+        return evidence_from_herald_export(SourceRecord(source_id=source_id, content=text), export,
+                                           trusted_keys=TRUSTED_KEYS), ""
     except HeraldIntakeRefused as exc:
         return [], str(exc)
 
@@ -213,21 +269,34 @@ class TieEvidenceGuard:
         return self._permits(record)
 
 
-def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[EvidenceRecord], bool]:
-    """The kernel's `evidence_guard`: it permits an evidence record only if TIE produced it from this document.
+def tie_source_sha256(record: Any) -> Optional[str]:
+    """The source text hash TIE verified a claim against, as TIE wrote it in the record's notes."""
+    prefix = "source_sha256: "
+    return next((note[len(prefix):] for note in record.notes if note.startswith(prefix)), None)
+
+
+def tie_detail(record: Any) -> Dict[str, object]:
+    """What the kernel's registry should hold for a record TIE produced: derived from TIE's record, never the caller's text."""
+    return {"source_id": record.source_ref.source_id, "source_sha256": tie_source_sha256(record),
+            "statement_sha256": record.statement_sha256}
+
+
+def tie_evidence_guard(evidence: list, source_id: str, text: str = "") -> Callable[[EvidenceRecord], bool]:
+    """The kernel's `evidence_guard`: it permits an evidence record only if TIE produced it, from this source.
 
     The evidence has to be in the kernel's registry before the roster can decide (the root seat checks that a root's
-    citations exist), so no decision exists yet and a decision guard cannot be the permission here. What the caller
-    can show instead is where the record came from: its id is one TIE produced from the verified export of `text`
-    (`evidence`), and it says it is a source observation of that source id and of the SHA-256 of that text. A record
-    TIE never produced, one about another document, or one that claims another kind, is refused. So is one that
-    carries a real id with anything else altered (its provider, its independence, whether it is active, its detail,
-    the proposition it supports): the record must be exactly what `kernel_evidence` gives for that id, so an id cannot
-    be taken first with false metadata. Only `created_at` is left out of that comparison, because it is
-    when the record was added; it must still be a time with an offset that is not in the future. Unlike the root
-    guard it is not spent by a yes, because one document gives TIE many records. Policy, like READERS."""
-    produced, digest = {record.evidence_id for record in evidence}, sha256(text)
-    expected = {record.evidence_id: kernel_evidence(record, f"p{n}", source_id, text) for n, record in enumerate(evidence)}
+    citations exist), so no decision exists yet and a decision guard cannot be the permission here. What the guard
+    checks is the record against what TIE wrote for that id: the source it names, the source text hash TIE verified
+    the claim against (TIE's note, not a caller's account of the text), and the statement digest. A record TIE never
+    produced, one about another source, one from another text, or one of another kind is refused. The guard does not
+    take the caller's `text`: since the caller can say anything about the text, what it is checked against is TIE's
+    record. The record must be exactly what `kernel_evidence` gives for that id, so an id cannot be taken first with
+    false metadata (its provider, its independence, whether it is active, its detail, the proposition it supports).
+    Only `created_at` is left out of that comparison, because it is when the record was added; it must still be a
+    time with an offset that is not in the future. Unlike the root guard it is not spent by a yes, because one
+    document gives TIE many records. Policy, like READERS."""
+    produced = {record.evidence_id for record in evidence}
+    expected = {record.evidence_id: kernel_evidence(record, f"p{n}") for n, record in enumerate(evidence)}
 
     def added_by_now(created_at: object) -> bool:
         # created_at is when the record was added: a time with an offset, not later than now (a minute of clock skew is
@@ -243,18 +312,22 @@ def tie_evidence_guard(evidence: list, source_id: str, text: str) -> Callable[[E
         return {name: part for name, part in record.to_dict().items() if name != "created_at"}
 
     def permits(record: EvidenceRecord) -> bool:
-        return (record.evidence_id in produced and record.kind is EvidenceKind.SOURCE_OBSERVATION
-                and record.detail.get("source_id") == source_id and record.detail.get("source_sha256") == digest
+        if not (record.evidence_id in produced and record.kind is EvidenceKind.SOURCE_OBSERVATION):
+            return False
+        detail = expected[record.evidence_id].detail
+        return (detail["source_sha256"] is not None and detail["source_id"] == source_id
                 and whole(record) == whole(expected[record.evidence_id]) and added_by_now(record.created_at))
+    return TieEvidenceGuard(permits)
 
     return TieEvidenceGuard(permits)
 
 
-def kernel_evidence(record, pid: str, source_id: str, text: str) -> EvidenceRecord:
+def kernel_evidence(record, pid: str) -> EvidenceRecord:
     """The kernel's evidence record for one TIE record: the one translation, used to add the record and, in
-    `tie_evidence_guard`, to say exactly what may be added under that id. The proposition `pid` it supports is part of it."""
+    `tie_evidence_guard`, to say exactly what may be added under that id. The proposition `pid` it supports is part of
+    it, and the detail comes from TIE's own record (`tie_detail`), never from the caller's text."""
     return EvidenceRecord(evidence_id=record.evidence_id, subject_id=pid, kind=EvidenceKind.SOURCE_OBSERVATION,
-                          provided_by=Actor.model("herald"), detail={"source_id": source_id, "source_sha256": sha256(text)})
+                          provided_by=Actor.model("herald"), detail=tie_detail(record))
 
 
 def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = RootStatus.INFERENCE,
@@ -273,12 +346,13 @@ def kernel_root(evidence: list, source_id: str, text: str, status: RootStatus = 
         kernel = ConservationKernel(root_guard=lambda artifact: True, evidence_guard=lambda record: True)
     else:
         kernel = ConservationKernel(root_guard=None if unguarded else guard or fresh_guard(), allow_unguarded_roots=unguarded,
+                                    allow_unguarded_evidence=not evidence_guarded,
                                     evidence_guard=tie_evidence_guard(evidence, source_id, text) if evidence_guarded else None,
                                     refuse_inactive_root_evidence=True)
     propositions = []
     for n, record in enumerate(evidence):
         pid = f"p{n}"
-        kernel.registry.add_evidence(kernel_evidence(record, pid, source_id, text))
+        kernel.registry.add_evidence(kernel_evidence(record, pid))
         propositions.append(Proposition(proposition_id=pid, text=record.statement, epistemic_status=status,
                                         origin=OriginStatus.MACHINE_ORIGINATED,
                                         evidence_refs=(record.evidence_id,) if cite_evidence else (),
@@ -300,9 +374,14 @@ def door(root: RootArtifact, source_id: str) -> DoorArtifact:
 
 
 def ccc_ingest(text: str, source_id: str, **more) -> Attempt:
-    """The caller's step from the document to the attempt CCC judges: HERALD's reading, ingested as an inference by a
-    model actor. No repository ships this either. `more` overrides what the attempt asks CCC to record."""
-    return ccc_attempt("ingest", text, actor=CccActor.model("herald"), epistemic_status=CccStatus.INFERENCE,
+    """The caller's step from the document to the attempt CCC judges: HERALD's reading, taken in as material of unknown
+    standing by a model actor. No repository ships this either. `more` overrides what the attempt asks CCC to record.
+
+    It is UNKNOWN and not INFERENCE since CCC #51: `ingest` takes material in and refuses to make a conclusion
+    (CCC-EPISTEMIC-001), and a model may not enter material as evidence or as a human-established record
+    (CCC-RATIFICATION-001), so UNKNOWN is the honest standing for a document a machine read. A conclusion about it is
+    made later by `derive`, `infer` or `interpret`, which keep the evidence it rests on and ask the permission themselves."""
+    return ccc_attempt("ingest", text, actor=CccActor.model("herald"), epistemic_status=CccStatus.UNKNOWN,
                        metadata={"source_id": source_id}, reason="document read by HERALD", **more)
 
 
@@ -341,8 +420,18 @@ WRITES_A_DOCUMENT = ("ingest", "record")
 #: `interpret`), a finding (`record_external_finding`, `discover`) or an observation (`detect_road_sign`,
 #: `record_road_sign`). None carries the text the roster compared, only a claim about it, so no decision opens them.
 #: Policy, like READERS: reviewed with it, and held by `ccc_doors_all_named` against the doors CCC really gates.
+#:
+#: Since CCC #51 every write goes through one funnel, so CCC also asks about the doors that act on a record that ALREADY
+#: EXISTS or that a person performs: `accept`, `adopt_discovery`, `advance_discovery`, `amend`, `attach_evidence`,
+#: `classify`, `correct`, `decide`, `erase`, `establish_provenance`, `ratify`, `record_resolution`, `redact`, `reject`,
+#: `relate`, `resolve_uncertainty` and `supersede`. None of them brings in the text the roster compared, so no roster
+#: decision can read a document from one: under THIS permission they stay shut, and that is the stated policy, not an
+#: oversight. A deployment that wants a person's act to pass supplies CCC's human verifier (`ccc.human_auth`) for it; a
+#: machine's roster is never what lets a human's decision through.
 WRITES_NO_DOCUMENT = ("derive", "infer", "interpret", "record_external_finding", "discover", "detect_road_sign",
-                      "record_road_sign")
+                      "record_road_sign", "accept", "adopt_discovery", "advance_discovery", "amend", "attach_evidence",
+                      "classify", "correct", "decide", "erase", "establish_provenance", "ratify", "record_resolution",
+                      "redact", "reject", "relate", "resolve_uncertainty", "supersede")
 
 
 def reads_write(request: WriteRequest) -> Judged:
@@ -437,13 +526,13 @@ def fresh_guard(clock: Callable[[], float] = time.time) -> DecisionGuard:
     """A closed guard that will open, once, for the exact root the kernel's seat judged, and only for a decision from
     a roster that seats every required seat. Policy, like READERS."""
     return DecisionGuard(reads_root, seat="Conservation_Kernel:root_admission", binding_of=binds_root,
-                         required_seats=REQUIRED_SEATS, clock=clock)
+                         expected_seats=REQUIRED_SEATS, clock=clock)
 
 
 def fresh_ccc_guard() -> DecisionGuard:
     """A closed guard to give CCC as its `write_permission`: it opens, once, for the exact call CCC's seat judged, and
     only for a decision from a roster that seats every required seat. Policy, like READERS."""
-    return DecisionGuard(reads_write, seat="CCC:ccc.transition", binding_of=binds_write, required_seats=REQUIRED_SEATS)
+    return DecisionGuard(reads_write, seat="CCC:ccc.transition", binding_of=binds_write, expected_seats=REQUIRED_SEATS)
 
 
 def refused_by_permission(call: Callable[[], object]) -> bool:
@@ -529,8 +618,9 @@ class _Unchecked(logging.Handler):
 
 
 def is_root_guard(guard: object) -> bool:
-    """The kernel's root guard is acceptable to the roster only if it is the kind of guard this script builds."""
-    return isinstance(guard, DecisionGuard)
+    """The kernel's root guard is acceptable to the roster only if it is a kind of guard this script builds: the
+    in-process `DecisionGuard`, or the portable `RemoteDecisionGuard` that holds only the roster's public identity."""
+    return isinstance(guard, (DecisionGuard, RemoteDecisionGuard))
 
 
 def is_evidence_guard(guard: object) -> bool:
@@ -538,8 +628,8 @@ def is_evidence_guard(guard: object) -> bool:
 
 
 def is_write_permission(permission: object) -> bool:
-    """CCC's write permission is acceptable only if it is the kind of guard this script builds."""
-    return isinstance(permission, DecisionGuard)
+    """CCC's write permission is acceptable only if it is a kind of guard this script builds (see `is_root_guard`)."""
+    return isinstance(permission, (DecisionGuard, RemoteDecisionGuard))
 
 
 def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: DoorArtifact, drop: str = "",
@@ -552,8 +642,9 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
     steps = [("HERALD", HeraldSourceGate(), read.document),
              ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True,
                                                           accept_guard=is_root_guard,
-                                                          accept_evidence_guard=is_evidence_guard), root),
-             ("Governance_Gateway", GatewayGate(), entry),
+                                                          accept_evidence_guard=is_evidence_guard,
+                                                          require_statement_binding=True), root),
+             ("Governance_Gateway", spine_gateway_gate(), entry),
              ("CCC", CccGate(CCCSystem(write_permission=fresh_ccc_guard()) if system is None else system,
                              require_permission=True, accept_permission=is_write_permission),
               ccc or ccc_ingest(read.document.text, read.document.source_id)),
@@ -674,14 +765,14 @@ def evidence_not_from_tie() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, _ = tie(read.export, "doc-1", INVOICE)
     honest = evidence[0].evidence_id
-    kernel = ConservationKernel(root_guard=fresh_guard(), evidence_guard=tie_evidence_guard(evidence, "doc-1", INVOICE))
+    kernel = ConservationKernel(root_guard=fresh_guard(), evidence_guard=tie_evidence_guard(evidence, "doc-1"))
     forged = lambda: kernel.registry.add_evidence(evidence_record("forged-1", "doc-1", INVOICE))  # noqa: E731
     other_text = lambda: kernel.registry.add_evidence(evidence_record(honest, "doc-1", INFLATED))  # noqa: E731
     other_source = lambda: kernel.registry.add_evidence(evidence_record(honest, "doc-7", INVOICE))  # noqa: E731
     other_kind = lambda: kernel.registry.add_evidence(evidence_record(honest, "doc-1", INVOICE, EvidenceKind.CITATION))  # noqa: E731
     refusals = [refused_by_evidence_guard(call) for call in (forged, other_text, other_source, other_kind)]
     held_before = len(kernel.registry.snapshot()["evidence"])
-    kernel.registry.add_evidence(evidence_record(honest, "doc-1", INVOICE))
+    kernel.registry.add_evidence(kernel_evidence(evidence[0], "p0"))
     chain_kernel, _ = kernel_root(evidence, "doc-1", INVOICE)
     chain_refused = refused_by_evidence_guard(
         lambda: chain_kernel.registry.add_evidence(evidence_record("forged-1", "doc-1", INVOICE)))
@@ -700,7 +791,7 @@ def evidence_with_altered_metadata() -> Dict[str, object]:
     machine reading, not independent, active. Before the guard compared the whole record the first writer won."""
     read = herald(INVOICE, "doc-1")
     evidence, _ = tie(read.export, "doc-1", INVOICE)
-    honest = kernel_evidence(evidence[0], "p0", "doc-1", INVOICE)
+    honest = kernel_evidence(evidence[0], "p0")
     kernel = ConservationKernel(root_guard=fresh_guard(), evidence_guard=tie_evidence_guard(evidence, "doc-1", INVOICE))
     detail = dict(honest.detail)
     altered = [dataclasses.replace(honest, provided_by=Actor.human("independent-auditor"), independent=True),
@@ -754,7 +845,8 @@ def human_signoff() -> Dict[str, object]:
     TIE takes the confirmation on its own path, not as a machine reading: the machine path still leaves it out."""
     read = herald(INVOICE, "doc-1", gate=ConfidenceGate(thresholds={"amount": 0.99}), confirm=True)
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
-    signoffs = signoffs_from_herald_export(SourceRecord(source_id="doc-1", content=INVOICE), read.export, verify=verify_export)
+    signoffs = signoffs_from_herald_export(SourceRecord(source_id="doc-1", content=INVOICE), read.export,
+                                           trusted_keys=TRUSTED_KEYS)
     amounts = [e for e in signoffs if e.statement.startswith("amount:")]
     return {"herald_confirmed_amounts": sum(1 for e in read.export["admitted"]
                                             if e["kind"] == "amount" and e["reading"] == "HUMAN_CONFIRMED"),
@@ -1027,7 +1119,8 @@ def approved_root() -> Tuple[Read, list, str, DecisionGuard, ConservationKernel,
 
 def root_with_rewritten_proposition() -> Dict[str, object]:
     """The roster allows a root of inferences. The approval is used for a root with the same id, content, source and
-    time whose first proposition is rewritten as a FACT that says the invoice was approved for payment."""
+    time whose first proposition is rewritten as a FACT that says the invoice was approved for payment. The kernel's
+    admission refuses it first (its text is not the statement of the evidence it cites), so the guard is never asked."""
     _, evidence, refusal, _, kernel, root, decided, opened = approved_root()
     rewritten = Proposition(proposition_id="p0", text="The invoice came to $41,200.00 and is approved for payment.",
                             epistemic_status=RootStatus.FACT, origin=OriginStatus.MACHINE_ORIGINATED,
@@ -1204,7 +1297,7 @@ def evidence_with_odd_timestamp() -> Dict[str, object]:
     honest one, and the guard does not try."""
     read = herald(INVOICE, "doc-1")
     evidence, _ = tie(read.export, "doc-1", INVOICE)
-    honest = kernel_evidence(evidence[0], "p0", "doc-1", INVOICE)
+    honest = kernel_evidence(evidence[0], "p0")
     kernel = ConservationKernel(root_guard=fresh_guard(), evidence_guard=tie_evidence_guard(evidence, "doc-1", INVOICE))
     odd = [dataclasses.replace(honest, created_at=when) for when in ("2999-01-01T00:00:00+00:00", "last tuesday",
                                                                       "2026-10-30T10:00:00")]
@@ -1236,14 +1329,222 @@ def dropped_agreement_is_refused() -> str:
     read = herald(INVOICE, "doc-1")
     evidence, _ = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
-    seats = [("HERALD", HeraldSourceGate()), ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True)),
-             ("Governance_Gateway", GatewayGate()), ("CCC", CccGate(CCCSystem())),
+    seats = [("HERALD", HeraldSourceGate()),
+             ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True,
+                                                          require_statement_binding=True)),
+             ("Governance_Gateway", spine_gateway_gate()), ("CCC", CccGate(CCCSystem())),
              ("HERALD", HeraldConfidenceGate(read.gate, document=read.document))]
     try:
         SuperGate(seats, required=REQUIRED_SEATS)
     except ValueError as exc:
         return "" if "CNS:same_subject" in str(exc) else f"refused, but not for the missing seat: {exc}"
     return "a roster without same_subject was accepted"
+
+
+# THE PERMISSION, PORTABLE (UAI-1)
+#
+# Everything above proves an approval inside this one process: `DecisionGuard` checks a key only this process holds.
+# Below, the same roster decision leaves the process as a signed UAI-1 decision, and the kernel and CCC are built
+# with `RemoteDecisionGuard` instead: it holds the roster's PUBLIC identity, the identity it acts for, and a ledger
+# file. Nothing it checks is secret, so the same check runs in any process. The party that acts asks the roster for
+# a judgment of the document the roster already holds (`Requester.request_judgment`), so nothing is sent again.
+
+#: The roster's signing identity, and the identity the kernel and CCC act for. Generated per run here; a deployment
+#: would hold each in its own keystore and pin the other out of band.
+ROSTER = Signer.generate()
+OPERATOR = Signer.generate()
+
+#: What the roster offers over UAI-1: a judgment of a document it holds, nothing disclosed, no evidence returned.
+SPINE_CAPABILITY = Capability(name="evidence-spine", version=1,
+                              summary="the five-seat evidence spine roster judges a document it holds",
+                              accepts=(), requires=(), evidence=(), max_ttl_ms=60_000)
+
+HUB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ACT_PY = os.path.join(HUB, "interop", "act.py")
+
+
+@dataclasses.dataclass
+class Signed:
+    """A roster decision as it arrives elsewhere: the signed envelope (as JSON text), the terms and the accept."""
+
+    wire: str
+    terms: dict
+    accept_digest: str
+    decision: Decision
+
+
+def over_the_wire(envelope) -> dict:
+    """Serialize and read back, as every message would cross a process boundary."""
+    return loads(dumps(envelope))
+
+
+def signed_decision(judge: Callable[[], Decision], source_id: str = "doc-1", text: str = INVOICE) -> Signed:
+    """Run the UAI-1 exchange: the operator asks the roster to judge (`source_id`, `text`'s SHA-256); the roster runs
+    `judge` (the SuperGate decision) and signs what it decided. Every message crosses as JSON."""
+    held: Dict[str, Decision] = {}
+
+    def roster_judge(cap, disclosed, subject):
+        held["decision"] = judge()
+        return held["decision"]
+
+    roster = Decider(ROSTER, name="evidence-spine roster", implementation="cns SuperGate + cns_interop",
+                     capabilities=[(SPINE_CAPABILITY, roster_judge)], trust=TrustPolicy(pinned=frozenset({OPERATOR.agent})))
+    operator = Requester(OPERATOR, trust=TrustPolicy(pinned=frozenset({ROSTER.agent})))
+    operator.discover(over_the_wire(roster.manifest()))
+    request = operator.request_judgment(ROSTER.agent, source_id, sha256(text), "evidence-spine", 1, max_ttl_ms=60_000)
+    offer = roster.handle(over_the_wire(request))
+    accept = operator.on_offer(over_the_wire(offer))
+    decision = roster.handle(over_the_wire(accept))
+    return Signed(wire=dumps(decision), terms=offer.body["terms"], accept_digest=accept.digest,
+                  decision=held["decision"])
+
+
+def as_pair(judged: Judged) -> Tuple[str, str]:
+    return judged.identity, judged.digest
+
+
+def portable_guard(reads: Callable[[object], Judged], ledger: str) -> RemoteDecisionGuard:
+    """A guard that trusts only the roster's public identity, acts only for the operator, accepts only decisions
+    negotiated for the spine capability, and remembers spent approvals in `ledger`, a file every process acting for
+    the operator shares. Policy, like READERS."""
+    return RemoteDecisionGuard(lambda artifact: as_pair(reads(artifact)), acting_for=OPERATOR.agent,
+                               capability=(SPINE_CAPABILITY.name, SPINE_CAPABILITY.version),
+                               trust=TrustPolicy(pinned=frozenset({ROSTER.agent})), ledger=FileLedger(ledger))
+
+
+def authorize_remote(guard: RemoteDecisionGuard, signed: Signed, wire: Optional[dict] = None) -> str:
+    """Hand the guard the signed decision as received. Returns "" if it opened, else the refusal's code."""
+    try:
+        guard.authorize(wire if wire is not None else loads(signed.wire), terms=signed.terms,
+                        accept_digest=signed.accept_digest)
+        return ""
+    except Refused as exc:
+        return exc.code
+
+
+def act_elsewhere(signed: Signed, artifact: Judged, ledger: str) -> dict:
+    """Run interop/act.py as a separate process, configured to act for the operator and trust only the roster. The
+    operator's POLICY is part of that configuration: a grants file that permits the one action `register-root` on this
+    capability from this roster and nothing else, a durable grant store and an audit record beside the ledger. A
+    roster's signature alone does not open the action; the operator's grant does."""
+    job = {"decision": loads(signed.wire), "terms": signed.terms, "accept_digest": signed.accept_digest,
+           "artifact": list(as_pair(artifact))}
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [HUB, os.environ.get("PYTHONPATH", "")])))
+    here = os.path.dirname(os.path.abspath(ledger))
+    grants = os.path.join(here, "spine-grants.json")
+    with open(grants, "w", encoding="utf-8") as fh:
+        json.dump({"grants": [{"id": "spine-register-root", "capability": SPINE_CAPABILITY.name,
+                               "version": SPINE_CAPABILITY.version, "requester": OPERATOR.agent,
+                               "deciders": [ROSTER.agent], "actions": ["register-root"], "disclose_max": []}]}, fh)
+    done = subprocess.run([sys.executable, ACT_PY, "--acting-for", OPERATOR.agent, "--capability", SPINE_CAPABILITY.name,
+                           "--capability-version", str(SPINE_CAPABILITY.version), "--trust", ROSTER.agent,
+                           "--ledger", ledger, "--grants", grants, "--grant-store", os.path.join(here, "spine-grants.db"),
+                           "--action", "register-root", "--audit", os.path.join(here, "spine-audit.jsonl")],
+                          input=json.dumps(job), capture_output=True, text=True, env=env, timeout=120, check=True)
+    return json.loads(done.stdout)
+
+
+def portable_registration() -> Dict[str, object]:
+    """The roster allows the document and signs its decision. The kernel, holding only the roster's public identity,
+    registers the root it judged, once; a second root is refused; another process sharing the ledger cannot spend
+    the approval again."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    with tempfile.TemporaryDirectory() as tmp:
+        ledger = os.path.join(tmp, "spent.jsonl")
+        guard = portable_guard(reads_root, ledger)
+        kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+        signed = signed_decision(lambda: decide(read, kernel, root, door(root, "doc-1"))[0])
+        opened = authorize_remote(guard, signed)
+        registered, _ = register(kernel, root)
+        second, by_guard = register(kernel, RootArtifact(artifact_id="root:doc-1:again", content=root.content,
+                                                    propositions=root.propositions, producer=root.producer))
+        elsewhere = act_elsewhere(signed, reads_root(root), ledger)
+    body = loads(signed.wire)["body"]
+    return facts((signed.decision, 0), evidence, refusal, signed_verdict=body["verdict"],
+                 signed_root_is_rosters=body["cns_root"] == signed.decision.root,
+                 signed_by_roster=loads(signed.wire)["from"] == ROSTER.agent, guard_opened=opened == "",
+                 kernel_registered=registered, second_root_registered=second, second_refused_by_guard=by_guard,
+                 other_process_same_ledger=elsewhere.get("refused", {}).get("code", elsewhere))
+
+
+def portable_refusal() -> Dict[str, object]:
+    """The gateway refuses the door, the roster says no, and the signed decision says so. The kernel's guard stays
+    shut and the root is not registered."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    with tempfile.TemporaryDirectory() as tmp:
+        guard = portable_guard(reads_root, os.path.join(tmp, "spent.jsonl"))
+        kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+        signed = signed_decision(lambda: decide(read, kernel, root, tampered(door(root, "doc-1")))[0])
+        why = authorize_remote(guard, signed)
+        registered, by_guard = register(kernel, root)
+    return facts((signed.decision, 0), evidence, refusal, signed_verdict=loads(signed.wire)["body"]["verdict"],
+                 guard_refused=why, kernel_registered_after_refusal=registered, refused_by_guard=by_guard)
+
+
+def portable_forged_and_edited() -> Dict[str, object]:
+    """The roster allows the document. Two counterfeits are offered to the kernel's guard: the same decision signed by
+    a key that is not the roster's, and the real one with its verdict edited after signing. Neither opens it; the real
+    one still does."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    with tempfile.TemporaryDirectory() as tmp:
+        guard = portable_guard(reads_root, os.path.join(tmp, "spent.jsonl"))
+        kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+        signed = signed_decision(lambda: decide(read, kernel, root, door(root, "doc-1"))[0])
+        real = loads(signed.wire)
+        forger = Signer.generate()
+        # Everything the real decision says, answering the same accept, validly signed, by the wrong key.
+        forged = over_the_wire(sign_envelope(forger, Envelope(
+            kind="decision", id=secrets.token_hex(16), sender=forger.agent, to=real["to"],
+            conversation=real["conversation"], in_reply_to=real["in_reply_to"], issued_at=real["issued_at"],
+            expires_at=real["expires_at"], body=real["body"])))
+        forged_code = authorize_remote(guard, signed, forged)
+        edited = loads(signed.wire)
+        edited["body"]["reasons"] = ["approved by the reviewer"]
+        edited_code = authorize_remote(guard, signed, edited)
+        real_code = authorize_remote(guard, signed)
+        registered, _ = register(kernel, root)
+    return facts((signed.decision, 0), evidence, refusal, forged_refused=forged_code, edited_refused=edited_code,
+                 real_opened=real_code == "", kernel_registered=registered)
+
+
+def portable_ccc_ingest() -> Dict[str, object]:
+    """The roster allows the document and signs its decision. CCC, built with the portable guard as its write
+    permission, refuses to ingest the inflated invoice under the approval, then ingests the true one, once."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    with tempfile.TemporaryDirectory() as tmp:
+        guard = portable_guard(reads_write, os.path.join(tmp, "spent.jsonl"))
+        system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+        kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+        signed = signed_decision(lambda: decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)[0])
+        opened = authorize_remote(guard, signed)
+        inflated = refused_by_permission(lambda: ccc_ingest(INFLATED, "doc-1").run(system))
+        first = refused_by_permission(lambda: attempt_.run(system))
+        second = refused_by_permission(lambda: attempt_.run(system))
+        conclusions = [refused_by_permission(lambda op=op: getattr(system, op)("x", actor=CccActor.model("herald")))
+                       for op in ("derive",)]
+    return facts((signed.decision, 0), evidence, refusal, guard_opened=opened == "", ccc_inflated_refused=inflated,
+                 ccc_first_ingest_refused=first, ccc_second_ingest_refused=second, ccc_artifacts=len(system.store.artifacts),
+                 ccc_derive_refused=conclusions[0])
+
+
+def portable_separate_ledger() -> Dict[str, object]:
+    """The roster allows the document. The kernel spends the approval. A second process acting for the same operator
+    but keeping its OWN ledger file is offered the same signed decision."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    with tempfile.TemporaryDirectory() as tmp:
+        guard = portable_guard(reads_root, os.path.join(tmp, "spent.jsonl"))
+        kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+        signed = signed_decision(lambda: decide(read, kernel, root, door(root, "doc-1"))[0])
+        authorize_remote(guard, signed)
+        registered, _ = register(kernel, root)
+        elsewhere = act_elsewhere(signed, reads_root(root), os.path.join(tmp, "a-different-ledger.jsonl"))
+    return facts((signed.decision, 0), evidence, refusal, kernel_registered=registered,
+                 other_process_own_ledger_permitted=elsewhere.get("permitted"))
 
 
 #: The facts of the clean run. A scenario states only how it differs.
@@ -1336,7 +1637,7 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
       "kernel_the_chain_builds_refuses_forged": True, "fact_root_citing_forged_admissible": False}),
     ("SEAM HOLDS: the approval for a root of inferences cannot register a root with the same id, content and source whose proposition is rewritten as a FACT",
      root_with_rewritten_proposition,
-     {**HELD, "guard_opened": True, "substitute_registered": False, "refused_by_guard": True, "honest_registered": True}),
+     {**HELD, "guard_opened": True, "substitute_registered": False, "refused_by_guard": False, "honest_registered": True}),
     ("SEAM HOLDS: the approval for the true invoice's root cannot register a root with another id, producer and time",
      root_with_other_metadata,
      {**HELD, "guard_opened": True, "substitute_registered": False, "refused_by_guard": True, "honest_registered": True}),
@@ -1383,7 +1684,128 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      evidence_unguarded_accepts_anything,
      {"has_evidence_guard": False, "forged_evidence_refused": False, "forged_evidence_held": True,
       "fact_root_citing_forged_admissible": True}),
+    ("PORTABLE: the roster's approval leaves the process as a signed UAI-1 decision; the kernel, holding only the roster's public identity, registers the root once, refuses a second, and another process sharing its ledger cannot spend it again",
+     portable_registration,
+     {**HELD, "signed_verdict": PASS, "signed_root_is_rosters": True, "signed_by_roster": True, "guard_opened": True,
+      "kernel_registered": True, "second_root_registered": False, "second_refused_by_guard": True,
+      "other_process_same_ledger": "replayed"}),
+    ("PORTABLE: the gateway refuses the door, the signed decision says terminal_breach, and the kernel's portable guard stays shut",
+     portable_refusal,
+     {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "signed_verdict": BREACH,
+      "guard_refused": "refused", "kernel_registered_after_refusal": False, "refused_by_guard": True}),
+    ("PORTABLE: a decision signed by any key but the roster's, or edited after signing, cannot open the kernel's guard; the real one still does",
+     portable_forged_and_edited,
+     {**HELD, "forged_refused": "untrusted", "edited_refused": "signature", "real_opened": True,
+      "kernel_registered": True}),
+    ("PORTABLE: CCC with the portable guard as its write permission refuses the inflated invoice under the approval, ingests the true one once, and keeps derive shut",
+     portable_ccc_ingest,
+     {**HELD, "guard_opened": True, "ccc_inflated_refused": True, "ccc_first_ingest_refused": False,
+      "ccc_second_ingest_refused": True, "ccc_artifacts": 1, "ccc_derive_refused": True}),
+    ("GAP: single use holds per shared ledger; a process acting for the same operator with its own ledger file accepts the spent approval again",
+     portable_separate_ledger,
+     {**HELD, "kernel_registered": True, "other_process_own_ledger_permitted": True}),
 ]
+
+
+def root_claim_not_the_cited_statement() -> Dict[str, object]:
+    """A root whose claim says $4,120.00 while the TIE record it cites says $412.00, judged by the whole roster.
+
+    The root's text is the true invoice, so only the claim inside it is wrong. The kernel refuses it on the root seat
+    (its admission now binds each proposition to the statement of the evidence it cites)."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, honest = kernel_root(evidence, "doc-1", INVOICE)
+    claim = dataclasses.replace(honest.propositions[0], text="amount: $4,120.00")
+    inflated_claim = RootArtifact(artifact_id=honest.artifact_id, content=honest.content, propositions=(claim,),
+                                  producer=honest.producer)
+    decided = decide(read, kernel, inflated_claim, door(inflated_claim, "doc-1"))
+    return facts(decided, evidence, refusal)
+
+
+def caller_verifier_is_not_taken() -> Dict[str, object]:
+    """TIE takes no verifier from its caller. A verifier that accepts everything is refused as an argument."""
+    read = herald(INVOICE, "doc-1")
+    try:
+        evidence_from_herald_export(SourceRecord(source_id="doc-1", content=INVOICE), read.export,
+                                    verify=lambda _export: None, trusted_keys=TRUSTED_KEYS)
+        taken = True
+    except TypeError:
+        taken = False
+    return {"caller_verifier_taken": taken}
+
+
+def export_signed_by_another_key() -> Dict[str, object]:
+    """HERALD signs an export with a key TIE does not pin. TIE refuses it by name, and nothing downstream runs."""
+    read = herald(INVOICE, "doc-1", signing_key=Ed25519PrivateKey.generate())
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    return {"tie_refused": bool(refusal), "refused_as_untrusted": "not trusted" in refusal, "tie_evidence": len(evidence)}
+
+
+def export_verified_in_another_process() -> Dict[str, object]:
+    """A separate process holding only HERALD's public key verifies the export; it refuses an altered copy.
+
+    This is the cross-process case the in-process HMAC could never meet: the proof travels with the export."""
+    read = herald(INVOICE, "doc-1")
+    verifier = (
+        "import json,sys\n"
+        "from herald import handoff\n"
+        "key = handoff.load_export_public_key(open(sys.argv[2], 'rb').read())\n"
+        "try:\n"
+        "    handoff.verify_export(json.load(open(sys.argv[1])), trusted_keys={handoff.export_key_id(key): key})\n"
+        "    print('verified')\n"
+        "except Exception:\n"
+        "    print('refused')\n"
+    )
+    with tempfile.TemporaryDirectory() as folder:
+        export_path, key_path = os.path.join(folder, "export.json"), os.path.join(folder, "public.pem")
+        with open(key_path, "wb") as fh:
+            fh.write(export_public_pem(EXPORT_KEY))
+
+        def verdict(payload: dict) -> str:
+            with open(export_path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh)
+            done = subprocess.run([sys.executable, "-c", verifier, export_path, key_path], capture_output=True, text=True,
+                                  timeout=120)
+            return done.stdout.strip() or f"no answer: {done.stderr.strip()[-120:]}"
+
+        honest = verdict(read.export)
+        altered = json.loads(json.dumps(read.export))
+        altered["admitted"][0]["raw"] = "$4,120.00"
+        return {"honest_verified_elsewhere": honest == "verified", "altered_refused_elsewhere": verdict(altered) == "refused",
+                "answer_elsewhere": honest}
+
+
+def door_with_authority(root: RootArtifact, source_id: str, authority: Authority) -> DoorArtifact:
+    """`door`, with the authority the caller chooses. The gateway must refuse one it was not told to accept."""
+    return DoorArtifact.create(artifact_id=f"door:{source_id}",
+                               payload={"root": root.artifact_digest, "content_sha256": sha256(root.content)},
+                               provenance={"origin": "conservation_kernel", "source_id": source_id},
+                               epistemic_status=EpistemicStatus.INFERENCE, authority=authority, scope=Scope.READ_ONLY)
+
+
+def door_with_unverified_authority() -> Dict[str, object]:
+    """A door whose authority grants delete-everything. The gateway, told which authority it accepts, refuses it."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    forged = door_with_authority(root, "doc-1", Authority(actor="nobody", grant="delete-everything"))
+    decided = decide(read, kernel, root, forged)
+    return facts(decided, evidence, refusal)
+
+
+SCENARIOS.extend([
+    ("SEAM HOLDS: a root whose claim says $4,120.00 while the TIE record it cites says $412.00 is refused by the kernel's root seat",
+     root_claim_not_the_cited_statement, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"]}),
+    ("SEAM HOLDS: TIE takes no verifier from its caller; one that accepts everything is refused as an argument",
+     caller_verifier_is_not_taken, {"caller_verifier_taken": False}),
+    ("SEAM HOLDS: an export signed by a key TIE does not pin is refused by TIE, by name, before anything downstream runs",
+     export_signed_by_another_key, {"tie_refused": True, "refused_as_untrusted": True, "tie_evidence": 0}),
+    ("SEAM HOLDS: a separate process holding only HERALD's public key verifies the export, and refuses an altered copy",
+     export_verified_in_another_process, {"honest_verified_elsewhere": True, "altered_refused_elsewhere": True,
+                                          "answer_elsewhere": "verified"}),
+    ("SEAM HOLDS: a door whose authority grants delete-everything is refused by the gateway, which accepts only the spine's authority",
+     door_with_unverified_authority, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"]}),
+])
 
 
 def main() -> int:
