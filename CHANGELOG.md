@@ -123,6 +123,8 @@ not a release.
 
 ### Changed
 
+- **The release floor moves from 1.9.0 to 2.0.0** (`contracts/cns-releases.json`, owner decision of 2026-11-05). All eight circuit repositories pin `v2.3.0`, so no consumer sits below the new floor; `cns_versions` now fails a pin below 2.0.0. `docs/FUTURE_DEVELOPMENT.md` gains a status header saying it is a list of leads for the anti-gaming research run, not a work order for a build run.
+
 - Tightened, for input that was already wrong: `Decision.allowed` also requires one verdict per seat (by gate name), at
   least one seat and one verdict; before, a decision missing a seat's verdict, or with none, could read `allowed` once
   its root was recomputed over what was left (it was never `issued`). `cns.gate.resolve` and `run_chain` treat a verdict
@@ -202,7 +204,7 @@ The work merged to `main` after the `v2.2.0` tag (`ce6bd05`). A minor version, b
 every addition below is an optional argument, a new function or a new file, the `cns` package's shapes are unchanged
 (`tests/public_shape.json` moves only its version), and the changed behaviours refuse what was wrongly allowed. Tagged
 `v2.3.0` by the owner, an annotated tag at `41592fb7b6735abe140f745353c09ba3eed8e7a2` (the merge of #65, 2026-10-30);
-`contracts/cns-releases.json` has `current` at `v2.3.0` and the floor at 1.9.0. Work merged after the tag is under
+`contracts/cns-releases.json` had `current` at `v2.3.0` and the floor at 1.9.0 at the tag (the floor is 2.0.0 after the Unreleased change below). Work merged after the tag is under
 Unreleased. Each line names the commit that holds it.
 
 ### Added

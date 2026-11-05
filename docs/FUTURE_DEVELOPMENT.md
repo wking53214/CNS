@@ -1,5 +1,10 @@
 # Future development opportunities
 
+> **Status of this file (owner decision, 2026-11-05).** This is a list of leads, not a work order. The items that
+> touch how the circuit judges or detects (the Judge hole, tests deleted or weakened, receipts, new Ghost detectors)
+> belong to the separate anti-gaming research run, which decides what is built. No build or fix run may implement
+> anything from this file. It is kept, not deleted, so the leads are not lost.
+
 Written 2026-10-22 from a literature check, not from customer demand. Nothing here is built, scheduled or promised.
 No survey was found that measures how many teams want any of this or what they would pay. Most sources are preprints,
 vendor blogs and secondary write-ups, so every figure below is a lead to verify against the primary paper before it

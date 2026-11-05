@@ -325,7 +325,7 @@ def small_stack(tmp_path):
     _git(stack / "J", "init", "-q")
     (stack / "J" / "pyproject.toml").write_text(
         '[project]\nname = "j"\nversion = "0"\n'
-        'dependencies = ["cns @ git+https://github.com/o/CNS.git@v1.9.0"]\n', encoding="utf-8")
+        'dependencies = ["cns @ git+https://github.com/o/CNS.git@v2.3.0"]\n', encoding="utf-8")
     _git(stack / "J", "add", "-A")
     _git(stack / "J", "commit", "-q", "-m", "c")
     return stack, _git(stack / "J", "rev-parse", "HEAD")
