@@ -135,6 +135,14 @@ not a release.
   runner's `CONTEXT_CASES` drift guard now holds them to it with a str-subclass case, a mapping that changes between
   reads, and a check that an accepted context comes back as the plain first-read snapshot.
 
+- The strict check refuses a legacy Decision. `strict_problems` names a problem when beta's content, or delta's embedded
+  copy of the Decision, carries no `content_fingerprint` (a full lowercase SHA-256): "carries no content_fingerprint
+  (a full lowercase SHA-256): strict verification refuses a legacy Decision, because a blanked fingerprint is a downgrade
+  that removes the integrity claim", and `strict_root` raises. A Decision whose fingerprint was blanked has lost the claim
+  that its fields were not edited, and delta's `DecisionLedger(require_context=True)` already refuses to record one. The
+  lenient `problems` and `root` are unchanged, so a legacy Decision is refused only in strict mode. The fingerprint is
+  still compared as carried and never recomputed in CNS.
+
 ### Fixed
 
 - `cns.gate.resolve` read a verdict whose outcome was the text "terminal_breach" as no objection at all, and

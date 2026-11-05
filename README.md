@@ -206,6 +206,9 @@ the strict check takes, and what each part is worth:
 - **A KeySet fingerprint and a content fingerprint compared as carried.** Zeta records the fingerprint of the KeySet it
   evaluated; beta's `content_fingerprint` (13 of a Decision's 15 fields; `decision_fingerprint` covers five and is
   unchanged) is compared between beta's content and delta's embedded copy and never recomputed in CNS.
+- **A `content_fingerprint` on every Decision.** Strict verification refuses beta's content, or delta's embedded copy,
+  that carries none: a legacy Decision, or one whose fingerprint was blanked, has lost the claim that its fields were not
+  edited. This is strict mode only; the lenient `problems` and `root` are unchanged.
 - **An optional alpha `origin`** (source, producer, observed_at, collection_context, transformation), checked for form and
   for `observed_at` not being later than the Decision. It is the producer's own claim.
 

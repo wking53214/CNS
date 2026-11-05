@@ -473,6 +473,12 @@ def GAP_contents_fabricated_by_someone_who_recomputes_the_digests() -> List[str]
             "confidence": 1.0, "triggered_by_locks": ["any_lock"], "triggered_by_keys": ["anything"],
             "newly_triggered_locks": [], "decision_fingerprint": fingerprint, "reasoning": "made up",
             "reversal_conditions": [], "instructions": "made up", "keyset_fingerprint": fp}
+    # the forger recomputes beta's keyless content_fingerprint too, with beta's own public function, from a Decision it builds
+    core["content_fingerprint"] = content_fingerprint(Decision(
+        entity_id="patient_1", decision_id="d", decision="DISCHARGE_SAFE", timestamp=T0, confidence=1.0,
+        triggered_by_locks=("any_lock",), triggered_by_keys=("anything",), newly_triggered_locks=(),
+        decision_fingerprint=fingerprint, reasoning="made up", reversal_conditions=(), instructions="made up",
+        keyset_fingerprint=fp))
     beta = {**core, "context": dict(ctx), "keyset_digest": da,
             "lock_result_digests": {k: subject_digest(v) for k, v in zeta.items()}}
     delta = {"audit_id": "0" * 16, "timestamp": "2026-10-01T08:00:00", "previous_hash": "0" * 64, "immutable_hash": "1" * 64,
@@ -601,6 +607,24 @@ def GAP_a_decision_cites_a_lock_that_is_closed() -> List[str]:
         forged, context=CTX, keyset_digest=p["da"], lock_result_digests=p["beta"]["lock_result_digests"])
     p["delta"] = delta_cns.entry_content(entry, context=CTX, decision_digest=subject_digest(p["beta"]))
     return check(p)
+
+
+def a_legacy_decision_with_no_content_fingerprint_is_refused_by_the_strict_check() -> List[str]:
+    """Step 11. A Decision whose content_fingerprint was blanked (beta before it had one, or a downgrade) is recorded by a
+    ledger that does not require a context, with a context given at append. Every digest chains, delta's receipt is real, and
+    the strict check still refuses it: it has lost the claim that its fields were not edited. (A require_context ledger
+    refuses to record one; see the replay scenario.)"""
+    p = stages(SICK)
+    legacy = dataclasses.replace(p["decision"], content_fingerprint="")
+    ledger = DecisionLedger()
+    entry = ledger.append(legacy, context=CTX)
+    p.update(ledger=ledger, checkpoint=ledger.checkpoint())
+    p["beta"] = beta_cns.decision_content(
+        legacy, context=CTX, keyset_digest=p["da"], lock_result_digests=p["beta"]["lock_result_digests"])
+    p["delta"] = delta_cns.entry_content(entry, context=CTX, decision_digest=subject_digest(p["beta"]))
+    found = check(p)
+    lenient = problems(facts(p["keys"], p["results"], legacy, entry))
+    return found + [f"the lenient check, which is unchanged, now names: {lenient}"] if lenient else found
 
 
 def a_content_fingerprint_altered_in_beta_content_only() -> List[str]:
@@ -1020,6 +1044,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
                            "the Decision delta recorded differs from beta's in:",
                            "alpha lists present_names that its own keys do not hold as present: anything",
                            "beta's Decision lists no newly_triggered_locks",
+                           # an invented run has no fingerprint to carry (Step 11: a legacy Decision is refused by the strict check)
+                           "carries no content_fingerprint",
                            # there is no ledger and no checkpoint behind an invented run, so no receipt can be asked for
                            "delta issued no verification receipt: this scenario holds no checkpoint"))),
     ("strict: a ledger truncated with its head reset", a_ledger_truncated_with_its_head_reset,
@@ -1092,6 +1118,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
     # --- attacks on the hardened components (the matrix rows), each with the boundary that must refuse it ---
     ("strict: delta refuses a narrative edit that keeps the old content fingerprint", a_narrative_edit_under_the_old_content_fingerprint,
      Expect("refused", required=("Decision.content_fingerprint does not match the Decision's own fields",), raises=("ValueError",))),
+    ("strict: a legacy Decision with no content fingerprint is refused", a_legacy_decision_with_no_content_fingerprint_is_refused_by_the_strict_check,
+     Expect("problems", required=("beta's Decision carries no content_fingerprint", "delta's embedded Decision carries no content_fingerprint"))),
     # extra: delta's embedded copy of the Decision no longer equals the content_fingerprint beta carries
     ("strict: a content fingerprint altered in beta's content only", a_content_fingerprint_altered_in_beta_content_only,
      Expect("problems", required=("the Decision delta recorded differs from beta's in: content_fingerprint",),

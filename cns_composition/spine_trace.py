@@ -49,6 +49,10 @@ requires:
   - the Decision cites only Keys alpha listed as present (`present_names`, which alpha states so that CNS never
     re-implements zeta's confidence rule) and only Locks zeta evaluated;
   - delta's entry was recorded under that run and event;
+  - beta's Decision and delta's embedded copy of it both carry a `content_fingerprint` (a full lowercase SHA-256): the
+    legacy form, with none, is refused here only (the lenient `problems` and `root` are unchanged), because a Decision
+    whose fingerprint was blanked has lost the claim that its fields were not edited. The fingerprint is compared as
+    carried and never recomputed;
   - a ledger receipt (`chain=`, what `delta.cns_connector.verification_receipt` returns after delta's own chain check and a
     check against a checkpoint held outside the ledger) that is for exactly the delta content given and the run's context,
     read once, with exactly its ten plain-str keys and exact types, its entry_hash and previous_hash equal to the delta
@@ -204,6 +208,8 @@ RECEIPT_SCHEMA = "ledger-receipt/1"
 CHAIN_NOT_SHOWN = ("the ledger chain was not shown to verify (delta's verify_chain_integrity, with the recorded entry "
                    "as a member of that chain), so the entry may not belong to the chain")
 BARE_ASSERTION = "chain_verified is a bare assertion and is not evidence; pass chain= a delta verification receipt"
+LEGACY_DECISION = ("{who} carries no content_fingerprint (a full lowercase SHA-256): strict verification refuses a legacy "
+                   "Decision, because a blanked fingerprint is a downgrade that removes the integrity claim")
 FINGERPRINT_NOT_RECOMPUTED = "alpha's KeySet fingerprint does not match a recomputation from alpha's keys"
 _ORIGIN_FIELDS = ("source", "producer", "observed_at", "collection_context", "transformation")
 _RECEIPT_FIELDS = ("schema", "entry_digest", "index", "entry_hash", "previous_hash", "ledger_length", "ledger_head",
@@ -578,6 +584,10 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
         drift = _differing(core, embedded)
         if drift:
             out.append(f"the Decision delta recorded differs from beta's in: {', '.join(drift)}")
+        if not _is_sha256(embedded.get("content_fingerprint")):
+            out.append(LEGACY_DECISION.format(who="delta's embedded Decision"))
+    if not _is_sha256(beta.get("content_fingerprint")):
+        out.append(LEGACY_DECISION.format(who="beta's Decision"))
 
     # Identity and what the Decision cites.
     if run is not None:

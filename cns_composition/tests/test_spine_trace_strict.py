@@ -18,6 +18,7 @@ from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, TRACE_SCHEMA, context_problems, strict_problems, strict_root)
 
 CTX = {"schema": CONTEXT_SCHEMA, "entity_id": "p1", "event_id": "ev-1", "run_id": "run-1"}
+CF = "d" * 64  # beta's content_fingerprint; strict verification refuses a Decision that carries none (Step 11)
 FP = "e" * 64  # the KeySet fingerprint zeta computes; alpha, every lock result and the Decision must carry the same one
 DECISION_ONLY = ("entity_id", "decision_id", "decision", "timestamp", "confidence", "triggered_by_locks",
                  "triggered_by_keys", "newly_triggered_locks", "decision_fingerprint", "reasoning",
@@ -41,7 +42,7 @@ def build(ctx=CTX, **over) -> Dict[str, Any]:
             "timestamp": "2026-01-01T12:00:00", "confidence": 0.9, "triggered_by_locks": ["sepsis_lock"],
             "triggered_by_keys": ["septic_shock"], "newly_triggered_locks": ["sepsis_lock"],
             "decision_fingerprint": "f" * 64, "reasoning": "r", "reversal_conditions": [], "instructions": "i",
-            "keyset_fingerprint": FP}
+            "keyset_fingerprint": FP, "content_fingerprint": CF}
     beta = {**core, "context": dict(ctx), "keyset_digest": da,
             "lock_result_digests": {k: subject_digest(v) for k, v in sorted(zeta.items())}}
     delta = {"audit_id": "a" * 16, "timestamp": "2026-01-01T12:00:00", "previous_hash": "p" * 64,
@@ -978,7 +979,7 @@ ORIGIN = {"source": "ward monitor 4", "producer": "vitals-ingest 2.1", "observed
           "collection_context": "bedside, continuous", "transformation": "none"}
 # the root of build() with no origin, as it was before the origin check existed: pinned so that the check can never
 # move the digest of a run that carries none
-BUILD_ROOT = "3b0b72aa0fb767eb53941feb1fc2f5980fc4d050171aea15b43dd5f9de321768"
+BUILD_ROOT = "fe35e91ff42b1a3a434f8fd76ab684fe0196deb1216d01c0a563d7eed0a526d7"
 
 
 def with_origin(origin, **over):
@@ -1097,6 +1098,50 @@ def test_a_content_fingerprint_that_beta_and_delta_do_not_carry_alike_is_named(b
     has(problems_of(with_content_fingerprint(beta_value, delta_value)), "differs from beta's in: content_fingerprint")
 
 
-def test_a_legacy_decision_with_no_content_fingerprint_in_either_stage_is_clean():
+def legacy(beta=True, delta=True, value=None):
+    """A run whose Decision carries no content_fingerprint in beta's content, in delta's embedded copy, or both."""
     parts = build()
-    assert "content_fingerprint" not in parts["beta"] and problems_of(parts) == []
+    for present, holder in ((beta, parts["beta"]), (delta, parts["delta"]["decision"])):
+        if present:
+            if value is None:
+                holder.pop("content_fingerprint")
+            else:
+                holder["content_fingerprint"] = value
+    parts["delta"]["decision_digest"] = subject_digest(parts["beta"])
+    return parts
+
+
+def test_a_legacy_decision_with_no_content_fingerprint_in_either_stage_is_refused_by_the_strict_check():
+    parts = legacy()
+    assert "content_fingerprint" not in parts["beta"]
+    found = problems_of(parts)
+    has(found, "beta's Decision carries no content_fingerprint")
+    has(found, "delta's embedded Decision carries no content_fingerprint")
+    with pytest.raises(ValueError, match="carries no content_fingerprint"):
+        root_of(parts)
+
+
+def test_a_decision_missing_its_content_fingerprint_in_only_one_stage_is_named_in_that_stage():
+    has(problems_of(legacy(beta=True, delta=False)), "beta's Decision carries no content_fingerprint")
+    has(problems_of(legacy(beta=False, delta=True)), "delta's embedded Decision carries no content_fingerprint")
+
+
+@pytest.mark.parametrize("bad", ["", "z" * 64, "D" * 64, "d" * 63, None, 0, ["d" * 64]])
+def test_a_blank_or_malformed_content_fingerprint_is_the_same_downgrade(bad):
+    parts = build()
+    parts["beta"]["content_fingerprint"] = bad
+    parts["delta"]["decision"]["content_fingerprint"] = bad
+    parts["delta"]["decision_digest"] = subject_digest(parts["beta"])
+    found = problems_of(parts)
+    has(found, "beta's Decision carries no content_fingerprint")
+    has(found, "delta's embedded Decision carries no content_fingerprint")
+
+
+def test_the_lenient_check_is_unchanged_for_a_legacy_decision():
+    from cns_composition.spine_trace import SpineRecord, problems, root
+    d = "a" * 64
+    record = SpineRecord(
+        entity_id="p1", keyset_digest="1" * 64, keys_present=("k",), lock_result_digests={"l": "2" * 64},
+        open_locks=("l",), decision_entity_id="p1", decision_keys=("k",), decision_locks=("l",), decision_digest=d,
+        ledger_decision_digest=d, entry_digest="3" * 64)
+    assert problems(record) == [] and len(root(record)) == 64
