@@ -58,7 +58,9 @@ document's source or text, or one of another kind is refused, and a FACT root ci
 admissible. Each root's claims are also bound to the statement of the evidence they cite (the kernel's admission
 refuses a claim that says $4,120.00 while its evidence says $412.00). This guard is not spent by a yes,
 because one document gives TIE many records. It checks provenance, not a person's approval. A kernel built without an
-evidence guard takes any evidence, and a scenario records that as the second GAP. As with the root guard, the roster
+evidence guard takes any evidence, and a scenario records that as the second GAP. Current kernels refuse to be built
+that way unless the builder passes `allow_unguarded_evidence=True`, which this script does only for that scenario and
+for the roster's refusal of such a kernel. As with the root guard, the roster
 refuses to approve such a kernel (the kernel's seat is built with `require_evidence_guard=True`), so no approval is
 issued for it; calling it directly is still not stopped.
 
