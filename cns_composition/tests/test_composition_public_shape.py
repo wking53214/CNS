@@ -77,8 +77,10 @@ def test_the_spine_record_keeps_its_eleven_fields_and_the_strict_check_is_a_sepa
     assert all(not has_default for _, has_default in fields(SpineRecord))
     assert shape(problems) == [("record", POS, False)] and shape(root) == [("record", POS, False)]
     four = [("alpha", POS, False), ("zeta", POS, False), ("beta", POS, False), ("delta", POS, False)]
-    assert shape(strict_problems) == four + [("chain_verified", KW, True)]  # Step 7: the caller says what it asked delta
-    assert shape(strict_root) == four + [("chain_verified", KW, True)]
+    # Step 5: the caller hands over delta's verification receipt (chain), chain_verified stays only as a deprecated alias
+    strict_tail = [("chain", KW, True), ("chain_verified", KW, True), ("keyset_fingerprint_of", KW, True)]
+    assert shape(strict_problems) == four + strict_tail
+    assert shape(strict_root) == four + strict_tail
 
 
 def test_digest_context_takes_one_optional_mapping():

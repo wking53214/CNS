@@ -157,22 +157,29 @@ def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind
             "decision": decision, "keys": keys, "results": results, "da": da, "checkpoint": ledger.checkpoint()}
 
 
-def ledger_verified(parts) -> bool:
-    """Ask delta itself: the chain verifies, it still contains the history held outside it, and the content the run
-    carries IS what the ledger's last entry exports, field for field (so content cannot name the hashes of an entry
-    while describing a different Decision, run or time)."""
+def chain_receipt(parts) -> Tuple[Any, str]:
+    """Ask delta itself for a verification receipt about the ledger's last entry, against the checkpoint the scenario holds.
+
+    The checkpoint was taken before any attack and is held in `parts`, outside the ledger object. Delta refuses unless its
+    chain verifies and the ledger still contains the history the checkpoint recorded (an empty or foreign checkpoint is
+    refused too), and the receipt carries the digest of the entry as exported under the content's own context and
+    decision digest, so content that describes another Decision, run or time than the entry cannot match it. No checkpoint,
+    or a refusal, is (None, why): CNS is then given no receipt."""
     try:
-        ledger, held, content = parts["ledger"], parts["checkpoint"], parts["delta"]
-        entry = ledger.entries[-1]
-        exported = delta_cns.entry_content(entry, context=content.get("context"), decision_digest=content.get("decision_digest"))
-        return (ledger.verify_chain_integrity() is True and ledger.verify_against(held) is True
-                and subject_digest(exported) == subject_digest(content))
-    except Exception:  # noqa: BLE001 - nothing to ask, or the ledger refused to answer: not shown to verify
-        return False
+        held = parts.get("checkpoint")
+        if held is None:
+            return None, "this scenario holds no checkpoint taken before the attack, so no receipt can be asked for"
+        content = parts["delta"]
+        return delta_cns.verification_receipt(
+            parts["ledger"], held, context=content.get("context"), decision_digest=content.get("decision_digest")), ""
+    except Exception as exc:  # noqa: BLE001 - delta refused, or there was nothing to ask: no receipt, not an exception
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def check(parts) -> List[str]:
-    return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=ledger_verified(parts))
+    receipt, refusal = chain_receipt(parts)
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt)
+    return found + ([f"delta issued no verification receipt: {refusal}"] if refusal else [])
 
 
 def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None) -> List[str]:
@@ -191,13 +198,13 @@ def strict_clean(vitals) -> List[str]:
 
 def strict_roots_differ_by_run() -> List[str]:
     a, b = stages(SICK), stages(SICK, ctx={**CTX, "run_id": "run_2"})
-    ra, rb = (strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain_verified=ledger_verified(p)) for p in (a, b))
+    ra, rb = (strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=chain_receipt(p)[0]) for p in (a, b))
     return [] if ra != rb else ["the same readings in two runs produced one root"]
 
 
 def strict_root_is_not_a_lenient_root() -> List[str]:
     p = stages(SICK)
-    strict = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain_verified=ledger_verified(p))
+    strict = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=chain_receipt(p)[0])
     lenient = root(facts(p["keys"], p["results"], p["decision"], p["ledger"].entries[0]))
     return [] if strict != lenient else ["a strict root equals a lenient root"]
 
@@ -309,17 +316,23 @@ def a_run_fabricated_with_digests_that_do_not_chain() -> List[str]:
 
 
 def a_ledger_truncated_with_its_head_reset() -> List[str]:
+    """Three real Decisions, each a minute later (an identical Decision is a replay, which delta refuses). A checkpoint is
+    held outside the ledger; then the ledger is cut back and its head reset, which its own chain check accepts. Delta
+    refuses to issue a receipt against the held checkpoint, so CNS is never given one."""
     ledger = DecisionLedger()
     for i, vitals in enumerate((SICK, WELL, SICK)):
         engine = build()[1]
         keys = observe(vitals)
-        results = LockEvaluator(build()[0]).evaluate_all("patient_1", keys, T0)
-        ledger.append(engine.decide("patient_1", keys, results, T0), context={**CTX, "run_id": f"run_{i}", "event_id": f"event_{i}"})
+        at = T0 + timedelta(minutes=i)
+        results = LockEvaluator(build()[0]).evaluate_all("patient_1", keys, at)
+        ledger.append(engine.decide("patient_1", keys, results, at), context={**CTX, "run_id": f"run_{i}", "event_id": f"event_{i}"})
     held = ledger.checkpoint()
     ledger.entries.pop()
     ledger.chain_head = ledger.entries[-1].immutable_hash
     assert ledger.verify_chain_integrity(), "the chain alone is expected to accept this: that is the gap"
-    return [] if ledger.verify_against(held) else ["the ledger does not match the checkpoint held outside it"]
+    context = {**CTX, "run_id": "run_1", "event_id": "event_1"}
+    return refused(lambda: delta_cns.verification_receipt(ledger, held, context=context, decision_digest=subject_digest({})),
+                   ledger_state(ledger))
 
 
 def a_stale_lock_result_is_rested_on() -> List[str]:
@@ -374,9 +387,9 @@ def zeta_and_beta_named_the_digest_of_another_keyset() -> List[str]:
 
 def GAP_contents_fabricated_by_someone_who_recomputes_the_digests() -> List[str]:
     """KNOWN GAP, stated as a fact. There is no key in this check: four contents that agree with each other, carry one
-    KeySet fingerprint, chain by digest and are reported by the caller as ledger-verified pass whether or not any
-    component produced them. It verifies agreement, not authorship. (Without the fingerprints, or without the
-    chain claim, it is refused; the other scenarios hold that.) No problem is found."""
+    KeySet fingerprint, chain by digest and come with a receipt the forger wrote to match (the receipt is not signed)
+    pass whether or not any component produced them. It verifies agreement, not authorship. (Without the fingerprints,
+    or without a receipt that fits, it is refused; the other scenarios hold that.) No problem is found."""
     ctx = dict(CTX)
     fp = "e" * 64
     alpha = {"min_confidence": 0.0, "keys": [{"name": "anything", "present": True, "confidence": 1.0, "reason": "made up"}],
@@ -396,7 +409,10 @@ def GAP_contents_fabricated_by_someone_who_recomputes_the_digests() -> List[str]
     delta = {"audit_id": "0" * 16, "timestamp": "2026-10-01T08:00:00", "previous_hash": "0" * 64, "immutable_hash": "1" * 64,
              "decision": dict(core), "run_id": ctx["run_id"], "event_id": ctx["event_id"], "context": dict(ctx),
              "decision_digest": subject_digest(beta)}
-    return strict_problems(alpha, zeta, beta, delta, chain_verified=True)
+    head = "f" * 64
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(delta), "index": 0, "ledger_length": 1,
+               "ledger_head": head, "checkpoint_length": 1, "checkpoint_head": head, "context": dict(ctx)}
+    return strict_problems(alpha, zeta, beta, delta, chain=receipt)
 
 
 def delta_content_names_a_hash_the_ledger_never_wrote() -> List[str]:
@@ -424,6 +440,12 @@ def the_ledger_chain_is_broken_after_the_run() -> List[str]:
 def nobody_asked_delta_whether_the_chain_verifies() -> List[str]:
     p = stages(SICK)
     return strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"])
+
+
+def a_scenario_that_holds_no_checkpoint_is_refused() -> List[str]:
+    p = stages(SICK)
+    del p["checkpoint"]
+    return check(p)
 
 
 def an_unbound_append_to_a_ledger_that_requires_a_context() -> List[str]:
@@ -603,7 +625,9 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
                       "delta is bound to a different run than alpha's: run_id 'run_2' vs 'run_1'"),
             allowed_extra=("beta's Decision was made from a different KeySet than alpha produced",
                            "beta's Decision rests on a different lock result than zeta produced for",
-                           "delta's entry was recorded under run_id 'run_2' but the run is 'run_1'", CHAIN_NOT_SHOWN))),
+                           "delta's entry was recorded under run_id 'run_2' but the run is 'run_1'", CHAIN_NOT_SHOWN,
+                           # run 2's content against run 1's ledger: delta refuses to build a receipt across runs
+                           "delta issued no verification receipt: ValueError: the ledger entry was recorded under run"))),
     # extras: beta's Decision was made from the real KeySet, so it also disagrees with the altered alpha
     ("strict: the KeySet is altered after zeta evaluated it", keyset_altered_after_zeta_evaluated_it,
      Expect("problems",
@@ -623,7 +647,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
      Expect("refused", required=("evaluated from a different KeySet than the one given",), raises=("KeySetMismatchError",))),
     # extra: the foreign entry is not a member of the ledger the run holds
     ("strict: delta recorded another Decision, quoting beta's digest", delta_recorded_another_decision,
-     Expect("problems", required=("the Decision delta recorded differs from beta's in:",), allowed_extra=(CHAIN_NOT_SHOWN,))),
+     Expect("problems", required=("the Decision delta recorded differs from beta's in:",),
+            allowed_extra=("the ledger receipt is for other content", CHAIN_NOT_SHOWN))),
     ("strict: beta refuses a Decision whose basis contradicts its keys", contradictory_basis_is_refused_by_beta,
      Expect("refused", required=("confidence_basis is 'absence' but triggered_by_keys implies 'keys'",), raises=("ValueError",))),
     ("strict: delta refuses a contradictory Decision that skipped construction",
@@ -636,7 +661,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
      Expect("refused", required=("already recorded a Decision",), raises=("DuplicateRecordError",))),
     # extra: a missing context also leaves out the decision_digest that the context carries
     ("strict: a stage carries no context", a_stage_carries_no_context,
-     Expect("problems", required=("delta carries no context",), allowed_extra=("delta names no decision_digest",))),
+     Expect("problems", required=("delta carries no context",),
+            allowed_extra=("delta names no decision_digest", "delta issued no verification receipt: TypeError", CHAIN_NOT_SHOWN))),
     # extras: invented contents disagree with themselves in every way a real run would not (no fingerprint, no newly
     # triggered locks, keys the invented alpha does not hold, a Decision that differs from the entry, an unverified chain)
     ("strict: a run fabricated with digests that do not chain", a_run_fabricated_with_digests_that_do_not_chain,
@@ -648,9 +674,11 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
                            "delta recorded a Decision other than the one beta produced",
                            "the Decision delta recorded differs from beta's in:",
                            "alpha lists present_names that its own keys do not hold as present: anything",
-                           "beta's Decision lists no newly_triggered_locks"))),
+                           "beta's Decision lists no newly_triggered_locks",
+                           # there is no ledger and no checkpoint behind an invented run, so no receipt can be asked for
+                           "delta issued no verification receipt: this scenario holds no checkpoint"))),
     ("strict: a ledger truncated with its head reset", a_ledger_truncated_with_its_head_reset,
-     Expect("problems", required=("the ledger does not match the checkpoint held outside it",))),
+     Expect("refused", required=("not contained in this ledger, so no receipt is issued",), raises=("ValueError",))),
     ("strict: a lock result zeta refused as stale is rested on", a_stale_lock_result_is_rested_on,
      Expect("problems", required=("zeta lock sepsis_lock was refused as stale", "zeta lock abnormal_vitals_lock was refused as stale"))),
     ("strict: a lock result is filed under another lock's id", a_lock_result_filed_under_another_locks_id,
@@ -664,16 +692,20 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
             required=("zeta lock sepsis_lock was evaluated from a different KeySet than alpha produced (its recorded KeySet fingerprint differs",
                       "zeta lock abnormal_vitals_lock was evaluated from a different KeySet than alpha produced (its recorded KeySet fingerprint differs",
                       "beta's Decision was made from a different KeySet than alpha produced (its recorded KeySet fingerprint differs"))),
-    # The next four share one problem: CNS has one question for the ledger ("was the chain shown to verify"), so only the
-    # scenario itself (and ledger_verified, which compares the whole entry) tells the attacks apart.
+    # Each of the next five fails to verify, and now says why. Delta refuses to issue a receipt where the ledger is not
+    # what the checkpoint held outside it recorded, and CNS refuses a receipt that is not for the content it was given.
+    # CHAIN_NOT_SHOWN is the consequence of either, so it is an allowed extra beside the named cause.
     ("strict: delta's content names a hash the ledger never wrote", delta_content_names_a_hash_the_ledger_never_wrote,
-     Expect("problems", required=(CHAIN_NOT_SHOWN,))),
+     Expect("problems", required=("the ledger receipt is for other content",), allowed_extra=(CHAIN_NOT_SHOWN,))),
     ("strict: delta content of another Decision under the ledger's hashes", delta_content_of_another_decision_under_the_ledgers_hashes,
-     Expect("problems", required=(CHAIN_NOT_SHOWN,))),
+     Expect("problems", required=("the ledger receipt is for other content",), allowed_extra=(CHAIN_NOT_SHOWN,))),
     ("strict: the ledger chain is broken after the run", the_ledger_chain_is_broken_after_the_run,
-     Expect("problems", required=(CHAIN_NOT_SHOWN,))),
+     Expect("problems", required=("delta issued no verification receipt: ValueError: the ledger's chain does not verify",),
+            allowed_extra=(CHAIN_NOT_SHOWN,))),
     ("strict: nobody asked delta whether the chain verifies", nobody_asked_delta_whether_the_chain_verifies,
      Expect("problems", required=(CHAIN_NOT_SHOWN,))),
+    ("strict: a scenario that holds no checkpoint is refused", a_scenario_that_holds_no_checkpoint_is_refused,
+     Expect("problems", required=("holds no checkpoint taken before the attack", CHAIN_NOT_SHOWN))),
     ("strict: an unbound append to a ledger that requires a context", an_unbound_append_to_a_ledger_that_requires_a_context,
      Expect("refused", required=("requires a context",), raises=("ContextRequiredError",))),
     ("strict: a second Decision for an event already recorded", a_second_decision_for_an_event_already_recorded,

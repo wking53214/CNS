@@ -46,9 +46,16 @@ not a release.
   a crash that is not a declared refusal, or a refusal that changed the ledger it guarded fails the scenario (the
   earlier oracle passed any scenario one of whose problems held the expected text). The oracle is tested in
   `tests/test_spine_oracle.py`.
-- `strict_problems` and `strict_root` take `chain_verified`, the answer of delta's `verify_chain_integrity` and
-  `verify_against` for the ledger the entry came from; without it the entry is reported as not shown to belong to a
-  verified chain. They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
+- `strict_problems` and `strict_root` take `chain=`, a delta verification receipt (`delta.cns_connector.verification_receipt`,
+  schema `ledger-receipt/1`: issued only after delta's chain check and a check against a checkpoint held outside the
+  ledger), and the keyword-only `keyset_fingerprint_of`. CNS checks the receipt against what it already holds: its
+  `entry_digest` must be the digest of the delta content given, its context the run's, its `index`, `ledger_length` and
+  `checkpoint_length` ints (not bools) with `0 <= index < ledger_length` and `1 <= checkpoint_length <= ledger_length`, and
+  its heads 64 lowercase hex digits; each failure is a named problem. Without a valid receipt the entry is reported as not
+  shown to belong to a verified chain and no root is issued. `chain_verified` is a deprecated alias: passing it warns
+  (`DeprecationWarning`) and is always the problem "chain_verified is a bare assertion and is not evidence", whatever
+  its value. The receipt is not signed, so a forger who writes a consistent one passes; that stays a recorded limit.
+  They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
   alpha, zeta, beta and delta. `blame` names alpha's run as the reference.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.

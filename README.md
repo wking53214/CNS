@@ -191,8 +191,8 @@ the Decision is right, and `present_names` is stated by alpha so CNS never re-im
 limits stay. A native stage can still compute a result from a foreign input in memory (zeta's KeySet and LockResult
 carry no identity), so the result is refused when it is bound, recorded or verified, not when it is computed. And
 delta's ledger is an in-memory reference ledger: a checkpoint held outside it is what detects truncation or a
-rewrite, and nothing survives a restart. The strict check also asks delta's own ledger whether the chain verifies (and
-whether a checkpoint held outside it still holds) rather than taking a caller's word, and it compares the KeySet
+rewrite, and nothing survives a restart. The strict check takes a delta verification receipt (`chain=`; delta issues it only when its chain verifies and a
+checkpoint held outside it still holds, and CNS checks it against the contents) rather than a caller's boolean, and it compares the KeySet
 fingerprint zeta records on every lock result, alpha reports and beta's Decision carries, so a result evaluated from
 one KeySet and bound to another's digest is refused. Three limits are recorded as facts, not hidden, and go red the
 day they close: the strict check verifies that contents agree and chain by digest, not who made them (there is no
