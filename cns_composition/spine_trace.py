@@ -62,12 +62,22 @@ A missing field is a problem, not a skip. Content that cannot be digested or rea
 
 WHAT STRICT DOES NOT PROVE (recorded as facts in `chains/spine_run.py`, scenarios marked GAP)
 
-It verifies that the supplied contents AGREE with each other and chain by digest. It does not prove where they came
-from. There is no key in it, so four contents made up by someone who recomputes the digests pass. And zeta never
-sees the KeySet a result is bound to: `keyset_digest` is asserted by whoever binds it, so a result evaluated from
-one KeySet and bound to another's digest passes. Closing the second needs zeta to record the KeySet it evaluated.
-CNS
-reads fields by their documented names and applies no decision policy: it does not say which Key should be
+It verifies that the supplied contents AGREE with each other, chain by digest, and sit behind a receipt that fits them. It
+does not prove where they came from. The recorded limits:
+
+  - No authorship key. Four contents made up by someone who recomputes every digest and fingerprint (zeta's rule, beta's
+    `decision_fingerprint` and `content_fingerprint`, all public and keyless) and writes a consistent, unsigned ledger
+    receipt pass. A receipt and a fingerprint detect mistakes and partial edits, not an author.
+  - `LockResult` fields (`keyset_fingerprint`, `stale`, `entity_id`) are caller-settable, and an empty `entity_id` is
+    accepted as legacy, so a lock result built by hand says whatever it likes.
+  - Checkpoint custody and durability are not implemented here: delta's ledger is in memory, and a checkpoint is only as
+    good as the place its holder keeps it.
+  - `content_fingerprint` is keyless: it catches an edit that forgets to recompute it.
+  - `origin` is the producer's own claim: CNS checks its form and order, not who made it or whether it is true.
+  - A Decision records the union of the locks its rule cited, so one citing a closed lock passes.
+  - Without `keyset_fingerprint_of`, alpha's fingerprint string is compared and never recomputed.
+
+CNS reads fields by their documented names and applies no decision policy: it does not say which Key should be
 present, which Lock should open, or whether the Decision is right. `strict_root` is domain-separated
 (`TRACE_SCHEMA`), so it can never equal a lenient `root`, and it is never a native digest of any stage.
 """

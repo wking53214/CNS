@@ -33,19 +33,28 @@ not a release.
   the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
   entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
   are unchanged. The `cns` package is untouched.
-- `chains/spine_run.py` gains thirty-six strict scenarios beside its seven lenient ones: the real objects through the
-  real attacks (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale replay, a
-  repeat, a truncated ledger, a missing context, a made-up run, a hash the ledger never wrote, another Decision's content under the ledger's hashes, a chain broken after
-  the run, an unbound append, a second Decision for a recorded event, a run spanning two events, an older Decision
-  after a newer one, a KeySet digest of another KeySet), each stating the problem the boundary that should refuse it
-  must name; one that holds the four connectors' own copies of the context check to `context_problems`; and three
-  marked GAP that record what the strict check does not catch (authorship; a narrative rewritten under a valid
-  five-field fingerprint; a cited lock that is closed) as facts that go red the day they close. Every scenario
+- `chains/spine_run.py` gains 55 strict scenarios beside its seven lenient ones (62 in all, counted from the runner): six
+  checks that hold (a sick and a well patient, a run with an origin record, roots that differ by run and never equal a
+  lenient root, and the four connectors' own copies of the context check held to `context_problems`, with a str-subclass
+  case and a mapping that changes between reads); 44 real attacks each stating the problem or refusal the boundary that
+  should answer it must name (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale
+  replay, a repeat, a truncated ledger, a missing context, a made-up run, content that does not match the receipt,
+  a chain broken after the run, an unbound append, a second Decision for a recorded event, a run spanning two events, an
+  older Decision after a newer one, a KeySet digest of another KeySet, a KeySet substituted under a copied fingerprint,
+  an origin observed after the Decision, a content fingerprint altered or stale, a forged `chain_verified`, an empty or
+  always-equal checkpoint, a replayed or backdated record, a failed append, another entity's lock results, a str-subclass
+  or changing context, an aliased list); two of those attacks must come out clean because the record must not change; and
+  five marked GAP that record what the strict check does not catch (authorship, including a consistent forged receipt and
+  recomputed fingerprints; a narrative forged by someone who recomputes the keyless `content_fingerprint`; a cited lock
+  that is closed; a legacy lock result with no entity id; a KeySet substituted under a copied fingerprint when no
+  recomputation is supplied) as facts that go red the day they close. Every scenario
   declares an `Expect` (`chains/spine_oracle.py`): the problems it requires, the only extras it may add, texts it
   forbids, and whether it is clean, a problem, a refusal or a gap. An unlisted extra problem, an unexpected success,
   a crash that is not a declared refusal, or a refusal that changed the ledger it guarded fails the scenario (the
   earlier oracle passed any scenario one of whose problems held the expected text). The oracle is tested in
-  `tests/test_spine_oracle.py`.
+  `tests/test_spine_oracle.py`. Recorded limits (README, "The decision spine"): no authorship key, caller-settable
+  `LockResult` fields, no checkpoint custody or file durability (delta is in memory), a keyless `content_fingerprint`,
+  and an `origin` that is the producer's own claim.
 - `strict_problems` and `strict_root` take `chain=`, a delta verification receipt (`delta.cns_connector.verification_receipt`,
   schema `ledger-receipt/1`: issued only after delta's chain check and a check against a checkpoint held outside the
   ledger), and the keyword-only `keyset_fingerprint_of`. CNS checks the receipt against what it already holds: its
@@ -66,8 +75,9 @@ not a release.
   with none, or an unreadable Decision time is a named problem, never a crash. It checks form and order only: the
   origin is the producer's own claim, and CNS makes no authenticity, authorization or truthfulness claim about it.
   Content with no origin is unchanged and every digest and root stays as it was.
-  They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
-  alpha, zeta, beta and delta. `blame` names alpha's run as the reference.
+  The KeySet fingerprint must agree across alpha, zeta, beta and delta. `decision_fingerprint` and beta's
+  `content_fingerprint` are compared as beta's content and delta's embedded copy carry them, and never recomputed in
+  CNS. alpha's run is the reference the other stages are judged against.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.
 

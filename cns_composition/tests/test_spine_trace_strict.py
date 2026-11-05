@@ -919,3 +919,30 @@ def test_the_origin_check_claims_nothing_about_who_made_the_origin():
     parts = with_origin({"source": "nowhere", "producer": "anyone", "observed_at": "1970-01-01T00:00:00",
                          "collection_context": "invented", "transformation": "invented"})
     assert problems_of(parts) == []
+
+
+# --- content_fingerprint: compared as carried, never recomputed in CNS ----------------------------------------------
+
+def with_content_fingerprint(beta_value=None, delta_value=None):
+    parts = build()
+    if beta_value is not None:
+        parts["beta"]["content_fingerprint"] = beta_value
+    if delta_value is not None:
+        parts["delta"]["decision"]["content_fingerprint"] = delta_value
+    parts["delta"]["decision_digest"] = subject_digest(parts["beta"])
+    return parts
+
+
+def test_a_content_fingerprint_both_stages_carry_alike_is_accepted_and_not_recomputed():
+    # an arbitrary value: CNS has no rule to recompute it with, so equal copies are all it asks for
+    assert problems_of(with_content_fingerprint("a" * 64, "a" * 64)) == []
+
+
+@pytest.mark.parametrize("beta_value, delta_value", [("a" * 64, "b" * 64), ("a" * 64, None), (None, "a" * 64)])
+def test_a_content_fingerprint_that_beta_and_delta_do_not_carry_alike_is_named(beta_value, delta_value):
+    has(problems_of(with_content_fingerprint(beta_value, delta_value)), "differs from beta's in: content_fingerprint")
+
+
+def test_a_legacy_decision_with_no_content_fingerprint_in_either_stage_is_clean():
+    parts = build()
+    assert "content_fingerprint" not in parts["beta"] and problems_of(parts) == []

@@ -13,18 +13,25 @@ Two groups. The first seven are the LENIENT check (`spine_trace.problems`), whic
 off the objects. The rest are STRICT: each stage's content is built with a pipeline context and the lineage digest
 of the stage before it, and `spine_trace.strict_problems` recomputes every digest from those contents. They run the
 real objects through the real attacks (another subject, another event, another run, an altered stage, a stale
-replay, a repeat, a truncated ledger, a missing context, a fabricated run) and state, as an `Expect` (see
+replay, a repeat, a truncated ledger, a missing context, a fabricated run, and the hardened components' own refusals:
+an empty or always-equal checkpoint, a replayed or backdated record, a failed append, another entity's lock results, a
+str-subclass or shifting context, an aliased list, a stale content fingerprint, a forged chain_verified flag, a KeySet
+swapped under a copied fingerprint) and state, as an `Expect` (see
 `spine_oracle.py`), the problems the boundary that should refuse each one must name and the only extras it may add.
 A scenario fails if a required problem is missing, if an unlisted problem appears, if it returns nothing when it
-should be refused, if it crashes without declaring it, or if a refusal changed the state it guarded. Three scenarios,
-marked GAP, record what the strict check does NOT catch as facts that expect no problem: they go red the day the
-gap closes and are then updated on purpose.
+should be refused, if it crashes without declaring it, or if a refusal changed the state it guarded. Five scenarios,
+marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
+recomputes every digest and fingerprint and writes a consistent receipt), a narrative forged by someone who also
+recomputes the keyless content fingerprint, a Decision citing a closed lock, a legacy lock result with no entity id, and
+a KeySet swapped under a copied fingerprint when no recomputation is supplied. They go red the day the gap closes and
+are then updated on purpose.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import sys
+import warnings
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
@@ -39,12 +46,14 @@ import delta.context as delta_context
 import zeta.cns_connector as zeta_cns
 from alpha import VitalsObservation, observe
 from beta import (
-    Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError, StaleLockResultError,
-    decision_fingerprint)
+    Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError,
+    StaleLockResultError, decision_fingerprint)
+from beta.fingerprint import content_fingerprint
 from cns.gate import subject_digest
 from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, SpineRecord, context_problems, problems, root, strict_problems, strict_root)
 from delta import DecisionLedger
+from delta.ledger import LedgerCheckpoint
 from zeta import Combination, Key, KeySet, LockEvaluator, LockRegistry, LockSpec
 
 T0 = datetime(2026, 10, 1, 8, 0, 0)
@@ -194,10 +203,11 @@ def check(parts, *, verify_fingerprint: bool = True) -> List[str]:
     return found + ([f"delta issued no verification receipt: {refusal}"] if refusal else [])
 
 
-def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None) -> List[str]:
+def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None, catch: Tuple[type, ...] = ()) -> List[str]:
     """What a boundary refused, as a problem string, or nothing if it let the call through. `state` is compared before
-    and after: a refusal that changed it is a second problem (see spine_oracle.refused)."""
-    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError), state=state)
+    and after: a refusal that changed it is a second problem (see spine_oracle.refused). `catch` adds exception classes
+    beyond the ValueErrors, TypeErrors and OverflowErrors the oracle already treats as refusals."""
+    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError) + tuple(catch), state=state)
 
 
 def ledger_state(ledger: DecisionLedger) -> Callable[[], Any]:
@@ -542,13 +552,24 @@ def an_append_onto_a_head_that_does_not_match() -> List[str]:
                    ledger_state(p["ledger"]))
 
 
-def GAP_a_decisions_narrative_forged_with_a_valid_fingerprint() -> List[str]:
-    """KNOWN GAP, stated as a fact. decision_fingerprint covers 5 of a Decision's 13 fields, so instructions, confidence
-    and reasoning can be rewritten and the Decision still validates, records, binds and chains. (A forger who changes
-    the verdict, locks or keys must recompute the fingerprint, and beta's fingerprint function is public and keyless.)
-    No problem is found. Widening the fingerprint is a native Beta change that has not been made."""
+def a_narrative_edit_under_the_old_content_fingerprint() -> List[str]:
+    """Beta's decision_fingerprint covers 5 of a Decision's 15 fields; a separate content_fingerprint covers 13 (all but
+    audit_hash, decision_fingerprint and itself). Instructions, confidence and reasoning rewritten while the Decision keeps
+    its OLD content_fingerprint no longer record: delta refuses at append (it checks the fingerprint when it has a context)."""
     p = stages(SICK)
     forged = dataclasses.replace(p["decision"], instructions="Send home.", confidence=0.01, reasoning="vitals normal")
+    ledger = DecisionLedger(require_context=True)
+    return refused(lambda: ledger.append(forged, context=CTX), ledger_state(ledger))
+
+
+def GAP_a_decisions_narrative_forged_by_someone_who_recomputes_the_content_fingerprint() -> List[str]:
+    """KNOWN GAP, stated as a fact, by design. content_fingerprint is keyless and its function (beta.fingerprint) is public,
+    so a forger who rewrites instructions, confidence and reasoning and RECOMPUTES it produces a Decision that validates,
+    records, binds and chains: it detects a partial edit, not an authored one. No problem is found. Only a key (authorship)
+    could close it; there is none."""
+    p = stages(SICK)
+    edited = dataclasses.replace(p["decision"], instructions="Send home.", confidence=0.01, reasoning="vitals normal")
+    forged = dataclasses.replace(edited, content_fingerprint=content_fingerprint(edited))
     forged.validate(check_fingerprint=True)
     ledger = DecisionLedger(require_context=True)
     entry = ledger.append(forged, context=CTX)
@@ -562,16 +583,16 @@ def GAP_a_decisions_narrative_forged_with_a_valid_fingerprint() -> List[str]:
 def GAP_a_decision_cites_a_lock_that_is_closed() -> List[str]:
     """KNOWN GAP, stated as a fact. A Decision keeps the union of the locks its rule cited, not which the rule required
     open and which closed, so an ESCALATE that cites sepsis_lock passes while zeta's bound content says it is closed.
-    (The forger recomputes beta's public, keyless fingerprint.) No problem is found. Recording the partition is a
-    native Beta change that has not been made."""
+    (The forger recomputes beta's public, keyless fingerprints, decision_fingerprint and content_fingerprint.) No problem
+    is found. Recording the partition is a native Beta change that has not been made."""
     p = stages(WELL)
-    locks, engine = build()
     d = p["decision"]
-    forged = dataclasses.replace(
+    edited = dataclasses.replace(
         d, decision="ESCALATE", decision_id="escalate_sepsis", triggered_by_locks=("sepsis_lock",),
         decision_fingerprint=decision_fingerprint({
             "entity_id": d.entity_id, "decision_id": "escalate_sepsis", "decision": "ESCALATE",
             "triggered_by_locks": ["sepsis_lock"], "triggered_by_keys": list(d.triggered_by_keys)}))
+    forged = dataclasses.replace(edited, content_fingerprint=content_fingerprint(edited))
     ledger = DecisionLedger(require_context=True)
     entry = ledger.append(forged, context=CTX)
     p.update(ledger=ledger, checkpoint=ledger.checkpoint())
@@ -581,8 +602,183 @@ def GAP_a_decision_cites_a_lock_that_is_closed() -> List[str]:
     return check(p)
 
 
+def a_content_fingerprint_altered_in_beta_content_only() -> List[str]:
+    """CNS compares content_fingerprint as carried (beta's content against delta's embedded copy) and never recomputes it."""
+    p = stages(SICK)
+    p["beta"] = {**p["beta"], "content_fingerprint": "0" * 64}
+    return check(p)
+
+
+def a_stale_content_fingerprint_in_an_unbound_ledger_cannot_be_bound_to_a_run() -> List[str]:
+    """Matrix row 6b. A default DecisionLedger() has no context, so its append does not check fingerprints (stated as a
+    limit: an unbound ledger is not judged). The entry it records has no run, so delta refuses to bind it to one, and the
+    strict check has nothing to take."""
+    p = stages(SICK)
+    forged = dataclasses.replace(p["decision"], decision="DISCHARGE_SAFE", instructions="Send home.")
+    ledger = DecisionLedger()
+    entry = ledger.append(forged)
+    return refused(lambda: delta_cns.entry_content(entry, context=CTX, decision_digest=subject_digest(p["beta"])), ledger_state(ledger))
+
+
+# --- the hardened components, attacked as the matrix did (row numbers are the attack matrix's) -------------------------
+
+def a_forged_chain_verified_flag() -> List[str]:
+    """Row 7. The ledger's chain is broken after the run and the caller asserts chain_verified=True. The flag is a bare
+    assertion: it warns and is a problem whatever it says."""
+    p = stages(SICK)
+    first = p["ledger"].entries[0]
+    p["ledger"].entries[0] = dataclasses.replace(first, decision=dataclasses.replace(first.decision, instructions="Send home."))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        found = strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"], chain_verified=True,
+                                keyset_fingerprint_of=zeta_keyset_fingerprint)
+    if not any(issubclass(w.category, DeprecationWarning) for w in caught):
+        found.append("the deprecated chain_verified alias did not warn")
+    return found
+
+
+class AlwaysEqual:
+    """Not a str, and equal to everything: what a checkpoint head must not be allowed to be."""
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __ne__(self, other: object) -> bool:
+        return False
+
+    __hash__ = None  # type: ignore[assignment]
+
+
+def a_complete_rewrite_against_an_empty_checkpoint() -> List[str]:
+    """Row 11b. A different run is rewritten completely (the WELL run: every content, the ledger itself) and verified against
+    a checkpoint of length 0, which fits every self-consistent ledger. Delta refuses to issue a receipt against it."""
+    q = stages(WELL)
+    q["checkpoint"] = LedgerCheckpoint(0, DecisionLedger().chain_head)
+    return check(q)
+
+
+def a_complete_rewrite_against_a_checkpoint_head_that_equals_everything() -> List[str]:
+    """Row 11c. The same rewrite verified against a checkpoint whose head is an object whose __eq__ is always true."""
+    q = stages(WELL)
+    q["checkpoint"] = LedgerCheckpoint(1, AlwaysEqual())  # type: ignore[arg-type]
+    return check(q)
+
+
+def the_identical_decision_replayed_under_a_fresh_event_and_run() -> List[str]:
+    """Row 12b. The same Decision brought back under a new event id and a new run id is a replay, not a new decision."""
+    p = stages(SICK)
+    return refused(lambda: p["ledger"].append(p["decision"], context={**CTX, "run_id": "run_2", "event_id": "event_2"}),
+                   ledger_state(p["ledger"]))
+
+
+def a_backdated_entry_timestamp() -> List[str]:
+    """Row 14b. A contradictory Decision at the same instant is not stale (equal times are allowed), but recording it with
+    an entry time of 1970 is a backdated entry."""
+    p = stages(SICK)
+    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    return refused(lambda: p["ledger"].append(other, timestamp=datetime(1970, 1, 1), context={**CTX, "run_id": "run_9", "event_id": "event_9"}),
+                   ledger_state(p["ledger"]))
+
+
+def an_injected_failure_during_append_leaves_the_ledger_as_it_was() -> List[str]:
+    """Row 16a. The write fails inside the append (here the sink every entry is handed to). Length and head are unchanged
+    and the ledger still takes the next record; before, the head had already moved and every later append was refused."""
+    p = stages(SICK)
+    failing = [True]
+
+    def sink(entry: Any) -> None:
+        if failing[0]:
+            raise RuntimeError("the store refused the write")
+
+    ledger = DecisionLedger(require_context=True, sink=sink)
+    found = refused(lambda: ledger.append(p["decision"], context=CTX), ledger_state(ledger), catch=(RuntimeError,))
+    failing[0] = False
+    try:
+        ledger.append(p["decision"], context=CTX)
+    except Exception as exc:  # noqa: BLE001 - a ledger that cannot take the retry is unavailable after the fault
+        found.append(f"the ledger took no further record after the failure: {type(exc).__name__}: {exc}")
+    if not ledger.verify_chain_integrity() or len(ledger.entries) != 1:
+        found.append("the ledger does not hold exactly the one retried entry, with a chain that verifies")
+    return found
+
+
+def lock_results_from_another_entity_are_refused_by_beta() -> List[str]:
+    """Row 21. Patient 2's latched lock state, evaluated over patient 1's readings, offered to decide for patient 1. Each
+    result now records the entity it was evaluated for."""
+    locks, engine = build()
+    ev = LockEvaluator(locks)
+    ev.evaluate_all("patient_2", observe(SICK), T0)  # patient 2 latches sepsis_lock open
+    well = observe(WELL)
+    at = T0 + timedelta(minutes=5)
+    borrowed = ev.evaluate_all("patient_2", well, at)
+    return refused(lambda: engine.decide("patient_1", well, borrowed, at))
+
+
+def GAP_a_legacy_lock_result_with_no_entity_id_is_accepted() -> List[str]:
+    """KNOWN GAP, stated as a fact, kept for compatibility. A LockResult with an empty entity_id (what zeta produced before
+    it recorded one, or any object a caller builds) is accepted for any entity: the field is caller-settable and empty
+    means legacy. The same cross-entity borrowing as the scenario before this one, with the entity stripped, is decided."""
+    locks, engine = build()
+    ev = LockEvaluator(locks)
+    ev.evaluate_all("patient_2", observe(SICK), T0)
+    well = observe(WELL)
+    at = T0 + timedelta(minutes=5)
+    legacy = {lid: dataclasses.replace(r, entity_id="") for lid, r in ev.evaluate_all("patient_2", well, at).items()}
+    return refused(lambda: engine.decide("patient_1", well, legacy, at))
+
+
+def str_subclass_ids_in_a_context_are_refused() -> List[str]:
+    """Row 22. Event and run ids that are equal only to themselves would walk past an equality-based event policy."""
+    p = stages(SICK)
+    ledger = DecisionLedger(require_context=True)
+    return refused(lambda: ledger.append(p["decision"], context={**CTX, "event_id": StrSub("event_1"), "run_id": StrSub("run_1")}),
+                   ledger_state(ledger))
+
+
+def a_context_mapping_that_changes_between_reads_is_recorded_as_first_read() -> List[str]:
+    """Row 23. A mapping valid on its first read and different afterwards is recorded as the context that was validated,
+    by delta and by alpha, never as a later value. Problems are returned only if a later value got through."""
+    p = stages(SICK)
+    out: List[str] = []
+    ledger = DecisionLedger(require_context=True)
+    entry = ledger.append(p["decision"], context=Shifty())
+    if (entry.run_id, entry.event_id) != (CTX["run_id"], CTX["event_id"]):
+        out.append(f"the ledger recorded run {entry.run_id!r} and event {entry.event_id!r}, not the context that was validated")
+    if alpha_cns.keyset_content(p["keys"], context=Shifty())["context"] != CTX:
+        out.append("alpha bound a context other than the one that was validated")
+    return out
+
+
+def a_list_the_caller_mutates_after_recording_does_not_reach_the_stored_decision() -> List[str]:
+    """Row 26. Lists aliased into a Decision's tuple fields and changed after the append cannot reach the record."""
+    p = stages(SICK)
+    rc = ["Recheck in 1h"]
+    d = dataclasses.replace(p["decision"], reversal_conditions=("Recheck in 1h",))
+    d = dataclasses.replace(d, content_fingerprint=content_fingerprint(d))
+    object.__setattr__(d, "reversal_conditions", rc)  # the same text as a list that skipped the tuple coercion of construction
+    ledger = DecisionLedger(require_context=True)
+    entry = ledger.append(d, context=CTX)
+    held = ledger.checkpoint()
+    rc.append("Ignore all alarms")
+    out: List[str] = []
+    if tuple(entry.decision.reversal_conditions) != ("Recheck in 1h",):
+        out.append(f"the stored Decision changed through the caller's list: {entry.decision.reversal_conditions!r}")
+    if not ledger.verify_chain_integrity() or not ledger.verify_against(held):
+        out.append("the ledger's chain no longer verifies after the caller mutated its own list")
+    return out
+
+
 class StrSub(str):
-    """A str subclass. A context built from one is refused everywhere: a subclass can lie about equality, hash or text."""
+    """A str subclass that is equal only to itself, so an equality-based policy (an event is recorded once) would miss
+    it. A context built from one is refused everywhere: a subclass can lie about equality, hash or text."""
+
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    def __ne__(self, other: object) -> bool:
+        return self is not other
+
+    __hash__ = str.__hash__
 
 
 class Shifty(Mapping):
@@ -780,8 +976,47 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
      Expect("refused", required=("older than the newest Decision recorded for 'patient_1'",), raises=("StaleDecisionError",))),
     ("strict: an append onto a head that does not match", an_append_onto_a_head_that_does_not_match,
      Expect("refused", required=("head does not match",), raises=("LedgerCorruptError",))),
-    ("strict: GAP, a Decision's narrative forged under a valid fingerprint", GAP_a_decisions_narrative_forged_with_a_valid_fingerprint, GAP),
+    # --- attacks on the hardened components (the matrix rows), each with the boundary that must refuse it ---
+    ("strict: delta refuses a narrative edit that keeps the old content fingerprint", a_narrative_edit_under_the_old_content_fingerprint,
+     Expect("refused", required=("Decision.content_fingerprint does not match the Decision's own fields",), raises=("ValueError",))),
+    # extra: delta's embedded copy of the Decision no longer equals the content_fingerprint beta carries
+    ("strict: a content fingerprint altered in beta's content only", a_content_fingerprint_altered_in_beta_content_only,
+     Expect("problems", required=("the Decision delta recorded differs from beta's in: content_fingerprint",),
+            allowed_extra=("delta recorded a Decision other than the one beta produced",))),
+    ("strict: a stale content fingerprint in an unbound ledger cannot be bound to a run",
+     a_stale_content_fingerprint_in_an_unbound_ledger_cannot_be_bound_to_a_run,
+     Expect("refused", required=("recorded under no run, so it cannot be bound to one",), raises=("ValueError",))),
+    # extra: the ledger's chain is broken, so no receipt could be wanted either way
+    ("strict: a forged chain_verified flag is not evidence", a_forged_chain_verified_flag,
+     Expect("problems", required=("chain_verified is a bare assertion and is not evidence; pass chain= a delta verification receipt",),
+            allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: a complete rewrite against an empty checkpoint", a_complete_rewrite_against_an_empty_checkpoint,
+     Expect("problems", required=("delta issued no verification receipt: ValueError: the checkpoint is empty, foreign, mistyped or not contained",),
+            allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: a complete rewrite against a checkpoint head that equals everything",
+     a_complete_rewrite_against_a_checkpoint_head_that_equals_everything,
+     Expect("problems", required=("delta issued no verification receipt: ValueError: the checkpoint is empty, foreign, mistyped or not contained",),
+            allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: the identical Decision replayed under a fresh event and run", the_identical_decision_replayed_under_a_fresh_event_and_run,
+     Expect("refused", required=("replay: this Decision is already recorded",), raises=("DuplicateRecordError",))),
+    ("strict: a backdated entry timestamp", a_backdated_entry_timestamp,
+     Expect("refused", required=("backdated entry",), raises=("ValueError",))),
+    ("strict: an injected failure during append leaves the ledger as it was", an_injected_failure_during_append_leaves_the_ledger_as_it_was,
+     Expect("refused", required=("the store refused the write",), raises=("RuntimeError",))),
+    ("strict: beta refuses lock results recorded for another entity", lock_results_from_another_entity_are_refused_by_beta,
+     Expect("refused", required=("lock result(s) record another entity",), raises=("EntityMismatchError",))),
+    ("strict: str-subclass ids in a context are refused", str_subclass_ids_in_a_context_are_refused,
+     Expect("refused", required=("context field event_id must be a str",), raises=("TypeError",))),
+    ("strict: a context that changes between reads is recorded as its first read",
+     a_context_mapping_that_changes_between_reads_is_recorded_as_first_read, CLEAN),
+    ("strict: a list the caller mutates after recording does not reach the stored Decision",
+     a_list_the_caller_mutates_after_recording_does_not_reach_the_stored_decision, CLEAN),
+    # --- known gaps, stated as facts ---
+    ("strict: GAP, a narrative forged by someone who recomputes the content fingerprint",
+     GAP_a_decisions_narrative_forged_by_someone_who_recomputes_the_content_fingerprint, GAP),
     ("strict: GAP, a Decision cites a lock that is closed", GAP_a_decision_cites_a_lock_that_is_closed, GAP),
+    ("strict: GAP, a legacy lock result with no entity id is accepted for any entity",
+     GAP_a_legacy_lock_result_with_no_entity_id_is_accepted, GAP),
     ("strict: GAP, a KeySet substituted under a copied fingerprint, no recomputation supplied",
      GAP_a_keyset_substituted_under_a_copied_fingerprint_without_a_recomputation, GAP),
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
