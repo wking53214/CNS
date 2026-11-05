@@ -286,18 +286,26 @@ export class GrantTable {
       decider: String(t.decider), requester: String(t.requester), decision_id: verified.envelope.id,
       subject_digest: verified.subject?.digest ?? "", approver, terms_digest: verified.envelope.body.terms_digest, retain_ms: g ? g.retain_ms : 0 };
     if (!this.auditPath) { entry.prev = this.last; this.last = entryDigest(entry); return this.last; }
-    return withLock(this.auditPath, () => {
-      try {
-        entry.prev = lastDigestOf(this.auditPath);       // the REAL last entry, read under the lock
-        const d = entryDigest(entry);
-        const fd = openSync(this.auditPath, "a");
-        try { writeSync(fd, JSON.stringify({ ...entry, digest: d }) + "\n"); fsyncSync(fd); } finally { closeSync(fd); }
-        this.last = d;
-        return d;
-      } catch (e) {
-        if (e instanceof Refused) throw e;
-        throw new Refused("unavailable", `the audit record could not be written, so nothing is permitted (${e && e.code})`);
-      }
-    });
+    this.last = appendAudit(this.auditPath, entry);
+    return this.last;
   }
+}
+
+// Append one entry to a hash-chained audit file, under its lock, chained onto the REAL last entry; returns its digest. The
+// GrantTable writes every permit and refusal this way; a receiver uses it directly for a record that is not a permit
+// decision, such as a start-up refusal (clock_skew, unavailable, config), so a refusal to act leaves evidence in the same
+// chain (RACE-02 I-07b). Refused('unavailable') when the file cannot be written. As Python's grants.append_audit.
+export function appendAudit(path, entry) {
+  return withLock(path, () => {
+    try {
+      entry.prev = lastDigestOf(path);       // the REAL last entry, read under the lock
+      const d = entryDigest(entry);
+      const fd = openSync(path, "a");
+      try { writeSync(fd, JSON.stringify({ ...entry, digest: d }) + "\n"); fsyncSync(fd); } finally { closeSync(fd); }
+      return d;
+    } catch (e) {
+      if (e instanceof Refused) throw e;
+      throw new Refused("unavailable", `the audit record could not be written, so nothing is permitted (${e && e.code})`);
+    }
+  });
 }

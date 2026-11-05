@@ -70,8 +70,8 @@ spacing do not matter; the signature is over the canonical digest.
 6. this `(from, id)` has not been accepted before, from the receiver's ledger (`replayed`)
 
 Messages in a session (request, offer, accept, refuse, decision) must expire, and may claim at most 24 hours of
-life. A receiver keeps each ledger entry only until its message would be refused as expired, so a sender cannot
-make a receiver remember it forever. A manifest carries at most 8 endorsements and 64 capabilities.
+life. A receiver keeps each ledger entry only until its message would be refused as expired (on a shared PostgreSQL ledger,
+`keep_ms` after that, by the database's clock; section 7c), so a sender cannot make a receiver remember it forever. A manifest carries at most 8 endorsements and 64 capabilities.
 
 ## 3. Identity and trust
 
@@ -232,6 +232,24 @@ refusal), refuses a message with more than `Limits.max_nodes` values before the 
 `RateLimiter` (a global bucket that holds against rotating claimed identities, and a per-sender bucket) that is consulted
 before anything else. `wire.loads(max_bytes=)` lets a receiver read less than the 1 MiB ceiling. Measurements and method:
 `docs/interop/bench/preauth-2026-10-31.json`.
+
+## 7c. Clock trust on a shared ledger (receiver-side, not on the wire)
+
+Nothing on the wire changes. This section is what a production-secure receiver does about the clock it judges lifetimes by;
+the requirements, the test that shows each, and the limits are in `SECURITY_PROFILES.md` ("Clock trust in the
+production-secure receiver"). In short:
+
+- A shared PostgreSQL ledger judges a message's lifetime by the **database's** time, and refuses (`expired`) a message that has
+  expired by it before writing anything. It forgets a row `keep_ms` (120 s) after the message expired. *Implemented, tested.*
+- Under `UAI_PROFILE=production` both runners require `--max-clock-skew-ms`, strictly below `keep_ms` (otherwise `config`),
+  read the database's time at start-up and for every decision, and judge every lifetime by it. *Implemented, tested.*
+- The failures are typed with registered codes: `unavailable` (no definite or plausible answer from the database),
+  `clock_skew` (host and database disagree by more than the tolerance), `config` (an invalid or missing setting). They
+  consume nothing, and are audited where a record is reachable and always written as one structured line. *Implemented,
+  tested.*
+- Not proved: more than one host (one machine, one clock), and a database host whose own operating-system clock drifts
+  (the tests make the server answer a wrong time instead). The reference is one database clock; keeping it correct is the
+  operator's duty.
 
 ## 8. What remains open
 

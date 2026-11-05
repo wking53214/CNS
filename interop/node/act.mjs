@@ -11,9 +11,17 @@
 //        [--permit-ledger <sqlite file>] [--lease-ms <ms>] | --decision-only
 //   the shared backend: --ledger-backend postgres --ledger-dsn-env <ENV VAR> [--ledger-prefix <prefix>] in place of --ledger
 //   [--max-clock-skew-ms <ms>]: compare this host's clock with the database's first, and refuse (exit 2, clock_skew) if
-//   they differ by more, since message lifetimes are judged by this host's clock
+//   they differ by more; then judge every lifetime by the DATABASE's time carried on this host's monotonic clock
+//   (pg.mjs TrustedClock), never by this host's wall clock. The tolerance must be strictly below the ledger's retention
+//   window (120 s), or the start is refused as config. Without the flag (the development and test opt-out: UAI_PROFILE
+//   unset) lifetimes are judged by this host's clock, and the PostgreSQL ledger still refuses a message expired by its own
+//   clock.
+//   UAI_PROFILE=production is enforced exactly as act.py enforces it, before any file or table is touched: the postgres
+//   ledger (sqlite is refused as config, exit 2), --policy-backend postgres (which Node does not implement, so host-local
+//   withdrawals and audit are refused as config and only --decision-only can run), and --max-clock-skew-ms (required).
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import * as U from "./uai.mjs";
 import * as G from "./grants.mjs";
 import * as P from "./pg.mjs";
@@ -21,6 +29,31 @@ import * as P from "./pg.mjs";
 const refuse = (code, reason, status = 0) => { console.log(JSON.stringify({ refused: { code, reason } })); return status; };
 const APPROVAL_KEYS = "action,approver,decision_id,expires_at,sig,subject_digest";
 const FLAGS = new Set(["decision-only"]);
+const PRODUCTION = U.cryptoDiagnostics().profile === "production";   // UAI_PROFILE, read once, as in Python
+
+// A refusal that is not a permit decision (config, clock_skew, unavailable): exit 2 at start-up, nothing verified or spent.
+// AUDITED, as act.py's _audit_refusal (RACE-02 I-07b): appended to the --audit file where one is configured (Node has no
+// shared audit chain), and ALWAYS written as one structured line on stderr, {"uai_audit": {...}}, which says whether it was
+// recorded. A failure to record is reported there, never swallowed. `at` is this host's clock: the refusal may be about the
+// database's. stage is "startup", or "decision" when the clock was re-read for the decision and failed.
+function auditRefusal(cfg, code, reason, stage) {
+  const version = Number(cfg["capability-version"]);
+  const entry = { at: Date.now(), outcome: code, stage, reason, action: cfg.action ?? "", capability: String(cfg.capability ?? ""),
+    version: Number.isSafeInteger(version) ? version : 0, requester: String(cfg["acting-for"] ?? ""), decider: "", decision_id: "",
+    subject_digest: "", approver: "", terms_digest: "", grant: "", retain_ms: 0, profile: PRODUCTION ? "production" : "default" };
+  let recorded = null, note = "";
+  try { if (cfg.audit) { mkdirSync(dirname(cfg.audit), { recursive: true }); G.appendAudit(cfg.audit, { ...entry }); recorded = "file"; } }
+  catch (e) { note = `${e && e.name}: ${e && e.message}`; }
+  console.error(JSON.stringify({ uai_audit: { ...entry, recorded, audit_error: note } }));
+}
+function refuseStartup(cfg, code, reason) { auditRefusal(cfg, code, reason, "startup"); return refuse(code, reason, 2); }
+// A trusted clock whose per-decision re-read, if it refuses, is audited before the refusal propagates.
+function auditedClock(cfg, trusted) {
+  const f = trusted.asClock();
+  const sync = f.sync;
+  f.sync = () => { try { return sync(); } catch (e) { if (e instanceof U.Refused) auditRefusal(cfg, e.code, e.reason, "decision"); throw e; } };
+  return f;
+}
 
 function parse(argv) {
   const o = {};
@@ -40,26 +73,42 @@ function main() {
   const backend = cfg["ledger-backend"] ?? "sqlite";
   let ledgerFor;
   if (backend === "postgres") {
-    if (cfg.ledger || cfg["permit-ledger"]) return refuse("config", "--ledger and --permit-ledger name files; the postgres backend takes only --ledger-dsn-env", 2);
-    if (!cfg["ledger-dsn-env"]) return refuse("config", "--ledger-backend postgres needs --ledger-dsn-env, the name of the variable holding the DSN", 2);
+    if (cfg.ledger || cfg["permit-ledger"]) return refuseStartup(cfg, "config", "--ledger and --permit-ledger name files; the postgres backend takes only --ledger-dsn-env");
+    if (!cfg["ledger-dsn-env"]) return refuseStartup(cfg, "config", "--ledger-backend postgres needs --ledger-dsn-env, the name of the variable holding the DSN");
     const dsn = process.env[cfg["ledger-dsn-env"]] ?? "";
-    if (!dsn) return refuse("config", `the environment variable ${cfg["ledger-dsn-env"]} is not set; there is no fallback to a file ledger`, 2);
+    if (!dsn) return refuseStartup(cfg, "config", `the environment variable ${cfg["ledger-dsn-env"]} is not set; there is no fallback to a file ledger`);
     const prefix = cfg["ledger-prefix"] ?? "uai";
     ledgerFor = (kind) => new P.PostgresLedger(dsn, { table: `${prefix}_${kind}` });
   } else if (backend === "sqlite") {
-    if (!cfg.ledger) return refuse("config", "--ledger is required", 2);
-    if (cfg["ledger-dsn-env"] || cfg["ledger-prefix"]) return refuse("config", "--ledger-dsn-env and --ledger-prefix belong to the postgres backend", 2);
+    if (!cfg.ledger) return refuseStartup(cfg, "config", "--ledger is required");
+    if (cfg["ledger-dsn-env"] || cfg["ledger-prefix"]) return refuseStartup(cfg, "config", "--ledger-dsn-env and --ledger-prefix belong to the postgres backend");
     ledgerFor = (kind) => new G.SqliteLedger(kind === "decisions" ? cfg.ledger : (cfg["permit-ledger"] ?? cfg.ledger + ".permits"));
-  } else return refuse("config", "--ledger-backend is sqlite or postgres", 2);
+  } else return refuseStartup(cfg, "config", "--ledger-backend is sqlite or postgres");
   const maxSkew = cfg["max-clock-skew-ms"] === undefined ? null : Number(cfg["max-clock-skew-ms"]);
-  if (maxSkew !== null && (backend !== "postgres" || !Number.isSafeInteger(maxSkew) || maxSkew < 0)) return refuse("config", "--max-clock-skew-ms is a non-negative number of ms, for the postgres backend", 2);
+  if (maxSkew !== null && (backend !== "postgres" || !Number.isSafeInteger(maxSkew) || maxSkew < 0)) return refuseStartup(cfg, "config", "--max-clock-skew-ms is a non-negative number of ms, for the postgres backend");
+  const policyBackend = cfg["policy-backend"] ?? "local";
+  if (policyBackend === "postgres") return refuseStartup(cfg, "config", "the shared PostgreSQL policy and audit store (--policy-backend postgres) is not implemented in the Node receiver; its withdrawals and audit record stay in local files, which the production profile does not accept");
+  if (policyBackend !== "local") return refuseStartup(cfg, "config", "--policy-backend is local or postgres");
+  // The production profile, exactly as act.py applies it: the shared ledger, the shared policy store (which Node does not
+  // have, so a production Node receiver can only run --decision-only), and the clock check, all before any state is created.
+  if (PRODUCTION) {
+    if (backend !== "postgres") return refuseStartup(cfg, "config", "the production profile does not accept a single-host ledger; use --ledger-backend postgres");
+    if (!cfg["decision-only"]) return refuseStartup(cfg, "config", "the production profile does not accept host-local withdrawals and audit; use --policy-backend postgres");
+    if (maxSkew === null) return refuseStartup(cfg, "config", "the production profile judges message lifetimes by the ledger database's clock: give --max-clock-skew-ms (strictly below the ledger's 120000 ms retention window)");
+  }
   const policy = ["grants", "grant-store", "action", "audit"].map((k) => cfg[k]);
   if (cfg["decision-only"]) {
-    if (policy.some(Boolean) || cfg["permit-ledger"]) return refuse("config", "--decision-only cannot be combined with receiver policy options", 2);
+    if (policy.some(Boolean) || cfg["permit-ledger"]) return refuseStartup(cfg, "config", "--decision-only cannot be combined with receiver policy options");
     console.error("act.mjs: --decision-only: a signed decision opens this action by itself; it is NOT receiver-authorized");
   } else if (!policy.every(Boolean)) {
-    return refuse("config", "act.mjs acts only under the receiver's policy: give --grants, --grant-store, --action and --audit, or --decision-only to accept that a signature alone opens the action", 2);
+    return refuseStartup(cfg, "config", "act.mjs acts only under the receiver's policy: give --grants, --grant-store, --action and --audit, or --decision-only to accept that a signature alone opens the action");
   }
+  // The decision ledger and the clock check come first: a refusal here leaves no grant store, permit ledger or job behind.
+  let decisions, clock = Date.now;   // this host's clock, unless the receiver asked for the database's
+  try {
+    decisions = ledgerFor("decisions");
+    if (maxSkew !== null) { const trusted = new P.TrustedClock(decisions, maxSkew, { keepMs: decisions.keepMs }); trusted.sync(); clock = auditedClock(cfg, trusted); }
+  } catch (e) { return e instanceof U.Refused ? refuseStartup(cfg, e.code, e.reason) : refuseStartup(cfg, "config", e.message); }
   const stdin = readFileSync(0);
   let guard;
   try {
@@ -69,13 +118,11 @@ function main() {
         auditPath: cfg.audit, store: new G.GrantStore(cfg["grant-store"]),
         permitLedger: ledgerFor("permits"), permitLeaseMs: Number(cfg["lease-ms"] ?? 30000) });
     }
-    const decisions = ledgerFor("decisions");
-    if (maxSkew !== null) decisions.checkClock(maxSkew);
     guard = new U.RemoteDecisionGuard((a) => { if (!Array.isArray(a) || a.length !== 2 || !a.every((x) => typeof x === "string")) throw new Error("an artifact here is [identity, digest]"); return a; }, {
       actingFor: cfg["acting-for"], capability: [cfg.capability, Number(cfg["capability-version"])],
-      trust: new U.PinnedTrust(cfg.trust.split(",").filter(Boolean)), ledger: decisions,
+      trust: new U.PinnedTrust(cfg.trust.split(",").filter(Boolean)), ledger: decisions, clock,
       grants: table, action: cfg["decision-only"] ? null : cfg.action });
-  } catch (e) { return e instanceof U.Refused ? refuse(e.code, e.reason, 2) : refuse("config", e.message, 2); }
+  } catch (e) { return e instanceof U.Refused ? refuseStartup(cfg, e.code, e.reason) : refuseStartup(cfg, "config", e.message); }
   let job;
   try {
     job = U.strictParseBytes(stdin);

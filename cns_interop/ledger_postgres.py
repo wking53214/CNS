@@ -7,6 +7,10 @@ WHAT IT GUARANTEES, AND WHAT IT NEEDS TO
     granted. A lapsed lease is taken over by the same statement; a live lease or a committed message is `replayed`.
   * Time is the DATABASE's. Every lease is judged by the server's clock; the caller's clock is ignored unless a test
     stand-in is allowed to drive time (`allow_caller_time`). A host with a wrong clock cannot shorten anyone's lease.
+  * A message that has expired by the server's clock is refused (`expired`) by `spend` and `reserve`, never granted. The
+    ledger forgets a row `keep_ms` after its message expired, by the same clock, so a forgotten row is one no spend can
+    take again whatever a receiver's own clock says (RACE-02 R2-C-01: a receiver whose clock lagged by more than `keep_ms`
+    once redeemed an expired decision again after the purge). `TrustedClock` is the receiver-side half of the same rule.
   * Each grant draws a fence from a sequence, so it only ever grows (see fencing.FencedTarget).
   * Failure is refusal. A connection that cannot be made, a statement that times out (`statement_timeout`,
     `lock_timeout`, `tcp_user_timeout`), a dropped link, a server that is down or in recovery: `Refused("unavailable")`.
@@ -31,15 +35,29 @@ from __future__ import annotations
 import re
 import secrets
 import threading
-from typing import Any, Callable, Optional
+import time
+from typing import Any, Callable, Optional, Tuple
 
-from .envelope import Refused
+from .envelope import MAX_INT, Refused, now_ms
 from .ledger import Reservation, _check_lease
 
-__all__ = ["PostgresLedger", "PgGuard"]
+__all__ = ["PostgresLedger", "PgGuard", "TrustedClock"]
 
 _NAME = re.compile(r"\A[a-z_][a-z0-9_]{0,40}\Z")
 _NOW_MS = "(extract(epoch from clock_timestamp()) * 1000)::bigint"
+#: 2000-01-01T00:00:00Z. A database that answers an earlier time (or a negative one) has no clock worth judging lifetimes by.
+_EARLIEST_PLAUSIBLE_MS = 946_684_800_000
+
+
+def _server_time(row: Any) -> int:
+    """The database's answer to the time query as an integer, or Refused('unavailable') when it is not a plausible time in
+    ms: no row, NULL, not an integer (a bool, text, a float), negative, before 2000, or beyond 2**53 - 1. A reference that
+    cannot be read is no reference: the receiver does not act on it, and never treats it as a passing check (R2-C-09)."""
+    value = row[0] if isinstance(row, (tuple, list)) and len(row) == 1 else None
+    if isinstance(value, bool) or not isinstance(value, int) or not _EARLIEST_PLAUSIBLE_MS <= value <= MAX_INT:
+        raise Refused("unavailable", "the ledger database did not answer the time query with a plausible time in ms, so "
+                                     "message lifetimes cannot be judged")
+    return value
 
 
 class PgGuard:
@@ -96,18 +114,15 @@ class PgGuard:
             raise Refused("unavailable", f"the ledger database is unreachable ({type(exc).__name__})") from None
 
     def server_now_ms(self) -> int:
-        """The database's clock, in ms: the clock every lease is judged by."""
-        return int(self._guard(lambda db: db.execute(f"SELECT {_NOW_MS}").fetchone()[0]))
+        """The database's clock, in ms: the clock every lease is judged by. An answer that is missing, malformed or
+        implausible is Refused('unavailable'), never a number and never a crash."""
+        return _server_time(self._guard(lambda db: db.execute(f"SELECT {_NOW_MS}").fetchone()))
 
-    def check_clock(self, max_skew_ms: int, *, clock: Optional[Callable[[], int]] = None) -> int:
-        """Refuse ('clock_skew') when this host's clock and the database's disagree by more than `max_skew_ms`, plus half
-        the round trip, which bounds what the measurement cannot know. A receiver calls this before judging message
-        lifetimes by its own clock, so a host clock set back or forward is caught instead of trusted. Returns the measured
-        skew, host minus server. It compares with ONE reference: a database whose own clock is wrong passes or fails a
-        correct host, so the database's clock must be disciplined too."""
+    def _measure(self, max_skew_ms: int, clock: Optional[Callable[[], int]]) -> Tuple[int, int]:
+        """(skew, server): this host's clock minus the database's, and the database's time. Refuses ('clock_skew') when the
+        skew exceeds `max_skew_ms` plus half the round trip, which bounds what the measurement cannot know."""
         if isinstance(max_skew_ms, bool) or not isinstance(max_skew_ms, int) or max_skew_ms < 0:
             raise ValueError("max_skew_ms is a non-negative integer")
-        from .envelope import now_ms
         read = clock or now_ms
         t0 = read()
         server = self.server_now_ms()
@@ -116,7 +131,14 @@ class PgGuard:
         if abs(skew) > max_skew_ms + slack:
             raise Refused("clock_skew", f"this host's clock differs from the ledger database's by {skew} ms, more than the "
                                         f"{max_skew_ms} ms allowed, so message lifetimes cannot be judged")
-        return skew
+        return skew, server
+
+    def check_clock(self, max_skew_ms: int, *, clock: Optional[Callable[[], int]] = None) -> int:
+        """Refuse ('clock_skew') when this host's clock and the database's disagree by more than `max_skew_ms`, plus half
+        the round trip. A receiver calls this before judging message lifetimes, so a host clock set back or forward is
+        caught instead of trusted. Returns the measured skew, host minus server. It compares with ONE reference: a database
+        whose own clock is wrong passes or fails a correct host, so the database's clock must be disciplined too."""
+        return self._measure(max_skew_ms, clock)[0]
 
     def _require_quorum(self, db: Any) -> None:
         names = db.execute("SHOW synchronous_standby_names").fetchone()[0]
@@ -125,6 +147,44 @@ class PgGuard:
             raise Refused("unavailable", "this ledger was told to require quorum-durable commits and the server is not "
                                          "configured for them (synchronous_standby_names and synchronous_commit)")
         db.execute("SET LOCAL synchronous_commit = 'remote_apply'")
+
+
+class TrustedClock:
+    """The ledger database's time, carried between readings by this host's MONOTONIC clock, for a receiver that judges
+    message lifetimes by the database's time and not by its own wall clock (RACE-02 decision C).
+
+    `sync()` reads the database's time and refuses: `clock_skew` when this host's wall clock and the database's disagree by
+    more than `max_skew_ms` (plus half the round trip); `unavailable` when the database does not answer, times out, or
+    answers with something that is not a plausible time. Construction raises ValueError (the runner's `config`) unless
+    the tolerance is strictly below the ledger's retention window `keep_ms`: the ledger forgets a row `keep_ms` after its
+    message expired, so every receiver within tolerance must already refuse that message as expired, or a forgotten row
+    could be spent again. Calling the clock never touches the database and never raises: it answers the database's time
+    at the last sync plus the monotonic time elapsed since, which a wall clock set back or forward does not move. A
+    `RemoteDecisionGuard` given this clock syncs it on every `authorize`, so the check is per decision, not only at
+    start-up. One reference: a database whose own clock is wrong by more than the tolerance is refused, not followed, and
+    one wrong by less is followed; the database's clock must be disciplined too."""
+
+    def __init__(self, guard: PgGuard, max_skew_ms: int, *, keep_ms: int, wall: Callable[[], int] = now_ms) -> None:
+        if isinstance(max_skew_ms, bool) or not isinstance(max_skew_ms, int) or max_skew_ms < 0:
+            raise ValueError("max_skew_ms is a non-negative integer")
+        if isinstance(keep_ms, bool) or not isinstance(keep_ms, int) or max_skew_ms >= keep_ms:
+            raise ValueError(f"the clock-skew tolerance ({max_skew_ms} ms) must be strictly below the ledger's retention "
+                             f"window keep_ms ({keep_ms} ms): a row the ledger has forgotten must already be expired for "
+                             "every receiver within tolerance")
+        self._guard, self._max, self._wall = guard, max_skew_ms, wall
+        self._server: Optional[int] = None
+        self._mono = 0
+
+    def sync(self) -> int:
+        """Read the database's time now; refuse if it cannot be trusted. Returns the measured skew, host minus server."""
+        skew, server = self._guard._measure(self._max, self._wall)
+        self._server, self._mono = server, time.monotonic_ns()
+        return skew
+
+    def __call__(self) -> int:
+        if self._server is None:
+            raise ValueError("a TrustedClock answers only after sync()")
+        return self._server + (time.monotonic_ns() - self._mono) // 1_000_000
 
 
 class PostgresLedger(PgGuard):
@@ -138,6 +198,11 @@ class PostgresLedger(PgGuard):
         self._t, self._keep = table, keep_ms
         self._caller_time = allow_caller_time
         self._guard(self._create)
+
+    @property
+    def keep_ms(self) -> int:
+        """How long after its expiry a message's row is kept; a receiver's clock-skew tolerance must stay below it."""
+        return self._keep
 
     def _create(self, db: Any) -> None:
         db.execute("SELECT pg_advisory_xact_lock(7243001)")  # two hosts creating the table at once must not race
@@ -156,6 +221,10 @@ class PostgresLedger(PgGuard):
     def _grant(self, db: Any, sender: str, message_id: str, expires_at: Optional[int], state: str, token: Optional[str],
                lease_ms: int, now: Optional[int]) -> Optional[tuple]:
         t_sql, t_args = self._time(now)
+        if not self._caller_time:
+            _server_time(db.execute(f"SELECT {_NOW_MS}").fetchone())  # no usable database time: nothing is judged or written
+        if expires_at is not None and db.execute(f"SELECT {t_sql} >= %s", (*t_args, expires_at)).fetchone()[0]:
+            raise Refused("expired", "the message has expired by the ledger database's clock, so it is not spent")
         db.execute(f"DELETE FROM {self._t} WHERE expires_at IS NOT NULL AND expires_at <= {t_sql} - %s",
                    (*t_args, self._keep))
         lease = f"{t_sql} + %s" if state == "leased" else "NULL"

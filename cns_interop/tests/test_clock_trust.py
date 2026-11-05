@@ -1,12 +1,13 @@
 """Clock trust: a receiver that checks its own clock against the ledger database's before judging message lifetimes.
 
 test_adversarial_r4 asserts the gap: a receiver whose clock is set BACK accepts a decision that has expired. That stays true
-for a receiver that does not check. Shown here: `check_clock` in Python and `checkClock` in Node refuse a host clock that is
-set back or forward against a real PostgreSQL server; and, end to end, the real action runners (act.py and act.mjs) started
-with their process clock set back two hours ACCEPT an expired decision without the check and REFUSE with
-`--max-clock-skew-ms`. The process clock is shifted by a test-only start-up shim (sitecustomize for Python, --import for
-Node), which changes nothing in the programs. Not shown: a database whose own clock is wrong (one reference; it must be
-disciplined), or skew between two machines.
+for a receiver on a single-host ledger that does not check. Shown here: `check_clock` in Python and `checkClock` in Node
+refuse a host clock that is set back or forward against a real PostgreSQL server; and, end to end, the real action runners
+(act.py and act.mjs) started with their process clock set back two hours are REFUSED the expired decision by the PostgreSQL
+ledger (RACE-02 I-06: the ledger judges expiry by the database's clock) and REFUSE to act at all with `--max-clock-skew-ms`.
+The process clock is shifted by a test-only start-up shim (sitecustomize for Python, --import for Node), which changes
+nothing in the programs. A database whose own clock is wrong is covered in test_expiry_purge_replay (pg_testclock moves
+the database's SQL clock); skew between two machines is not shown (one machine).
 """
 
 from __future__ import annotations
@@ -105,12 +106,13 @@ def act(impl: str, home: Path, job: dict, pre: str, dsn: str, *, skew_flag: bool
 
 
 @pytest.mark.parametrize("impl", ["py", "node"])
-def test_a_receiver_with_its_clock_set_back_accepts_an_expired_decision_unless_it_checks_its_clock(cluster, tmp_path, impl):
+def test_a_receiver_with_its_clock_set_back_is_refused_the_expired_decision_by_the_ledger_and_refuses_to_act_when_it_checks_its_clock(cluster, tmp_path, impl):
     job = expired_job()
     # a correct clock refuses the expired decision
     assert act(impl, tmp_path / "ok", job, "t_" + uuid.uuid4().hex[:10], cluster.dsn, skew_flag=False, shift_ms=0)[1] == "refused:expired"
-    # the gap, end to end: the same program with its clock set back two hours redeems it
-    assert act(impl, tmp_path / "gap", job, "t_" + uuid.uuid4().hex[:10], cluster.dsn, skew_flag=False, shift_ms=-2 * HOUR)[1] == "permitted"
+    # the former gap (RACE-02 R2-C-01), end to end: the same program with its clock set back two hours is now refused by the
+    # PostgreSQL ledger, which judges expiry by the database's clock (test_expiry_purge_replay has the full matrix)
+    assert act(impl, tmp_path / "gap", job, "t_" + uuid.uuid4().hex[:10], cluster.dsn, skew_flag=False, shift_ms=-2 * HOUR)[1] == "refused:expired"
     # with the check, the set-back host refuses to act at all, before the job is judged
     assert act(impl, tmp_path / "chk", job, "t_" + uuid.uuid4().hex[:10], cluster.dsn, skew_flag=True, shift_ms=-2 * HOUR) == (2, "refused:clock_skew")
     # and a correct clock with the check still refuses the expired decision for what it is

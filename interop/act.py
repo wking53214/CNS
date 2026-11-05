@@ -30,8 +30,14 @@ processes on any number of hosts share them. The connection string is read from 
 `--ledger-dsn-env`, so it is never on a command line. If the database cannot be reached the program refuses (exit 2): there
 is no fallback to files. Under UAI_PROFILE=production the file backend is refused outright. `--max-clock-skew-ms` makes the
 receiver compare its clock with the database's before reading a job, and refuse (exit 2, code `clock_skew`) when they differ
-by more: the receiver judges message lifetimes by its own clock, so a clock set back would otherwise accept an expired one. `--diagnostics` connects, then
-prints the backends actually in force (the DSN is never printed) and exits without reading a job.
+by more; with it, every message lifetime, grant expiry and approval expiry is judged by the DATABASE's time, carried on this
+host's monotonic clock (`TrustedClock`), not by this host's wall clock, and the tolerance must be strictly below the ledger's
+retention window (120 s), or the start is refused as `config`. Under UAI_PROFILE=production the flag is REQUIRED (refused as
+`config` without it), and the check runs at start-up and again for the decision itself. Without the flag, which only the
+default profile allows (the development and test opt-out: UAI_PROFILE unset), lifetimes are judged by this host's clock; the
+PostgreSQL ledger still refuses a message expired by its own clock. `--diagnostics` connects, then prints the backends and
+the clock source actually in force (the DSN is never printed) and exits without reading a job; it acts on nothing, so it
+runs without the flag and says so.
 
 POLICY BACKEND. By default the grant store (withdrawals) is a SQLite file and the audit record a file, both safe for one
 host. `--policy-backend postgres` (same DSN variable) keeps withdrawals and ONE hash-chained audit record in PostgreSQL for
@@ -51,11 +57,11 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from cns_interop import crypto_backend
 from cns_interop.decision import RemoteDecisionGuard
-from cns_interop.envelope import Refused
+from cns_interop.envelope import Refused, now_ms
 from cns_interop.grants import Approval, GrantStore, GrantTable, load_grants
 from cns_interop.ledger import FileLedger, SqliteLedger
 from cns_interop.policy_postgres import policy_digest
@@ -74,6 +80,58 @@ def _identity_and_digest(artifact: object) -> Tuple[str, str]:
 def _refuse(code: str, reason: str, status: int = 0) -> int:
     print(json.dumps({"refused": {"code": code, "reason": reason}}))
     return status
+
+
+def _audit_refusal(cfg: argparse.Namespace, code: str, reason: str, stage: str) -> None:
+    """Record a refusal that is not a permit decision (`config`, `clock_skew`, `unavailable`, `stale_policy`) so that a
+    refusal to act leaves evidence (RACE-02 I-07b). It is appended to the receiver's audit record where one is configured
+    and reachable (the shared PostgreSQL chain under --policy-backend postgres, else the --audit file), and it is ALWAYS
+    written as one structured line on stderr, `{"uai_audit": {...}}`, which says whether and where it was recorded. A
+    failure to record is reported there, never swallowed. `at` is this host's clock: the refusal may be about the
+    database's. `stage` is `startup` or `decision` (the clock was re-read for the decision and failed)."""
+    entry = {"at": now_ms(), "outcome": code, "stage": stage, "reason": reason, "action": cfg.action or "",
+             "capability": cfg.capability, "version": cfg.capability_version, "requester": cfg.acting_for, "decider": "",
+             "decision_id": "", "subject_digest": "", "approver": "", "terms_digest": "", "grant": "", "retain_ms": 0,
+             "profile": "production" if crypto_backend.production() else "default"}
+    recorded, note = None, ""
+    try:
+        if cfg.policy_backend == "postgres" and cfg.ledger_backend == "postgres" and cfg.ledger_dsn_env:
+            from cns_interop.policy_postgres import PostgresAudit
+            dsn = os.environ.get(cfg.ledger_dsn_env, "")
+            if dsn:
+                PostgresAudit(dsn, prefix=cfg.ledger_prefix + "_audit").append(dict(entry))
+                recorded = "postgres"
+        elif cfg.audit:
+            from cns_interop.grants import append_audit
+            Path(cfg.audit).parent.mkdir(parents=True, exist_ok=True)
+            append_audit(cfg.audit, dict(entry))
+            recorded = "file"
+    except (Refused, OSError, RuntimeError, ValueError) as exc:
+        note = f"{type(exc).__name__}: {exc}"
+    print(json.dumps({"uai_audit": {**entry, "recorded": recorded, "audit_error": note}}, sort_keys=True), file=sys.stderr)
+
+
+def _refuse_startup(cfg: argparse.Namespace, code: str, reason: str) -> int:
+    """A refusal to start: exit 2, nothing verified or spent, and audited."""
+    _audit_refusal(cfg, code, reason, "startup")
+    return _refuse(code, reason, 2)
+
+
+class _AuditedClock:
+    """A trusted clock whose per-decision re-read, if it refuses, is audited before the refusal propagates."""
+
+    def __init__(self, inner: Any, cfg: argparse.Namespace) -> None:
+        self._inner, self._cfg = inner, cfg
+
+    def __call__(self) -> int:
+        return int(self._inner())
+
+    def sync(self) -> int:
+        try:
+            return int(self._inner.sync())
+        except Refused as exc:
+            _audit_refusal(self._cfg, exc.code, exc.reason, "decision")
+            raise
 
 
 def _shared_policy(cfg: argparse.Namespace, grants: object) -> Tuple[object, object, dict]:  # type: ignore[type-arg]
@@ -144,40 +202,50 @@ def main(argv: Optional[List[str]] = None) -> int:
     cfg = p.parse_args(argv)
     shared_policy = cfg.policy_backend == "postgres"
     if shared_policy and (cfg.grant_store or cfg.audit):
-        return _refuse("config", "--policy-backend postgres keeps withdrawals and the audit record in the database; "
-                                 "do not give --grant-store or --audit", 2)
+        return _refuse_startup(cfg, "config", "--policy-backend postgres keeps withdrawals and the audit record in the "
+                                              "database; do not give --grant-store or --audit")
     if crypto_backend.production() and not shared_policy and not cfg.decision_only:
-        return _refuse("config", "the production profile does not accept host-local withdrawals and audit; "
-                                 "use --policy-backend postgres", 2)
+        return _refuse_startup(cfg, "config", "the production profile does not accept host-local withdrawals and audit; "
+                                              "use --policy-backend postgres")
     policy_args = (cfg.grants, cfg.action) if shared_policy else (cfg.grants, cfg.grant_store, cfg.action, cfg.audit)
     if cfg.decision_only:
         if any(policy_args) or cfg.permit_ledger:
-            return _refuse("config", "--decision-only cannot be combined with receiver policy options", 2)
+            return _refuse_startup(cfg, "config", "--decision-only cannot be combined with receiver policy options")
         print("act.py: --decision-only: a signed decision opens this action by itself; it is NOT receiver-authorized",
               file=sys.stderr)
     elif not all(policy_args):
-        return _refuse("config", "act.py acts only under the receiver's policy: give --grants, --grant-store, --action "
-                                 "and --audit, or --decision-only to accept that a signature alone opens the action", 2)
+        return _refuse_startup(cfg, "config", "act.py acts only under the receiver's policy: give --grants, --grant-store, "
+                                              "--action and --audit, or --decision-only to accept that a signature alone "
+                                              "opens the action")
     if cfg.max_clock_skew_ms is not None and (cfg.ledger_backend != "postgres" or cfg.max_clock_skew_ms < 0):
-        return _refuse("config", "--max-clock-skew-ms is a non-negative number of ms, for the postgres backend", 2)
+        return _refuse_startup(cfg, "config", "--max-clock-skew-ms is a non-negative number of ms, for the postgres backend")
+    if crypto_backend.production() and cfg.max_clock_skew_ms is None and not cfg.diagnostics:
+        return _refuse_startup(cfg, "config", "the production profile judges message lifetimes by the ledger database's "
+                                              "clock: give --max-clock-skew-ms (strictly below the ledger's 120000 ms "
+                                              "retention window)")
+    clock = now_ms  # this host's clock, unless the receiver asked for the database's
     try:
         decisions, permits = _ledgers(cfg)
         if cfg.max_clock_skew_ms is not None:
-            decisions.check_clock(cfg.max_clock_skew_ms)  # type: ignore[attr-defined]
+            from cns_interop.ledger_postgres import TrustedClock
+            clock = TrustedClock(decisions, cfg.max_clock_skew_ms, keep_ms=decisions.keep_ms)  # type: ignore[attr-defined,assignment]
+            clock.sync()  # type: ignore[attr-defined]
     except (ValueError, OSError, RuntimeError) as exc:
-        return _refuse("config", str(exc), 2)
+        return _refuse_startup(cfg, "config", str(exc))
     except Refused as exc:
-        return _refuse(exc.code, exc.reason, 2)
+        return _refuse_startup(cfg, exc.code, exc.reason)
     if cfg.diagnostics:
         try:
             crypto = crypto_backend.diagnostics()
         except RuntimeError as exc:
-            return _refuse("config", str(exc), 2)
+            return _refuse_startup(cfg, "config", str(exc))
         print(json.dumps({"ledger_backend": cfg.ledger_backend, "decision_ledger": type(decisions).__name__,
                           "permit_ledger": type(permits).__name__ if permits is not None else None,
                           "mode": "decision-only" if cfg.decision_only else "receiver-policy",
                           "policy_backend": "none" if cfg.decision_only else cfg.policy_backend,
-                          "sync_replication_required": bool(cfg.require_sync_replication), "crypto": crypto}, sort_keys=True))
+                          "sync_replication_required": bool(cfg.require_sync_replication), "crypto": crypto,
+                          "clock": ({"source": "database", "max_skew_ms": cfg.max_clock_skew_ms}
+                                    if cfg.max_clock_skew_ms is not None else {"source": "host"})}, sort_keys=True))
         return 0
     stdin = sys.stdin.read()
     try:
@@ -199,11 +267,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                                     capability=(cfg.capability, cfg.capability_version),
                                     trust=TrustPolicy(pinned=frozenset(filter(None, cfg.trust.split(",")))),
                                     ledger=decisions, grants=table,
+                                    clock=_AuditedClock(clock, cfg) if hasattr(clock, "sync") else clock,
                                     action=None if cfg.decision_only else cfg.action)
     except (ValueError, OSError) as exc:
-        return _refuse("config", str(exc), 2)
+        return _refuse_startup(cfg, "config", str(exc))
     except Refused as exc:
-        return _refuse(exc.code, exc.reason, 2)
+        return _refuse_startup(cfg, exc.code, exc.reason)
     try:
         job = loads(stdin)  # as strict as an envelope: a repeated key, a float or NaN, or over 1 MiB is refused
         needed = {"decision", "terms", "accept_digest", "artifact"}
