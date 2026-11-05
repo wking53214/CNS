@@ -6,7 +6,8 @@
 # chains/spine_run.py    interconnected alpha, zeta, beta and delta run for real, then checked at their seams by
 #                        cns_composition.spine_trace, leniently (seven scenarios) and strictly, from each stage's content with a
 #                        pipeline context (thirty-six: five checks that hold, twenty-eight real attacks each naming the problem that should
-#                        refuse it, and three gaps the check does not close, recorded as facts).
+#                        refuse it, and three gaps the check does not close, recorded as facts). Each scenario declares an Expect
+#                        (chains/spine_oracle.py): required problems, the only extras allowed, and whether state may change.
 # chains/ecology_answer.py  an Ecology answer record judged by DIT's gates through cns_composition.super_gate, the
 #                        verdicts bound to the answer text and tied to Ecology's record by its answer hash. Six scenarios, one of
 #                        them a DIT gate left out of the request, which cns_composition.super_gate refuses as a breach.

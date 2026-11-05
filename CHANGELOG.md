@@ -40,8 +40,12 @@ not a release.
   after a newer one, a KeySet digest of another KeySet), each stating the problem the boundary that should refuse it
   must name; one that holds the four connectors' own copies of the context check to `context_problems`; and three
   marked GAP that record what the strict check does not catch (authorship; a narrative rewritten under a valid
-  five-field fingerprint; a cited lock that is closed) as facts that go red the day they close. A scenario that
-  crashes is reported as that scenario failing and the rest still run.
+  five-field fingerprint; a cited lock that is closed) as facts that go red the day they close. Every scenario
+  declares an `Expect` (`chains/spine_oracle.py`): the problems it requires, the only extras it may add, texts it
+  forbids, and whether it is clean, a problem, a refusal or a gap. An unlisted extra problem, an unexpected success,
+  a crash that is not a declared refusal, or a refusal that changed the ledger it guarded fails the scenario (the
+  earlier oracle passed any scenario one of whose problems held the expected text). The oracle is tested in
+  `tests/test_spine_oracle.py`.
 - `strict_problems` and `strict_root` take `chain_verified`, the answer of delta's `verify_chain_integrity` and
   `verify_against` for the ledger the entry came from; without it the entry is reported as not shown to belong to a
   verified chain. They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across

@@ -13,10 +13,12 @@ Two groups. The first seven are the LENIENT check (`spine_trace.problems`), whic
 off the objects. The rest are STRICT: each stage's content is built with a pipeline context and the lineage digest
 of the stage before it, and `spine_trace.strict_problems` recomputes every digest from those contents. They run the
 real objects through the real attacks (another subject, another event, another run, an altered stage, a stale
-replay, a repeat, a truncated ledger, a missing context, a fabricated run) and state the problem the boundary that
-should refuse each one must name. A scenario passes when one of its problems contains that text, so an extra,
-unrelated problem does not fail it. Two scenarios, marked GAP, record what the strict check does NOT catch as facts
-that expect no problem: they go red the day the gap closes and are then updated on purpose.
+replay, a repeat, a truncated ledger, a missing context, a fabricated run) and state, as an `Expect` (see
+`spine_oracle.py`), the problems the boundary that should refuse each one must name and the only extras it may add.
+A scenario fails if a required problem is missing, if an unlisted problem appears, if it returns nothing when it
+should be refused, if it crashes without declaring it, or if a refusal changed the state it guarded. Three scenarios,
+marked GAP, record what the strict check does NOT catch as facts that expect no problem: they go red the day the
+gap closes and are then updated on purpose.
 """
 
 from __future__ import annotations
@@ -25,6 +27,9 @@ import dataclasses
 import sys
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
+
+from spine_oracle import Expect, Expectation, judge
+from spine_oracle import refused as _refused
 
 import alpha.cns_connector as alpha_cns
 import beta.cns_connector as beta_cns
@@ -38,7 +43,7 @@ from beta import (
 from cns.gate import subject_digest
 from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, SpineRecord, context_problems, problems, root, strict_problems, strict_root)
-from delta import DecisionLedger, DuplicateRecordError
+from delta import DecisionLedger
 from zeta import Combination, LockEvaluator, LockRegistry, LockSpec
 
 T0 = datetime(2026, 10, 1, 8, 0, 0)
@@ -169,13 +174,14 @@ def check(parts) -> List[str]:
     return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=ledger_verified(parts))
 
 
-def refused(thunk: Callable[[], Any]) -> List[str]:
-    """What a boundary refused, as a problem string, or nothing if it let the call through."""
-    try:
-        thunk()
-    except (ValueError, TypeError, StaleLockResultError, KeySetMismatchError) as exc:
-        return [f"{type(exc).__name__}: {exc}"]
-    return []
+def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None) -> List[str]:
+    """What a boundary refused, as a problem string, or nothing if it let the call through. `state` is compared before
+    and after: a refusal that changed it is a second problem (see spine_oracle.refused)."""
+    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError), state=state)
+
+
+def ledger_state(ledger: DecisionLedger) -> Callable[[], Any]:
+    return lambda: (len(ledger.entries), ledger.chain_head)
 
 
 def strict_clean(vitals) -> List[str]:
@@ -265,7 +271,8 @@ def contradictory_basis_that_skips_construction_is_refused_by_delta() -> List[st
     for f in dataclasses.fields(Decision):
         object.__setattr__(bad, f.name, getattr(p["decision"], f.name))
     object.__setattr__(bad, "confidence_basis", "absence")
-    return refused(lambda: DecisionLedger().append(bad, context=CTX))
+    ledger = DecisionLedger()
+    return refused(lambda: ledger.append(bad, context=CTX), ledger_state(ledger))
 
 
 def stale_replay_is_refused_by_beta() -> List[str]:
@@ -278,11 +285,7 @@ def stale_replay_is_refused_by_beta() -> List[str]:
 
 def the_same_decision_is_recorded_twice_in_one_run() -> List[str]:
     p = stages(SICK)
-    try:
-        p["ledger"].append(p["decision"], context=CTX)
-    except DuplicateRecordError as exc:
-        return [f"DuplicateRecordError: {exc}"]
-    return []
+    return refused(lambda: p["ledger"].append(p["decision"], context=CTX), ledger_state(p["ledger"]))
 
 
 def a_stage_carries_no_context() -> List[str]:
@@ -424,19 +427,20 @@ def nobody_asked_delta_whether_the_chain_verifies() -> List[str]:
 
 def an_unbound_append_to_a_ledger_that_requires_a_context() -> List[str]:
     p = stages(SICK)
-    return refused(lambda: DecisionLedger(require_context=True).append(p["decision"]))
+    ledger = DecisionLedger(require_context=True)
+    return refused(lambda: ledger.append(p["decision"]), ledger_state(ledger))
 
 
 def a_second_decision_for_an_event_already_recorded() -> List[str]:
     p = stages(SICK)
     other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
-    return refused(lambda: p["ledger"].append(other, context={**CTX, "run_id": "run_9"}))
+    return refused(lambda: p["ledger"].append(other, context={**CTX, "run_id": "run_9"}), ledger_state(p["ledger"]))
 
 
 def one_run_spanning_two_events() -> List[str]:
     p = stages(SICK)
     other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
-    return refused(lambda: p["ledger"].append(other, context={**CTX, "event_id": "event_9"}))
+    return refused(lambda: p["ledger"].append(other, context={**CTX, "event_id": "event_9"}), ledger_state(p["ledger"]))
 
 
 def an_older_decision_after_a_newer_one_for_the_same_entity() -> List[str]:
@@ -445,13 +449,15 @@ def an_older_decision_after_a_newer_one_for_the_same_entity() -> List[str]:
     keys = observe(WELL)
     older = engine.decide("patient_1", keys, LockEvaluator(locks).evaluate_all("patient_1", keys, T0 - timedelta(days=1)),
                           T0 - timedelta(days=1))
-    return refused(lambda: p["ledger"].append(older, context={**CTX, "run_id": "run_9", "event_id": "event_9"}))
+    return refused(lambda: p["ledger"].append(older, context={**CTX, "run_id": "run_9", "event_id": "event_9"}),
+                   ledger_state(p["ledger"]))
 
 
 def an_append_onto_a_head_that_does_not_match() -> List[str]:
     p = stages(SICK)
     p["ledger"].entries.pop()
-    return refused(lambda: p["ledger"].append(p["decision"], context={**CTX, "run_id": "run_9", "event_id": "event_9"}))
+    return refused(lambda: p["ledger"].append(p["decision"], context={**CTX, "run_id": "run_9", "event_id": "event_9"}),
+                   ledger_state(p["ledger"]))
 
 
 def GAP_a_decisions_narrative_forged_with_a_valid_fingerprint() -> List[str]:
@@ -510,98 +516,152 @@ def connectors_agree_with_cns_on_what_a_context_is() -> List[str]:
             try:
                 validate(case)
                 accepts = True
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 accepts = False
             if accepts != cns_accepts:
                 out.append(f"{name} {'accepts' if accepts else 'refuses'} {case!r} and CNS {'accepts' if cns_accepts else 'refuses'} it")
     return out
 
 
-#: (name, how to run it, text every problem must contain, or "" if there must be none)
-SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
-    ("a sick patient, end to end", lambda: clean(SICK), ""),
-    ("a well patient, end to end", lambda: clean(WELL), ""),
-    ("different runs have different roots", two_runs_have_different_roots, ""),
-    ("the Decision cites a Key alpha never detected", cites_a_key_alpha_never_saw, "did not detect as present: ghost_key"),
-    ("the Decision cites a Lock zeta never evaluated", cites_a_lock_zeta_never_evaluated, "never evaluated: invented_lock"),
-    ("the ledger recorded a different Decision", ledger_recorded_another_decision, "drifted apart"),
-    ("the entity differs between the run and the Decision", wrong_entity, "the Decision is about 'patient_1'"),
+CLEAN = Expect("clean")
+GAP = Expect("gap")
+CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
+#: Per scenario: (name, how to run it, what it must produce). A plain string is the older, looser form (see spine_oracle).
+SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
+    ("a sick patient, end to end", lambda: clean(SICK), CLEAN),
+    ("a well patient, end to end", lambda: clean(WELL), CLEAN),
+    ("different runs have different roots", two_runs_have_different_roots, CLEAN),
+    # lenient extras: the Decision was swapped after delta recorded the original, so the two digests also diverge
+    ("the Decision cites a Key alpha never detected", cites_a_key_alpha_never_saw,
+     Expect("problems", required=("did not detect as present: ghost_key",),
+            allowed_extra=("beta's digest of the Decision differs from delta's digest",))),
+    ("the Decision cites a Lock zeta never evaluated", cites_a_lock_zeta_never_evaluated,
+     Expect("problems", required=("never evaluated: invented_lock",),
+            allowed_extra=("beta's digest of the Decision differs from delta's digest",))),
+    ("the ledger recorded a different Decision", ledger_recorded_another_decision,
+     Expect("problems", required=("beta's digest of the Decision differs from delta's digest", "drifted apart"))),
+    ("the entity differs between the run and the Decision", wrong_entity,
+     Expect("problems", required=("the run is about 'patient_2' but the Decision is about 'patient_1'",))),
     # --- strict ---
-    ("strict: a sick patient, end to end", lambda: strict_clean(SICK), ""),
-    ("strict: a well patient, end to end", lambda: strict_clean(WELL), ""),
-    ("strict: the same readings in two runs have different roots", strict_roots_differ_by_run, ""),
-    ("strict: a strict root is never a lenient root", strict_root_is_not_a_lenient_root, ""),
-    ("strict: the four connectors agree with CNS on the context", connectors_agree_with_cns_on_what_a_context_is, ""),
+    ("strict: a sick patient, end to end", lambda: strict_clean(SICK), CLEAN),
+    ("strict: a well patient, end to end", lambda: strict_clean(WELL), CLEAN),
+    ("strict: the same readings in two runs have different roots", strict_roots_differ_by_run, CLEAN),
+    ("strict: a strict root is never a lenient root", strict_root_is_not_a_lenient_root, CLEAN),
+    ("strict: the four connectors agree with CNS on the context", connectors_agree_with_cns_on_what_a_context_is, CLEAN),
+    # extras: beta's digests were taken over the original results, and each lock result also names the wrong entity itself
     ("strict: zeta's results are bound to another subject", subject_substituted_between_alpha_and_zeta,
-     "is bound to a different run than alpha's: entity_id 'patient_2' vs 'patient_1'"),
+     Expect("problems",
+            required=("zeta lock sepsis_lock is bound to a different run than alpha's: entity_id 'patient_2' vs 'patient_1'",
+                      "zeta lock abnormal_vitals_lock is bound to a different run than alpha's: entity_id 'patient_2' vs 'patient_1'"),
+            allowed_extra=("beta's Decision rests on a different lock result than zeta produced for",
+                           "records entity 'patient_2' but the run is about 'patient_1'"))),
+    # extra: delta's decision_digest named beta's original content, which the substituted beta no longer matches
     ("strict: beta's Decision is bound to another event", event_substituted_between_zeta_and_beta,
-     "beta is bound to a different run than alpha's: event_id 'event_2' vs 'event_1'"),
+     Expect("problems", required=("beta is bound to a different run than alpha's: event_id 'event_2' vs 'event_1'",),
+            allowed_extra=("delta recorded a Decision other than the one beta produced",))),
+    # extras: beta and delta of run 2 also rest on run 2's KeySet, lock results and ledger entry, all consequences of the swap
     ("strict: alpha and zeta from one run, beta and delta from another", alpha_and_zeta_from_one_run_beta_and_delta_from_another,
-     "is bound to a different run than alpha's: run_id 'run_2' vs 'run_1'"),
+     Expect("problems",
+            required=("beta is bound to a different run than alpha's: run_id 'run_2' vs 'run_1'",
+                      "delta is bound to a different run than alpha's: run_id 'run_2' vs 'run_1'"),
+            allowed_extra=("beta's Decision was made from a different KeySet than alpha produced",
+                           "beta's Decision rests on a different lock result than zeta produced for",
+                           "delta's entry was recorded under run_id 'run_2' but the run is 'run_1'", CHAIN_NOT_SHOWN))),
+    # extras: beta's Decision was made from the real KeySet, so it also disagrees with the altered alpha
     ("strict: the KeySet is altered after zeta evaluated it", keyset_altered_after_zeta_evaluated_it,
-     "was evaluated from a different KeySet than alpha produced"),
+     Expect("problems",
+            required=("zeta lock sepsis_lock was evaluated from a different KeySet than alpha produced",
+                      "zeta lock abnormal_vitals_lock was evaluated from a different KeySet than alpha produced",
+                      "(its recorded KeySet fingerprint differs from alpha's)"),
+            allowed_extra=("beta's Decision was made from a different KeySet than alpha produced",
+                           "the Decision cites key(s) alpha did not list as present"))),
+    # extra: the swapped-in result came from the well run, so zeta's own KeySet check also fires on that lock
     ("strict: a lock result is altered after beta decided on it", lock_result_altered_after_beta_decided_on_it,
-     "rests on a different lock result than zeta produced for sepsis_lock"),
+     Expect("problems", required=("beta's Decision rests on a different lock result than zeta produced for sepsis_lock",),
+            allowed_extra=("zeta lock sepsis_lock was evaluated from a different KeySet than alpha produced",))),
     ("strict: the Decision is altered after delta recorded it", decision_altered_after_delta_recorded_it,
-     "delta recorded a Decision other than the one beta produced"),
+     Expect("problems", required=("delta recorded a Decision other than the one beta produced",
+                                  "the Decision delta recorded differs from beta's in: instructions"))),
     ("strict: beta is given another lock state's results", beta_decided_from_another_lock_result,
-     "evaluated from a different KeySet than the one given"),
+     Expect("refused", required=("evaluated from a different KeySet than the one given",), raises=("KeySetMismatchError",))),
+    # extra: the foreign entry is not a member of the ledger the run holds
     ("strict: delta recorded another Decision, quoting beta's digest", delta_recorded_another_decision,
-     "the Decision delta recorded differs from beta's in:"),
+     Expect("problems", required=("the Decision delta recorded differs from beta's in:",), allowed_extra=(CHAIN_NOT_SHOWN,))),
     ("strict: beta refuses a Decision whose basis contradicts its keys", contradictory_basis_is_refused_by_beta,
-     "confidence_basis is 'absence' but triggered_by_keys implies 'keys'"),
+     Expect("refused", required=("confidence_basis is 'absence' but triggered_by_keys implies 'keys'",), raises=("ValueError",))),
     ("strict: delta refuses a contradictory Decision that skipped construction",
-     contradictory_basis_that_skips_construction_is_refused_by_delta, "triggered_by_keys implies 'keys'"),
+     contradictory_basis_that_skips_construction_is_refused_by_delta,
+     Expect("refused", required=("confidence_basis is 'absence' but triggered_by_keys implies 'keys'",), raises=("ValueError",))),
     ("strict: beta refuses to decide from a stale replay", stale_replay_is_refused_by_beta,
-     "zeta refused the observation behind lock result(s) as stale"),
+     Expect("refused", required=("zeta refused the observation behind lock result(s) as stale",),
+            raises=("StaleLockResultError",))),
     ("strict: the same Decision recorded twice in one run", the_same_decision_is_recorded_twice_in_one_run,
-     "already recorded a Decision"),
-    ("strict: a stage carries no context", a_stage_carries_no_context, "delta carries no context"),
+     Expect("refused", required=("already recorded a Decision",), raises=("DuplicateRecordError",))),
+    # extra: a missing context also leaves out the decision_digest that the context carries
+    ("strict: a stage carries no context", a_stage_carries_no_context,
+     Expect("problems", required=("delta carries no context",), allowed_extra=("delta names no decision_digest",))),
+    # extras: invented contents disagree with themselves in every way a real run would not (no fingerprint, no newly
+    # triggered locks, keys the invented alpha does not hold, a Decision that differs from the entry, an unverified chain)
     ("strict: a run fabricated with digests that do not chain", a_run_fabricated_with_digests_that_do_not_chain,
-     "evaluated from a different KeySet"),
+     Expect("problems",
+            required=("zeta lock any_lock was evaluated from a different KeySet than alpha produced",
+                      "alpha carries no keyset_fingerprint", CHAIN_NOT_SHOWN),
+            allowed_extra=("beta's Decision was made from a different KeySet than alpha produced",
+                           "beta's Decision rests on a different lock result than zeta produced for any_lock",
+                           "delta recorded a Decision other than the one beta produced",
+                           "the Decision delta recorded differs from beta's in:",
+                           "alpha lists present_names that its own keys do not hold as present: anything",
+                           "beta's Decision lists no newly_triggered_locks"))),
     ("strict: a ledger truncated with its head reset", a_ledger_truncated_with_its_head_reset,
-     "does not match the checkpoint held outside it"),
-    ("strict: a lock result zeta refused as stale is rested on", a_stale_lock_result_is_rested_on, "was refused as stale"),
+     Expect("problems", required=("the ledger does not match the checkpoint held outside it",))),
+    ("strict: a lock result zeta refused as stale is rested on", a_stale_lock_result_is_rested_on,
+     Expect("problems", required=("zeta lock sepsis_lock was refused as stale", "zeta lock abnormal_vitals_lock was refused as stale"))),
     ("strict: a lock result is filed under another lock's id", a_lock_result_filed_under_another_locks_id,
-     "carries lock_id 'abnormal_vitals_lock'"),
+     Expect("problems", required=("zeta lock sepsis_lock carries lock_id 'abnormal_vitals_lock'",
+                                  "zeta lock abnormal_vitals_lock carries lock_id 'sepsis_lock'"))),
     ("strict: alpha lists a present key its own keys do not hold", alpha_lists_a_key_it_does_not_hold_as_present,
-     "alpha lists present_names that its own keys do not hold as present: invented_key"),
+     Expect("problems",
+            required=("alpha lists present_names that its own keys do not hold as present: invented_key",))),
     ("strict: zeta and beta named the digest of another KeySet", zeta_and_beta_named_the_digest_of_another_keyset,
-     "(its recorded KeySet fingerprint differs from alpha's)"),
+     Expect("problems",
+            required=("zeta lock sepsis_lock was evaluated from a different KeySet than alpha produced (its recorded KeySet fingerprint differs",
+                      "zeta lock abnormal_vitals_lock was evaluated from a different KeySet than alpha produced (its recorded KeySet fingerprint differs",
+                      "beta's Decision was made from a different KeySet than alpha produced (its recorded KeySet fingerprint differs"))),
+    # The next four share one problem: CNS has one question for the ledger ("was the chain shown to verify"), so only the
+    # scenario itself (and ledger_verified, which compares the whole entry) tells the attacks apart.
     ("strict: delta's content names a hash the ledger never wrote", delta_content_names_a_hash_the_ledger_never_wrote,
-     "the ledger chain was not shown to verify"),
+     Expect("problems", required=(CHAIN_NOT_SHOWN,))),
     ("strict: delta content of another Decision under the ledger's hashes", delta_content_of_another_decision_under_the_ledgers_hashes,
-     "the ledger chain was not shown to verify"),
+     Expect("problems", required=(CHAIN_NOT_SHOWN,))),
     ("strict: the ledger chain is broken after the run", the_ledger_chain_is_broken_after_the_run,
-     "the ledger chain was not shown to verify"),
+     Expect("problems", required=(CHAIN_NOT_SHOWN,))),
     ("strict: nobody asked delta whether the chain verifies", nobody_asked_delta_whether_the_chain_verifies,
-     "the ledger chain was not shown to verify"),
+     Expect("problems", required=(CHAIN_NOT_SHOWN,))),
     ("strict: an unbound append to a ledger that requires a context", an_unbound_append_to_a_ledger_that_requires_a_context,
-     "requires a context"),
+     Expect("refused", required=("requires a context",), raises=("ContextRequiredError",))),
     ("strict: a second Decision for an event already recorded", a_second_decision_for_an_event_already_recorded,
-     "already has a Decision recorded under run"),
-    ("strict: one run spanning two events", one_run_spanning_two_events, "belongs to event 'event_1', not 'event_9'"),
+     Expect("refused", required=("already has a Decision recorded under run",), raises=("DuplicateRecordError",))),
+    ("strict: one run spanning two events", one_run_spanning_two_events,
+     Expect("refused", required=("belongs to event 'event_1', not 'event_9'",), raises=("ValueError",))),
     ("strict: an older Decision after a newer one for the same entity", an_older_decision_after_a_newer_one_for_the_same_entity,
-     "older than the newest Decision recorded for 'patient_1'"),
-    ("strict: an append onto a head that does not match", an_append_onto_a_head_that_does_not_match, "head does not match"),
-    ("strict: GAP, a Decision's narrative forged under a valid fingerprint", GAP_a_decisions_narrative_forged_with_a_valid_fingerprint, ""),
-    ("strict: GAP, a Decision cites a lock that is closed", GAP_a_decision_cites_a_lock_that_is_closed, ""),
+     Expect("refused", required=("older than the newest Decision recorded for 'patient_1'",), raises=("StaleDecisionError",))),
+    ("strict: an append onto a head that does not match", an_append_onto_a_head_that_does_not_match,
+     Expect("refused", required=("head does not match",), raises=("LedgerCorruptError",))),
+    ("strict: GAP, a Decision's narrative forged under a valid fingerprint", GAP_a_decisions_narrative_forged_with_a_valid_fingerprint, GAP),
+    ("strict: GAP, a Decision cites a lock that is closed", GAP_a_decision_cites_a_lock_that_is_closed, GAP),
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
-     GAP_contents_fabricated_by_someone_who_recomputes_the_digests, ""),
+     GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
 ]
 
 
 def main() -> int:
     wrong: List[str] = []
     for name, scenario, expect in SCENARIOS:
-        try:
-            found = scenario()
-        except Exception as exc:  # noqa: BLE001 - a scenario that crashes failed; the rest must still report
-            found = [f"the scenario raised {type(exc).__name__}: {exc}"]
-        ok = (not found) if not expect else any(expect in p for p in found)
+        found, why = judge(expect, scenario)
+        ok = not why
         print(f"{'ok  ' if ok else 'FAIL'} {name:52} -> {'no problems' if not found else str(len(found)) + ' named'}")
         if not ok:
-            wrong.append(f"{name}: wanted {'no problems' if not expect else expect!r}, got {found}")
+            wrong.append(f"{name}: {'; '.join(why)}; got {found}")
     for line in wrong:
         print(f"spine: {line}", file=sys.stderr)
     return 1 if wrong else 0
