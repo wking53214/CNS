@@ -578,7 +578,7 @@ def refused_with(parts, chain, text):
 def test_a_valid_receipt_is_accepted_whatever_the_ledgers_size_when_it_fits_itself():
     parts = build()
     assert problems_of(parts, chain=receipt_for(parts, index=2, ledger_length=5, checkpoint_length=3,
-                                                ledger_head="a" * 64, checkpoint_head="b" * 64)) == []
+                                                ledger_head="a" * 64, checkpoint_head="2" * 64)) == []
     assert problems_of(parts, chain=receipt_for(parts, index=0, ledger_length=1, checkpoint_length=1)) == []
 
 
@@ -712,7 +712,7 @@ def test_the_receipt_binds_the_root_to_nothing_it_does_not_already_hold():
     parts = build()
     one = root_of(parts)
     two = root_of(parts, chain=receipt_for(parts, ledger_length=7, index=1, checkpoint_length=2, ledger_head="a" * 64,
-                                           checkpoint_head="b" * 64))
+                                           checkpoint_head="2" * 64))
     assert one == two
 
 
@@ -1015,7 +1015,6 @@ def test_an_origin_observed_at_the_instant_of_the_decision_is_clean():
     ({**ORIGIN, "source": ""}, "alpha origin source must be non-empty"),
     ({**ORIGIN, "producer": 7}, "alpha origin producer must be a str"),
     ({**ORIGIN, "transformation": None}, "alpha origin transformation must be a str"),
-    ({**ORIGIN, "collection_context": _Id("bedside")}, "alpha origin collection_context must be a str"),
     ({**ORIGIN, "observed_at": "yesterday evening"}, "not ISO 8601 text"),
     ({**ORIGIN, "observed_at": "2026-13-45T99:00:00"}, "not ISO 8601 text"),
     ({**ORIGIN, "observed_at": 1767268800}, "alpha origin observed_at must be a str"),
@@ -1023,6 +1022,20 @@ def test_an_origin_observed_at_the_instant_of_the_decision_is_clean():
 def test_a_malformed_origin_is_a_named_problem(origin, text):
     parts = with_origin(origin)
     has(problems_of(parts), text)
+    with pytest.raises(ValueError, match="does not hold together"):
+        root_of(parts)
+
+
+def test_a_str_subclass_in_an_origin_is_refused_by_the_digest_and_named_by_the_check():
+    """Moved from test_a_malformed_origin_is_a_named_problem: `subject_digest` now refuses a str subclass, so the relink the
+    parametrised test performs raises; the strict check, given the unlinked content, names both problems."""
+    with pytest.raises(TypeError, match="_Id"):
+        with_origin({**ORIGIN, "collection_context": _Id("bedside")})
+    parts = build()
+    parts["alpha"]["origin"] = {**ORIGIN, "collection_context": _Id("bedside")}
+    found = problems_of(parts)
+    has(found, "alpha origin collection_context must be a str")
+    has(found, "cannot bind a verdict to _Id")
     with pytest.raises(ValueError, match="does not hold together"):
         root_of(parts)
 
@@ -1145,3 +1158,232 @@ def test_the_lenient_check_is_unchanged_for_a_legacy_decision():
         open_locks=("l",), decision_entity_id="p1", decision_keys=("k",), decision_locks=("l",), decision_digest=d,
         ledger_decision_digest=d, entry_digest="3" * 64)
     assert problems(record) == [] and len(root(record)) == 64
+
+
+# --- F-04: a checkpoint held independently of the producer (macg2 A4, and the A1 gap) --------------------------------
+
+HONEST_HEAD = "2" * 64  # what build()'s delta content names as its immutable_hash, and so the honest checkpoint's head
+FRESH_HEAD = "9" * 64   # the head of a tampered, rechained ledger: a checkpoint taken fresh from the tampered ledger
+
+
+def held_problems(parts, chain, held):
+    return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=chain, held_checkpoint=held)
+
+
+def held_root(parts, chain, held):
+    return strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=chain, held_checkpoint=held)
+
+
+def test_a_receipt_whose_checkpoint_is_the_one_held_outside_is_clean_for_a_pair_and_for_a_mapping():
+    parts = build()
+    chain = receipt_for(parts)
+    assert held_problems(parts, chain, (1, HONEST_HEAD)) == []
+    assert held_problems(parts, chain, [1, HONEST_HEAD]) == []
+    assert held_problems(parts, chain, {"length": 1, "head": HONEST_HEAD}) == []
+    assert len(held_root(parts, chain, (1, HONEST_HEAD))) == 64
+
+
+def test_a_tampered_and_rechained_ledger_with_a_fresh_checkpoint_is_refused_when_the_honest_checkpoint_is_held():
+    # macg2 A4: entry 0 rewritten, the chain recomputed, a fresh checkpoint taken of the tampered ledger. Delta issues a
+    # receipt for it, and it is self-consistent, so without the held checkpoint nothing here can tell.
+    parts = build()
+    parts["delta"]["immutable_hash"] = FRESH_HEAD  # the tampered entry's own hash; its content digests are rebuilt to match
+    tampered = receipt_for(parts)
+    assert problems_of(parts, chain=tampered) == []  # the gap, stated: no held checkpoint, no detection
+    found = held_problems(parts, tampered, (1, HONEST_HEAD))
+    has(found, "the ledger receipt's checkpoint_head is not the checkpoint held outside the ledger")
+    with pytest.raises(ValueError, match="checkpoint held outside the ledger"):
+        held_root(parts, tampered, (1, HONEST_HEAD))
+
+
+def test_a_receipt_with_another_checkpoint_length_than_the_held_one_is_refused():
+    parts = build()
+    chain = receipt_for(parts, ledger_length=4, checkpoint_length=2, ledger_head="a" * 64, checkpoint_head="b" * 64, index=0)
+    found = held_problems(parts, chain, (1, HONEST_HEAD))
+    has(found, "the ledger receipt's checkpoint_length 2 is not the held checkpoint's length 1")
+    has(found, "the ledger receipt's checkpoint_head is not the checkpoint held outside the ledger")
+
+
+def test_without_a_held_checkpoint_behaviour_and_the_root_are_unchanged():
+    parts = build()
+    chain = receipt_for(parts)
+    assert strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=chain) == problems_of(parts) == []
+    assert held_root(parts, chain, None) == root_of(parts)
+
+
+def test_a_root_issued_against_a_held_checkpoint_is_not_a_root_issued_without_one():
+    parts = build()
+    chain = receipt_for(parts)
+    assert held_root(parts, chain, (1, HONEST_HEAD)) != root_of(parts)
+
+
+@pytest.mark.parametrize("held, text", [
+    ((1,), "held_checkpoint must be a (length, head) pair or a mapping with exactly length and head"),
+    ((1, HONEST_HEAD, 3), "held_checkpoint must be a (length, head) pair or a mapping with exactly length and head"),
+    ({"length": 1}, "held_checkpoint must be a (length, head) pair or a mapping with exactly length and head"),
+    ({"length": 1, "head": HONEST_HEAD, "extra": 1}, "held_checkpoint must be a (length, head) pair or a mapping with exactly length and head"),
+    ("ab", "held_checkpoint must be a (length, head) pair or a mapping with exactly length and head"),
+    ((True, HONEST_HEAD), "held_checkpoint length must be an int (not a bool, not a subclass)"),
+    ((1.0, HONEST_HEAD), "held_checkpoint length must be an int (not a bool, not a subclass)"),
+    ((0, HONEST_HEAD), "held_checkpoint length is below 1: an empty checkpoint carries no evidence"),
+    ((1, "abc"), "held_checkpoint head is not a full lowercase SHA-256 (an exact str)"),
+    ((1, HONEST_HEAD.upper().replace("2", "A")), "held_checkpoint head is not a full lowercase SHA-256 (an exact str)"),
+    ((1, None), "held_checkpoint head is not a full lowercase SHA-256 (an exact str)"),
+])
+def test_a_held_checkpoint_that_is_not_well_formed_is_named_and_issues_no_root(held, text):
+    parts = build()
+    chain = receipt_for(parts)
+    has(held_problems(parts, chain, held), text)
+    with pytest.raises(ValueError, match="held_checkpoint"):
+        held_root(parts, chain, held)
+
+
+def test_a_held_checkpoint_with_a_subclass_head_or_length_is_refused():
+    class Head(str):
+        __hash__ = str.__hash__
+
+    class Length(int):
+        pass
+    parts = build()
+    chain = receipt_for(parts)
+    has(held_problems(parts, chain, (1, Head(HONEST_HEAD))), "held_checkpoint head is not a full lowercase SHA-256")
+    has(held_problems(parts, chain, (Length(1), HONEST_HEAD)), "held_checkpoint length must be an int")
+
+
+def test_a_held_checkpoint_given_with_no_receipt_is_still_not_shown():
+    parts = build()
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], held_checkpoint=(1, HONEST_HEAD))
+    has(found, NOT_SHOWN)
+
+
+def test_a_held_checkpoint_mapping_is_read_once():
+    class Shifty(Mapping):
+        """Honest for the two reads one snapshot needs, then a different head: a second read would see the lie."""
+        reads = 0
+
+        def __getitem__(self, key):
+            Shifty.reads += 1
+            if Shifty.reads > 2:
+                return "f" * 64 if key == "head" else 9
+            return {"length": 1, "head": HONEST_HEAD}[key]
+
+        def __iter__(self):
+            return iter(("length", "head"))
+
+        def __len__(self):
+            return 2
+    parts = build()
+    assert held_problems(parts, receipt_for(parts), Shifty()) == []
+    assert Shifty.reads == 2
+
+
+def test_the_entry_that_is_the_last_one_the_checkpoint_covers_must_have_that_entrys_hash_as_the_head():
+    # the A1 gap: index == checkpoint_length - 1, a checkpoint head that is not the entry's own hash, no held checkpoint
+    parts = build()
+    refused_with(parts, receipt_for(parts, index=2, ledger_length=5, checkpoint_length=3, ledger_head="a" * 64,
+                                    checkpoint_head="b" * 64),
+                 "the ledger receipt's entry is the last one its checkpoint covers, but its checkpoint_head is not the entry's own hash")
+    assert problems_of(parts, chain=receipt_for(parts, index=2, ledger_length=5, checkpoint_length=3, ledger_head="a" * 64,
+                                                checkpoint_head=HONEST_HEAD)) == []
+
+
+# --- F-07: the keyset verifier is asked once, its absence is in the root, and a caller can require it (E54, E55) ----------
+
+WRONG = "1" * 64  # what a verifier that recomputes honestly answers for build()'s alpha under a substituted fingerprint
+
+
+def run_with(parts, verifier, **kw):
+    args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+    return strict_problems(*args, chain=receipt_for(parts), keyset_fingerprint_of=verifier, **kw)
+
+
+def root_with(parts, verifier, **kw):
+    args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+    return strict_root(*args, chain=receipt_for(parts), keyset_fingerprint_of=verifier, **kw)
+
+
+def test_a_verifier_that_lies_on_its_second_call_cannot_let_problems_report_and_root_issue():
+    # E55: honest on call 1 (it recomputes WRONG, so the run does not hold together), then it echoes alpha's own
+    # fingerprint. Each public call used to ask it afresh, so strict_problems named the problem and strict_root issued.
+    parts = build()
+    calls = []
+
+    def flaky(alpha):
+        calls.append(1)
+        return WRONG if len(calls) == 1 else alpha["keyset_fingerprint"]
+    has(run_with(parts, flaky), "alpha's KeySet fingerprint does not match a recomputation")
+    with pytest.raises(ValueError, match="does not match a recomputation"):
+        root_with(parts, flaky)
+    assert len(calls) == 1
+
+
+def test_the_verifier_is_asked_exactly_once_for_one_evaluation():
+    parts = build()
+    calls = []
+
+    def counting(alpha):
+        calls.append(1)
+        return alpha["keyset_fingerprint"]
+    assert run_with(parts, counting) == []
+    assert len(calls) == 1
+    root_with(parts, counting)
+    assert len(calls) == 1  # the same alpha content, the same verifier: the answer is reused, not asked again
+
+
+def test_another_alpha_content_is_a_new_question_for_the_same_verifier():
+    first, second = build(), relink(build())
+    second["alpha"]["keys"][0]["reason"] = "a different reading"
+    relink(second)
+    seen = []
+
+    def echo(alpha):
+        seen.append(alpha["keys"][0]["reason"])
+        return alpha["keyset_fingerprint"]
+    run_with(first, echo)
+    run_with(second, echo)
+    assert seen == ["r", "a different reading"]
+
+
+def test_a_verifier_that_is_a_bound_method_is_asked_once_too():
+    parts = build()
+
+    class Owner:
+        n = 0
+
+        def verify(self, alpha):
+            Owner.n += 1
+            return WRONG if Owner.n == 1 else alpha["keyset_fingerprint"]
+    owner = Owner()
+    has(run_with(parts, owner.verify), "does not match a recomputation")
+    with pytest.raises(ValueError):
+        root_with(parts, owner.verify)
+    assert Owner.n == 1
+
+
+def test_a_root_records_whether_a_verifier_was_supplied():
+    parts = build()
+    with_verifier = root_with(parts, lambda a: a["keyset_fingerprint"])
+    without = root_of(parts)
+    assert with_verifier != without
+    assert with_verifier == root_with(parts, lambda a: a["keyset_fingerprint"])  # stable, and not a function of the callable
+    assert without == root_of(parts)
+
+
+def test_a_caller_can_require_the_verifier_and_its_absence_is_then_a_named_problem():
+    parts = build()
+    assert problems_of(parts) == []  # the default keeps existing callers working
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                            require_keyset_verifier=True)
+    has(found, "no keyset_fingerprint_of was supplied, and require_keyset_verifier is set")
+    with pytest.raises(ValueError, match="require_keyset_verifier"):
+        strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                    require_keyset_verifier=True)
+    assert run_with(parts, lambda a: a["keyset_fingerprint"], require_keyset_verifier=True) == []
+    assert len(root_with(parts, lambda a: a["keyset_fingerprint"], require_keyset_verifier=True)) == 64
+
+
+def test_require_keyset_verifier_must_be_a_real_bool():
+    parts = build()
+    with pytest.raises(TypeError, match="require_keyset_verifier must be a bool"):
+        strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                        require_keyset_verifier=1)
