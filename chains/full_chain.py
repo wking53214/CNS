@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import time
 from typing import Callable, List, Tuple
 
 from cns.gate import GateOutcome, subject_digest
@@ -78,9 +79,11 @@ def tampered(text: str) -> Artifact:
 
 
 def assessment(latency: float, error: float):
+    """An assessment from twelve observations ending now: URE's gate refuses a stale or future-dated one."""
     engine = UREEngine()
+    start = time.time() - 12
     for i in range(12):
-        seen = engine.observe({"latency_ms": latency, "error_rate": error}, now=1000.0 + i)
+        seen = engine.observe({"latency_ms": latency, "error_rate": error}, now=start + i)
     return seen
 
 
