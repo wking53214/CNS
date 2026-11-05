@@ -43,6 +43,8 @@ for name, pinned in manifest.items():
         out("USAGE_ERROR", 2, f"the stack manifest pins {name!r} to {pinned[:12]}, but the checkout is at {head[:12]}")
 if "drafter" not in folders and not {"--claim-commit", "--claim-diff", "--drafter"} & set(args):
     out("USAGE_ERROR", 2, "this stack has no drafter and nothing to propose; give --claim-commit, --claim-diff or --drafter")
+if "warden" not in {n.lower() for n in manifest}:
+    out("USAGE_ERROR", 2, "the stack manifest does not name 'warden', and a pinned manifest must name all five circuit members")
 for used in ("drafter", "judge", "burnish"):
     if used in folders and used not in {n.lower() for n in manifest}:
         out("USAGE_ERROR", 2, f"the stack manifest does not name {used!r}, yet this run uses it as a seat")
@@ -78,12 +80,18 @@ LEGACY_CLI = STRICT_CLI.replace(
 #: A Warden that refuses every stack problem for the same vague reason, which names no seat.
 VAGUE_CLI = STRICT_CLI.replace("the stack manifest does not name {used!r}, yet this run uses it as a seat",
                                "the stack is not what the manifest says").replace(
-    "the stack manifest names {name!r}, which is not in the --stack folder", "the stack is not what the manifest says")
+    "the stack manifest names {name!r}, which is not in the --stack folder", "the stack is not what the manifest says").replace(
+    "the stack manifest does not name 'warden', and a pinned manifest must name all five circuit members",
+    "the stack is not what the manifest says")
 
 #: A Warden that refuses every stack problem for a vague reason which quotes the stack's folder paths (as the real one
 #: quotes paths): the seat names and the throwaway folder's name appear only inside paths.
 PATH_LEAKING_CLI = VAGUE_CLI.replace(
     '"the stack is not what the manifest says"', '"the stack is not what the manifest says (" + ", ".join(str(p) for p in folders.values()) + ", " + str(target) + ")"')
+
+#: Warden before 0.16.5: a manifest that omits WARDEN is not refused (the other roster refusals are the same).
+NO_WARDEN_ROSTER_CLI = STRICT_CLI.replace(
+    '''if "warden" not in {n.lower() for n in manifest}:''', '''if False:''')
 
 LENIENT_CLI = '''
 import json
@@ -170,7 +178,8 @@ def test_the_ten_cases_the_decision_record_promises_the_three_roster_cases_and_t
     assert [c.name for c in cr.CASES] == [
         "dirty_tracked", "dirty_untracked", "omitted_seat", "short_pin", "uppercase_pin", "wrong_commit",
         "assume_unchanged", "skip_worktree", "global_excludes", "red_suite", "missing_seat", "unnamed_burnish",
-        "unnamed_drafter", "unnamed_drafter_claim_diff", "unnamed_drafter_explicit", "unnamed_burnish_explicit"]
+        "unnamed_drafter", "unnamed_drafter_claim_diff", "unnamed_drafter_explicit", "unnamed_burnish_explicit",
+        "omitted_warden"]
     assert all(c.expected == cr._REFUSED for c in cr.CASES[:9] + cr.CASES[10:])
     assert cr.CASES[9].expected == frozenset({("INCONCLUSIVE", 6), ("FINISH_REJECTED", 1), ("JUDGE_REJECTED", 1)})
 
@@ -233,7 +242,7 @@ def test_an_interpreter_that_cannot_import_what_the_circuit_needs_is_named(circu
 
 
 ROSTER = ("omitted_seat", "missing_seat", "unnamed_burnish", "unnamed_drafter", "unnamed_drafter_claim_diff",
-          "unnamed_drafter_explicit", "unnamed_burnish_explicit")
+          "unnamed_drafter_explicit", "unnamed_burnish_explicit", "omitted_warden")
 
 
 def _case(name):
@@ -255,7 +264,7 @@ def test_every_roster_case_requires_the_reason_to_name_the_seat():
     assert {c.name: c.reason_names.casefold() for c in cr.CASES if c.reason_names} == {
         "omitted_seat": "judge", "missing_seat": "swizzle", "unnamed_burnish": "burnish", "unnamed_drafter": "drafter",
         "unnamed_drafter_claim_diff": "drafter", "unnamed_drafter_explicit": "drafter",
-        "unnamed_burnish_explicit": "burnish"}
+        "unnamed_burnish_explicit": "burnish", "omitted_warden": "warden"}
 
 
 @pytest.mark.parametrize("case", ROSTER)
@@ -285,6 +294,27 @@ def test_a_circuit_that_lets_a_folder_through_when_an_option_supplies_the_seat_f
     (cns / "contracts" / "warden-stack.json").write_text(json.dumps(data, indent=2) + "\n")
     outcome = cr.run_case(_case(case), stack, cns)
     assert not outcome.ok and outcome.decision == "ACCEPT" and outcome.exit_code == 0
+
+
+def test_a_circuit_that_does_not_refuse_a_manifest_without_warden_fails_the_omitted_warden_case(circuit):
+    """Warden before 0.16.5 accepted a manifest that omitted WARDEN; the case is what would have caught it."""
+    stack, cns = circuit
+    (stack / "WARDEN" / "warden" / "cli.py").write_text(NO_WARDEN_ROSTER_CLI)
+    git(stack / "WARDEN", "commit", "-q", "-am", "no warden roster")
+    data = json.loads((cns / "contracts" / "warden-stack.json").read_text())
+    data["repos"]["WARDEN"] = git(stack / "WARDEN", "rev-parse", "HEAD")
+    (cns / "contracts" / "warden-stack.json").write_text(json.dumps(data, indent=2) + "\n")
+    outcome = cr.run_case(_case("omitted_warden"), stack, cns)
+    assert not outcome.ok and outcome.decision == "ACCEPT" and outcome.exit_code == 0
+    # ... while it still refuses what that Warden did refuse, so the one case is what moves
+    assert cr.run_case(_case("omitted_seat"), stack, cns).ok
+
+
+def test_the_omitted_warden_case_removes_warden_from_the_manifest_and_leaves_its_checkout(circuit, tmp_path):
+    stack, cns = circuit
+    manifest = {"WARDEN": "a" * 40, "JUDGE": "b" * 40}
+    cr._omit_warden(stack, tmp_path, manifest, {})
+    assert manifest == {"JUDGE": "b" * 40} and (stack / "WARDEN").is_dir()
 
 
 def test_the_claim_diff_path_hands_warden_a_diff_file_that_holds_the_claimed_change(tmp_path):

@@ -143,7 +143,9 @@ def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repo
     tree = ast.parse(text)
     assert "SCENARIOS" in text and "return 1 if" in text and "raise SystemExit(main())" in text
     imported = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-    assert imported == {"__future__", "ccc", "cns", "cns_composition", "cns_interop", "conservation_kernel", "governance_gateway", "herald", "tie", "typing"}
+    # cryptography: the spine generates its HERALD export key per run (Ed25519), the one addition since the four-repository rule.
+    assert imported == {"__future__", "ccc", "cns", "cns_composition", "cns_interop", "conservation_kernel", "cryptography",
+                        "governance_gateway", "herald", "tie", "typing"}
 
 
 def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact():
@@ -152,7 +154,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 3
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 26
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 31
 
 
 def test_the_evidence_script_carries_the_roster_decision_across_the_process_boundary():
@@ -174,7 +176,13 @@ def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_aga
     assert set(policy) == {"WRITES_A_DOCUMENT", "WRITES_NO_DOCUMENT"}
     assert policy["WRITES_A_DOCUMENT"] == ("ingest", "record")
     assert set(policy["WRITES_NO_DOCUMENT"]) == {"derive", "infer", "interpret", "record_external_finding", "discover",
-                                                 "detect_road_sign", "record_road_sign"}
+                                                 "detect_road_sign", "record_road_sign",
+                                                 # CCC #51 (single write funnel): doors that act on an existing record or are a
+                                                 # person's act. Reviewed 2026-10-31: no roster decision reads a document from them.
+                                                 "accept", "adopt_discovery", "advance_discovery", "amend", "attach_evidence",
+                                                 "classify", "correct", "decide", "erase", "establish_provenance", "ratify",
+                                                 "record_resolution", "redact", "reject", "relate", "resolve_uncertainty",
+                                                 "supersede"}
     assert not set(policy["WRITES_A_DOCUMENT"]) & set(policy["WRITES_NO_DOCUMENT"])
     text = EVIDENCE.read_text(encoding="utf-8")
     assert "ccc_doors_all_named()" in text and "def ccc_gated_doors" in text and "__wrapped__" in text

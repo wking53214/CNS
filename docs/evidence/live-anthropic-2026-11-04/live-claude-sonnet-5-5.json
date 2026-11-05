@@ -1,0 +1,52 @@
+[
+ {
+  "below": {
+   "refused": "adapter_output: evidence maps each kind to its content"
+  },
+  "clears": {
+   "refused": "adapter_output: evidence maps each kind to its content"
+  },
+  "executed": true,
+  "live": true,
+  "model": "claude-sonnet-5-5",
+  "provenance": [
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 5956,
+    "model_reported": "claude-sonnet-5-5",
+    "model_requested": "claude-sonnet-5-5",
+    "outcome": "rejected",
+    "provider": "anthropic",
+    "reason": "adapter_output: evidence maps each kind to its content",
+    "request_sha256": "0385d27a92cfc41256289ea0eecd90c86c2a376dddc9bb88be15923eb4c745ff",
+    "response_sha256": "4aad29bc5ffc0f57d7cbc4eca9c80f589829fc801fb5dd096ac88c2b3100fa2f"
+   },
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 2735,
+    "model_reported": "claude-sonnet-5-5",
+    "model_requested": "claude-sonnet-5-5",
+    "outcome": "rejected",
+    "provider": "anthropic",
+    "reason": "adapter_output: evidence maps each kind to its content",
+    "request_sha256": "79e300435fe9f8becfb5ca55322e854afb0219958e06ac1487efa5d6efa30b44",
+    "response_sha256": "96fc4ddcd01e87f95ea12f7587dc4fb2d09aa737ee1dabc72d39f31f79899863"
+   }
+  ],
+  "provider": "anthropic"
+ },
+ {
+  "executed": false,
+  "provider": "google"
+ },
+ {
+  "executed": false,
+  "provider": "openai"
+ },
+ {
+  "executed": false,
+  "provider": "copilot-github-models"
+ }
+]

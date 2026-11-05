@@ -36,7 +36,7 @@ def test_python_requests_node_decides_and_python_verifies(demo):
 
 def test_a_third_process_acts_once_on_the_one_document(demo):
     r = demo["node_decides"]
-    assert r["act_first"] == {"permitted": True}
+    assert r["act_first"]["permitted"] is True and r["act_first"]["permit"]["grant"] == "demo-ingest"  # under policy (T0-5)
     assert r["act_second"]["refused"]["code"] == "replayed"
     assert r["act_other"] == {"permitted": False}
     assert r["act_impostor"]["refused"]["code"] == "untrusted"  # the job cannot choose its own decider
@@ -49,7 +49,7 @@ def test_the_rails_hold_across_the_language_boundary(demo):
     assert r["bad_doc_verdict"] == "retry"
     assert r["withheld"].startswith("declined")
     p = demo["python_decides"]
-    assert p["stranger_reply"] == "refuse" and "not pinned" in p["stranger_reason"]
+    assert p["stranger_reply"] == "dropped" and "not one this receiver deals with" in p["stranger_reason"]  # T2-1
 
 
 def test_node_requests_a_cns_super_gate_decides_and_node_verifies(demo):

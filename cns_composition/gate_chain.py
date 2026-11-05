@@ -100,6 +100,9 @@ def _check(gate: Gate, candidate: object) -> GateResult:
     if not isinstance(result, GateResult):
         return _breach(gate, position, f"{name} returned {type(result).__name__}, not a GateResult; "
                                        "an answer that is not a verdict is never read as a pass")
+    if not isinstance(result.outcome, GateOutcome):
+        return _breach(gate, position, f"{name} answered with {result.outcome!r}, which is not a GateOutcome; "
+                                       "a verdict that is not one of the three outcomes is never read as a pass")
     if result.position is not position:
         return _breach(gate, position, f"{name} declares {position.value} but answered at "
                                        f"{result.position.value}; a verdict from the wrong end is refused")

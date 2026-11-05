@@ -9,19 +9,45 @@ release and "floor" the lowest a consumer may pin; both are defined in `cns_comp
 Tagging is the owner's decision. An entry whose heading says "not yet tagged" describes this tree; after the tag
 exists, `python -m cns_composition.release --record vX.Y.Z` adds its row to the table and moves `current`.
 
-The entry is changed to "tagged" in a commit after the tag, so the copy of this file inside `v2.0.0`, `v2.1.0` and
-`v2.2.0` still says "not yet tagged". A tag is never moved to fix that, because a pin to it would then install
+The entry is changed to "tagged" in a commit after the tag, so the copy of this file inside `v2.0.0`, `v2.1.0`, `v2.2.0` and
+`v2.3.0` still says "not yet tagged". A tag is never moved to fix that, because a pin to it would then install
 different code. This file on `main` says what is true now, and so does the GitHub Release of each tag that has
 one; the text for every tag is kept in `docs/releases/`. A heading's date is the day the tag was made; where the tagged commit is older, the
 entry says so.
 
 ## [Unreleased]
 
-Work after the `v2.3.0` tag (`41592fb`). It adds a package and changes no existing behaviour; which version it
+Work after the `v2.3.0` tag (`41592fb`). It adds a package, strengthens the strict decision-spine check, fixes one
+command that failed its own test, and tightens a few checks for input that was already wrong (see Changed; no
+signature, root or outcome meaning moved); which version it
 ships in is the owner's decision, so `pyproject.toml` still says 2.3.0 and `release --check` reads this heading as
 not a release.
 
 ### Added
+
+- Strict verification of the decision spine in `cns_composition/spine_trace.py` (`strict_problems`, `strict_root`,
+  `context_problems`, `CONTEXT_SCHEMA`, `TRACE_SCHEMA`). `problems` takes digests and summaries a caller read off the
+  objects and cannot tell a run from a fabricated account of one. The strict check takes each stage's content (as the
+  connectors of `interconnected_alpha`, `_zeta`, `_beta` and `_delta` produce it with a pipeline context), recomputes
+  every digest itself, and requires one subject, event and run across the four stages, each stage naming the digest of
+  the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
+  entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
+  are unchanged. The `cns` package is untouched.
+- `chains/spine_run.py` gains thirty-five strict scenarios beside its seven lenient ones: the real objects through the
+  real attacks (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale replay, a
+  repeat, a truncated ledger, a missing context, a made-up run, a hash the ledger never wrote, a chain broken after
+  the run, an unbound append, a second Decision for a recorded event, a run spanning two events, an older Decision
+  after a newer one, a KeySet digest of another KeySet), each stating the problem the boundary that should refuse it
+  must name; one that holds the four connectors' own copies of the context check to `context_problems`; and three
+  marked GAP that record what the strict check does not catch (authorship; a narrative rewritten under a valid
+  five-field fingerprint; a cited lock that is closed) as facts that go red the day they close. A scenario that
+  crashes is reported as that scenario failing and the rest still run.
+- `strict_problems` and `strict_root` take `chain_verified`, the answer of delta's `verify_chain_integrity` and
+  `verify_against` for the ledger the entry came from; without it the entry is reported as not shown to belong to a
+  verified chain. They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
+  alpha, zeta, beta and delta. `blame` names alpha's run as the reference.
+- `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
+  `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.
 
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
@@ -41,9 +67,29 @@ not a release.
 - `RemoteDecisionGuard.revoke(agent)`: a running guard can be told to stop trusting a decider. Before, revocation only
   reached a guard if its frozen `TrustPolicy` was altered in place. A decider revoked before `authorize` is refused
   (`untrusted`), one revoked after closes the guard, and the policy the guard was built with is not changed.
+- Roster pinning at the point of action. `DecisionGuard(expected_seats=..., expected_context=..., require_strict_binding=...)`:
+  the party that acts holds a decision to the seats it needs (written by hand, never built from the roster being
+  checked), to the context it is for, and to a roster that checked each seat against its own candidate. A refusal names
+  the missing seats and does not spend the decision. Left out, each check is simply not made, and `expected_seats` is
+  None so a test can assert it was set. `SuperGate.decide(..., context={...})` binds a context into the root (only when
+  given, so every existing root is unchanged) and the proof. `Decision.context_digest`, `Decision.strict_binding` and
+  `Decision.partial` expose what a guard asks. A name on a roster is still not the code behind it; a recorded GAP test says so.
+- `consumers.drift(..., expect=...)` names a repository the ledger says is connected that imports CNS and is not in
+  `REQUIRED`. The command passes the ledger's repositories, so the registry can no longer miss a consumer nobody listed.
+- `chains/full_chain.py` seats `CNS:same_subject` over the gateway and DGK's perimeter, so one cannot judge a request the
+  other was not shown; a scenario holds it. `chains/evidence_spine.py` pins its two guards to its `REQUIRED_SEATS`.
 
 ### Changed
 
+- Tightened, for input that was already wrong: `Decision.allowed` also requires one verdict per seat (by gate name), at
+  least one seat and one verdict; before, a decision missing a seat's verdict, or with none, could read `allowed` once
+  its root was recomputed over what was left (it was never `issued`). `cns.gate.resolve` and `run_chain` treat a verdict
+  whose outcome is not a `GateOutcome` member as a breach; the text "terminal_breach" equals the member but is not it,
+  and a set holding one resolved to PASS. `Decision.reasons()` says when a roster is partial. No
+  signature changed and no existing root moved. `PASS`, `RETRY`, `TERMINAL_BREACH` and ALPHA/OMEGA mean what they meant.
+- `consumers.REQUIRED` lists the sixteen repositories that imported CNS and were not registered (ASSAY, BURNISH, CCC,
+  Conservation_Kernel, DIT, DRAFTER, GEMS, Governance_Gateway, HERALD, JUDGE, PERCEIVE, SWIZZLE, WARDEN, WATCHER_MCU,
+  fortress-kernel, ghost_tools), read from their source, and observe-perceive's use of `super_gate` and `decision_guard`.
 - Contract change in `cns_interop`: `RemoteDecisionGuard` takes a required keyword `capability=(name, version)` and
   `authorize` raises `Refused("terms")` when the terms name a different capability or version. Before, a decision
   negotiated for one capability (`ingest`, say) opened a guard protecting any other action on the same document. A
@@ -52,6 +98,12 @@ not a release.
 
 ### Fixed
 
+- `cns.gate.resolve` read a verdict whose outcome was the text "terminal_breach" as no objection at all, and
+  `run_repo_chain` reported such a chain PASS, complete and bound. It is a breach now.
+- `consumers --stack` exited 1 on observe-perceive's `super_gate` and `decision_guard` imports, which `REQUIRED` did not list.
+- `cns_composition.spine_manifest` now ends `main` with `delivery.run`, as every command in the package must; on
+  `main` (8bd1ca2) `test_every_command_in_the_package_ends_with_deliver` failed because it did not. The one existing
+  test edit is the command's registration in that test's list (Step 8a).
 - `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)
   lost earlier entries and a spent decision was accepted again. It now appends one line and fsyncs, and when it drops
   expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.
@@ -61,13 +113,14 @@ not a release.
   It now uses `cns_interop.wire.loads`, so those are refused (`malformed`, `profile`) before anything is verified, and
   a job that is not JSON is refused instead of crashing the process.
 
-## [2.3.0] - 2026-10-30 (not yet tagged)
+## [2.3.0] - 2026-10-30
 
 The work merged to `main` after the `v2.2.0` tag (`ce6bd05`). A minor version, by the owner's decision of 2026-10-30:
 every addition below is an optional argument, a new function or a new file, the `cns` package's shapes are unchanged
-(`tests/public_shape.json` moves only its version), and the changed behaviours refuse what was wrongly allowed. Not
-tagged: `contracts/cns-releases.json` keeps `current` at `v2.2.0` and the floor at 1.9.0 until the owner tags, and
-`release --check` calls this tree unreleased. Each line names the commit that holds it.
+(`tests/public_shape.json` moves only its version), and the changed behaviours refuse what was wrongly allowed. Tagged
+`v2.3.0` by the owner, an annotated tag at `41592fb7b6735abe140f745353c09ba3eed8e7a2` (the merge of #65, 2026-10-30);
+`contracts/cns-releases.json` has `current` at `v2.3.0` and the floor at 1.9.0. Work merged after the tag is under
+Unreleased. Each line names the commit that holds it.
 
 ### Added
 

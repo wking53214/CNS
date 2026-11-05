@@ -43,7 +43,7 @@ what it is and is not:
 ## The Warden rule that lets a manifest leave them out (Warden 0.15.0)
 
 Warden 0.15.0 was the version of the WARDEN repository for this wave. It was never tagged (Warden's tags stop at
-`v0.12.0`), and the repository has moved on: the manifest now pins Warden 0.16.4. The rule it introduced, for `--stack DIR`,
+`v0.12.0`), and the repository has moved on: the manifest now pins Warden 0.16.5. The rule it introduced, for `--stack DIR`,
 still holds:
 
 - Without `--stack-manifest`: unchanged. All six checkouts (ghost_tools, swizzle, assay, drafter, judge, burnish) are
@@ -73,7 +73,7 @@ released-seats file as their `from_cns` proof, WATCHER_MCU keeps `cns_compositio
 `repin` workflows check them out at those commits into a folder of their own and pass it to `seat_pins` and
 `cns_versions` as `--consumers`, so their CNS pin and their Warden pin must still agree with the circuit's, and each must
 be read. They are never in Warden's stack folder: Warden refuses a stack folder that holds a seat the manifest omits, and
-the circuit checks that it does (`circuit_refusals`, cases `unnamed_burnish`, `unnamed_drafter` and the three that supply the seat another way: `unnamed_drafter_claim_diff`, `unnamed_drafter_explicit` and `unnamed_burnish_explicit`).
+the circuit checks that it does (`circuit_refusals`, cases `unnamed_burnish`, `unnamed_drafter` and the three that supply the seat another way: `unnamed_drafter_claim_diff`, `unnamed_drafter_explicit` and `unnamed_burnish_explicit`; Stage 6 adds `omitted_warden` for the fifth circuit member).
 
 The repin tooling cannot put them back. `repin` refuses a manifest that names a repository listed beside it in
 `released-seats.json`, and its workflow's canary and pins jobs check out only the five (and, for the pins check, the
@@ -87,7 +87,7 @@ no Drafter and no Burnish. `circuit_refusals` hands the thirteen original cases 
 them are `missing_seat`, `unnamed_burnish` and `unnamed_drafter` (Warden's roster rule, nothing else). Three more cases (Stage 4)
 run the same rule through the other ways of supplying a seat (`--claim-diff`, `--drafter` and `--finisher`), and every roster
 case also requires that Warden's reason names the seat, because exit 2 and `USAGE_ERROR` alone could be a refusal for another
-reason. It refuses sixteen of sixteen at Warden 0.16.3.
+reason. A seventeenth case, `omitted_warden` (Stage 6), runs the same rule for the fifth circuit member: a manifest that omits WARDEN while the folder holds its checkout is refused, as the other four members always were. It refuses seventeen of seventeen at Warden 0.16.5.
 
 One gap in Warden's sentence was found by that work and has since been fixed: Warden's README and the docstring of
 `warden/cli.py` say a folder holding a releasable seat the manifest does not name is refused. For BURNISH that was true.

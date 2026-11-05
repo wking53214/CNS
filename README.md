@@ -7,6 +7,110 @@ Where the five-repository circuit stands today (what was checked, what it found 
 still open): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
 remains to be done: [docs/RELEASED_SEATS.md](docs/RELEASED_SEATS.md).
 
+## The interoperability foundation (read this first)
+
+CNS is meant to be the common ground that independent systems can stand on to exchange structured, checkable objects
+without becoming the same system. It is **the interoperability foundation, not the intelligence, the decision-maker
+or the authority of the systems it connects.** Everything below is split into what exists today and what is only an
+ambition, because the two are easy to confuse.
+
+### The problem
+
+Systems that were never designed to work together (different languages, vendors, AI models, databases, policies,
+owners) still have to hand each other things: a request, a document, evidence, a recommendation, a verdict. Today
+each pair invents its own format, its own idea of identity, and its own way of knowing whether a message was altered.
+The usual fix is to put everything inside one platform, which asks every participant to give up its identity, its data
+model, its rules and its accountability. CNS takes the other path: agree on a small set of contracts and let each
+system stay itself.
+
+### How it works, and where authority stays
+
+```
+  Independent system A                                            Independent system B
+  (its own identity, data model,                                  (its own identity, data model,
+   policies, decisions, authority)                                 policies, decisions, authority)
+          |                                                                 ^
+          v                                                                 |
+   adapter / contract                                               adapter / contract
+   (A's native form  ->  CNS shape)                                 (CNS shape  ->  B's native form)
+          |                                                                 ^
+          +------------>   CNS interoperability foundation   ---------------+
+                           - structure: is the object well formed?
+                           - identity: who made it, is it the same object?
+                           - integrity and provenance: was it altered, where from?
+                           - transport of the object between authorized endpoints
+                           It stores no verdicts of its own and grants no permission.
+
+  Four different things travel, and CNS never merges them:
+
+    COMMUNICATION  ->  RECOMMENDATION  ->  DECISION  ->  PERMISSION
+    CNS moves the     a system or a      the responsible   the RECEIVING system's own
+    object            model proposes     system or person  policy says whether the action
+                                         chooses           may happen
+```
+
+A model's recommendation is not a decision. A signed decision is not permission. A valid signature proves who made an
+object and that it was not changed; it does not prove the content is true or that anyone may act on it. The receiver
+keeps authority: in the reference receiver (`interop/act.py`, `interop/node/act.mjs`) an action happens only if the
+receiver's **own** grant allows it, and a person's approval is bound to one decision, one action and one document.
+
+### What CNS validates, and what it deliberately does not decide
+
+| CNS checks (explicit, contracted) | CNS never decides |
+|---|---|
+| The object has exactly the declared shape and value profile | Whether the contents are true |
+| Who signed it, and that it is unchanged (canonical digest, Ed25519) | Whether a recommendation is right |
+| That a reply answers exactly this object (digest binding) | Whether an action should happen |
+| That a message is fresh and not replayed (receiver's own ledger) | Who is permitted to act (the receiver's grants do that) |
+| That terms, disclosures and evidence match what was agreed | Anything on behalf of a participant's own policy |
+| That native and CNS-added information stay distinguishable | Truth, fairness or safety of what is exchanged |
+
+Validation is not judgment. Integrity is not truth. Identity is not permission. Interoperability is not authority.
+
+### How it relates to UAI-1, and how AI providers and agents connect
+
+`cns` holds the shared shapes. **UAI-1** (`docs/interop/UAI-1.md`) is the signed-message protocol built on those
+shapes so a system outside the process, in any language, can exchange requests, terms, selective disclosures and
+decisions. AI models and independent agents connect through **adapters**: an adapter turns a provider's answer into a
+`recommendation`, read by a strict parser that refuses anything beyond verdict, reasons, evidence and an escalation flag.
+The decider's own policy may lower the recommendation, a grant decides whether anything may be done, and a person may have to approve. UAI-1 provider clients exist for Anthropic, Google Gemini, OpenAI (ChatGPT models) and Copilot (through GitHub Models or Azure OpenAI). Their local wire-format tests do not establish live interoperability. The separate Anthropic composition-layer adapter documented below has been exercised with one explicitly authorized live request. That result does not establish live interoperability for the UAI-1 clients or other providers.
+
+### Where it sits in STACK
+
+STACK is a library of many repositories, many of which decide something. CNS gives them one vocabulary so one can read
+and check another's verdict. It is not a governance engine: governance components (HERALD, TIE, Conservation_Kernel,
+Governance_Gateway, CCC and the Warden circuit) make their own decisions in their own repositories, and CNS holds only the
+shapes they share. The evidence spine, below, shows one document crossing five of them.
+
+### Implemented today, and what is not
+
+| Implemented and tested here | Experimental, partial or absent |
+|---|---|
+| UAI-1 envelope, strict wire reading, canonical digest, Ed25519 (pure Python, or OpenSSL with a frozen production profile) | No second, independently written implementation by another team has been run against the suite |
+| Python and Node implementations that agree on shared vectors and on a conformance suite | Node shares the PostgreSQL ledger but not the PostgreSQL policy store or audit chain, and has no quorum-commit mode |
+| Receiver-owned grants, approvals, single-use permits, hash-chained audit in Python **and** Node (differentially tested) | Delegation is deliberately not built |
+| Replay protection in the real action path: file, SQLite or PostgreSQL ledgers, leases and fencing tokens | No HSM or OS keystore support (an external signer hook exists; nothing hardware-backed was tested) |
+| Receiver policy and audit shared across hosts through PostgreSQL | Not distributed consensus: one PostgreSQL primary, as available as that node; asynchronous standbys can lose a write |
+| Transport profiles, with TLS 1.3 mutual authentication implemented and tested over real handshakes | OCSP, certificate transparency, post-quantum and traffic-analysis resistance are not provided |
+| JSON Schema, a versioned error registry and a stand-alone conformance runner (`contracts/uai1/`) | Provider interoperability is untested against any live provider |
+| Provider clients for Anthropic, Gemini, OpenAI and Copilot, behind the adapter boundary | Authenticated transport is not required for same-host use (`local-process` profile) |
+
+The honest summary and the scored assessment are in `docs/interop/UAI1_R4_ASSESSMENT.md`.
+
+### Starting your own implementation
+
+Another team can implement UAI-1 without reading CNS code: `docs/interop/implementers/README.md` is the guide, and
+`contracts/uai1/` holds the schema, the error registry, the conformance suite and `run_conformance.py`, which runs any
+implementation (given a small adapter program) against the suite using only the standard library. Runnable examples are
+in `interop/examples/` (Python, Node and a provider adapter). Security profiles, and which suit which deployment, are in
+`docs/interop/SECURITY_PROFILES.md`.
+
+### What CNS is not meant to become
+
+Not a central intelligence, not a governance product, not a source of truth for the systems it connects, not an
+authority that grants permission, and not a platform participants must join. If a change would move CNS into deciding
+or authorizing, the right response is a separate component that sits beside it.
+
 ## What CNS is for
 
 The library is many repositories, and many of them decide something: whether a change may merge, whether a document
@@ -65,6 +169,41 @@ without its evidence guard takes evidence TIE never produced, and a process acti
 ledger of its own (not the shared one) accepts an approval already spent. The `chains` workflow runs the spine every day and on pull requests that
 touch the decision core; "Where the six spine repositories stand" below gives its latest result. The spine does not
 cover ZTS, sentinel_os or GSA-815, and it speaks for CCC only as far as CCC's gate and write permission go.
+
+### The decision spine
+
+`chains/spine_run.py` runs `interconnected_alpha`, `interconnected_zeta`, `interconnected_beta` and `interconnected_delta`
+for real (Keys, Locks, a Decision, a hash-chained ledger entry) and checks their seams with `cns_composition.spine_trace`,
+in two modes.
+
+- **Lenient** (`problems`, `root`): takes the digests and summaries a caller read off the objects. It cannot tell a run
+  from a fabricated account of one: four stages stating whatever agrees with itself return no problems and a root.
+- **Strict** (`strict_problems`, `strict_root`): takes each stage's content as its connector produces it with a pipeline
+  context (`spine-context/1`: `schema`, `entity_id`, `event_id`, `run_id`), recomputes every digest itself, and
+  requires one context across all four stages, each stage naming the digest of the stage before it (zeta's results and
+  beta's Decision name alpha's KeySet, beta names each of zeta's lock results, delta names beta's Decision, whose
+  fields its embedded copy must equal), the Decision citing only Keys alpha listed as present (`present_names`) and
+  Locks zeta evaluated, and the ledger entry recorded under the same run and event. A missing field is a problem, not
+  a skip. The strict root is domain-separated (`spine-trace/2`) and is never a native digest of any stage.
+
+CNS applies no decision policy here: it does not say which Key should be present, which Lock should open or whether
+the Decision is right, and `present_names` is stated by alpha so CNS never re-implements zeta's confidence rule. Two
+limits stay. A native stage can still compute a result from a foreign input in memory (zeta's KeySet and LockResult
+carry no identity), so the result is refused when it is bound, recorded or verified, not when it is computed. And
+delta's ledger is an in-memory reference ledger: a checkpoint held outside it is what detects truncation or a
+rewrite, and nothing survives a restart. The strict check also asks delta's own ledger whether the chain verifies (and
+whether a checkpoint held outside it still holds) rather than taking a caller's word, and it compares the KeySet
+fingerprint zeta records on every lock result, alpha reports and beta's Decision carries, so a result evaluated from
+one KeySet and bound to another's digest is refused. Three limits are recorded as facts, not hidden, and go red the
+day they close: the strict check verifies that contents agree and chain by digest, not who made them (there is no
+key, so contents made up by someone who recomputes the digests, and reports the chain as verified, pass); beta's
+`decision_fingerprint` is keyless and covers five of a Decision's thirteen fields, so a rewritten narrative
+(instructions, confidence, reasoning) passes; and a Decision records the union of the locks its rule cited, not which
+the rule required open and which closed, so a Decision citing a closed lock passes. The `chains` workflow runs the
+scenarios (seven lenient, thirty-five strict: five checks that hold, twenty-seven attacks each stating the problem that
+should refuse it, and the three gaps above). A second job, `spine-pinned`, runs the same scenarios on exactly the four
+commits `contracts/spine-manifest.json` names, after `cns_composition.spine_manifest` has held every pin and checkout
+to that file.
 
 ## The rule
 
@@ -163,7 +302,10 @@ decision can leave the process with its root and be checked anywhere.
 | an independent Node implementation | `interop/node/uai.mjs` (OpenSSL Ed25519, no shared code) and `agent.mjs` |
 | the shared answer key | `contracts/uai-vectors.json` (`python -m cns_interop.vectors` keeps it current) |
 | the two-language demonstration | `python interop/demo.py`; `interop/act.py` is a separate process that acts once on a remote decision |
-| what moved and what did not | `docs/interop/SCORECARD.md` |
+| what moved and what did not | `docs/interop/SCORECARD.md`, and for revision 4 `docs/interop/UAI1_R4_ASSESSMENT.md` |
+| the stand-alone package for another implementer | `contracts/uai1/` (schema, errors, conformance suite and runner) and `docs/interop/implementers/README.md` |
+| the receiver (action runner) in each language | `interop/act.py` and `interop/node/act.mjs`, with `interop/node/grants.mjs` |
+| runnable examples | `interop/examples/` |
 
 `cns` never imports it, and it imports only `cns`, `cns_composition` and the standard library. Node 20 or later is
 needed to run the second implementation's tests; without it they fail and say so.
@@ -177,6 +319,20 @@ evaluated. A missing argument or empty roster is an error. The API enforces
 that every required seat is present in the configured gates; it cannot
 authenticate the source of the policy configuration. Existing callers must
 add the required keyword when constructing SuperGate.
+
+That is half of it. A caller who builds a smaller roster with a matching
+`required` gets a decision that is complete for the smaller roster, so the
+party that ACTS holds the decision to the roster it needs:
+`DecisionGuard(reads, expected_seats=REQUIRED_SEATS)` refuses, and names, a
+decision whose roster lacks a seat, and `expected_context` does the same for
+what the decision is for (`decide(..., context={...})`). A guard built without
+`expected_seats` accepts whatever roster its issuer chose; `guard.expected_seats`
+is None then, so a test can assert it was set. A roster binds the name of a seat,
+not the code behind it. A roster with one end (`require_complete=False`) is an
+assessment: its `outcome` can read PASS while `Decision.allowed` is False and
+`Decision.partial` is True. What a digest proves and does not, how a roster is
+established, and what each level of "connected" means:
+[docs/CONNECTION_INTEGRITY.md](docs/CONNECTION_INTEGRITY.md).
 
 ### The same subject
 
@@ -300,14 +456,14 @@ Pin a tag, the way sentinel_os already pins Conservation_Kernel. In a requiremen
 `pyproject.toml` dependency list the line is:
 
 ```
-cns @ git+https://github.com/wking53214/CNS.git@v2.2.0
+cns @ git+https://github.com/wking53214/CNS.git@v2.3.0
 ```
 
 and to put it in an environment by hand:
 
 ```
 python3 -m venv .venv
-.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.2.0"
+.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"
 ```
 
 Then `from cns.graph import Node, Edge, Graph` and delete the vendored
@@ -331,10 +487,83 @@ Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.5.1` (an oddity: it points at a commit older than `v1.5.0` whose
-package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and recorded so, see `CHANGELOG.md`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`), `v2.2.0` (the decision guard: `DecisionGuard`, `same_subject`, `Decision.subject` and the issuance proof; see `CHANGELOG.md`). A raw commit SHA still
-works, but a tag says which contract you are joining on. This tree declares 2.3.0, not yet tagged, so `v2.2.0` stays
-the release a consumer pins until the owner tags: what 2.3.0 adds is in `CHANGELOG.md`, and
+package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and recorded so, see `CHANGELOG.md`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`), `v2.2.0` (the decision guard: `DecisionGuard`, `same_subject`, `Decision.subject` and the issuance proof; see `CHANGELOG.md`). `v2.3.0` (the evidence spine's fifth hop, CCC's write permission and the evidence guard, `SuperGate` binding and decision expiry; see `CHANGELOG.md`). A raw commit SHA still
+works, but a tag says which contract you are joining on. The newest tag, `v2.3.0`, is the release a consumer pins; `main` has moved on
+since (see Unreleased in `CHANGELOG.md`), and what 2.3.0 adds is in `CHANGELOG.md`, and
 `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
+
+## Anthropic model-provider adapter
+
+CNS now includes an optional Anthropic adapter in
+`cns_composition.providers.anthropic`. It translates the provider-neutral
+CNS `ModelRequest` and `ModelResponse` contract to and from the Anthropic
+Messages API.
+
+This is a composition-layer adapter, separate from the UAI-1 signed-message
+protocol described above. It does not make provider-selection, routing,
+authorization, governance, policy, or orchestration decisions. The host
+application supplies the SDK client and remains responsible for credentials.
+
+### Install and configure
+
+The Anthropic SDK is optional. The base CNS installation does not install it:
+
+    python -m pip install ".[anthropic]"
+
+For an interactive shell, enter the key without displaying it or putting the
+secret itself in shell history:
+
+    read -rsp "Anthropic API key: " ANTHROPIC_API_KEY; echo
+    export ANTHROPIC_API_KEY
+
+For deployed applications, supply the key through the deployment's approved
+secret manager or environment configuration. Do not commit API keys, place
+them in source files, log them, or store them in CNS request records.
+
+### Use from an application
+
+The official SDK reads `ANTHROPIC_API_KEY` when the client is constructed
+without an explicit `api_key`. The application injects that client into CNS:
+
+    import anthropic
+
+    from cns_composition.providers.protocol import ModelRequest
+    from cns_composition.providers.anthropic import AnthropicProvider
+
+    client = anthropic.Anthropic(max_retries=0)
+    provider = AnthropicProvider(client)
+
+    request = ModelRequest(
+        model="claude-haiku-4-5-20251001",
+        system_instruction="Be concise.",
+        user_messages=("Explain what CNS does in one sentence.",),
+        max_output_tokens=100,
+        generation_settings={},
+    )
+    response = provider.generate(request)
+    print(response.content)
+
+The adapter does not load credentials or create the SDK client itself.
+The adapter does not implement retries. The injected SDK client controls
+retry behavior and timeouts. Hosts requiring a single attempt must set
+`max_retries=0` when constructing the SDK client.
+
+### Verify connectivity
+
+A safe-mode check makes no API request:
+
+    python scripts/anthropic_smoke_test.py
+
+To authorize one short live request, run:
+
+    python scripts/anthropic_smoke_test.py --execute
+
+The script asks for explicit confirmation and reads the key through a hidden
+prompt. A live request can incur provider charges. Ordinary tests use
+controlled clients and do not require a live key.
+
+See [the adapter architecture note](docs/architecture/MODEL_PROVIDER_ADAPTERS.md)
+for the contract boundary and current limitations.
 
 ## Versioning
 
@@ -402,18 +631,19 @@ checker to trust these annotations, so it is asserted rather than assumed.
 
 ## Where the six spine repositories stand
 
-HERALD, TIE, Conservation_Kernel, Governance_Gateway, CCC and this repository, read at their `main` heads on 2026-10-30.
-The numbers are measured, not carried over: the first count is the repository's own suite with CNS absent, the
-second with the `cns` extra installed.
+HERALD, TIE, Conservation_Kernel, Governance_Gateway, CCC and this repository. The CNS pins were read from each
+repository's `main` on 2026-11-04. The test counts and CI results of the five consumers are from 2026-10-30 and have
+not been re-measured since; CNS's own count was measured on 2026-11-04. For the consumers the first count is the
+repository's own suite with CNS absent, the second with the `cns` extra installed.
 
 | Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
 |---|---|---|---|---|---|
-| CNS | 2.3.0, not yet tagged | Tags `v0.1.0` to `v2.2.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`. | green (6 jobs) | 1294 | not applicable |
-| HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.2.0` |
-| TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.2.0` |
-| Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.2.0` |
-| Governance_Gateway | 0.1.0 | none | green | 230 and 1 skipped / 417 | the tag `v2.2.0` |
-| CCC | 0.1.0 | none | green | 409, 1 skipped and 1 xfailed / 924 and 1 xfailed | the tag `v2.2.0`; its `cccb` library is pinned to a commit |
+| CNS | 2.3.0, tagged; `main` is ahead of the tag | Tags `v0.1.0` to `v2.3.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`; `v2.3.0` has its text there and no Release yet. | green (6 jobs) | 2353 (measured 2026-11-04 with the dev extra installed, no skips) | not applicable |
+| HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.3.0` |
+| TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.3.0` |
+| Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.3.0` |
+| Governance_Gateway | 0.1.0 | none | green | 230 and 1 skipped / 417 | the tag `v2.3.0` |
+| CCC | 0.1.0 | none | green | 409, 1 skipped and 1 xfailed / 924 and 1 xfailed | the tag `v2.3.0`; its `cccb` library is pinned to a commit |
 
 What this means, plainly:
 
@@ -486,7 +716,7 @@ Each line names the test or workflow job that holds it. A claim without one is n
   it open pull requests was off) and #31 was opened by the workflow's own token (`github-actions[bot]`).
 - `cns.assay` has one writer and one reader (ASSAY); it does not meet the two-repository rule and is recorded
   above as the one exception.
-- 2.1.0 is tagged, and the circuit pins `v2.2.0`, which carries its three fields, but the tests here prove the
+- 2.1.0 is tagged, and the circuit pins `v2.3.0`, which carries its three fields, but the tests here prove the
   shapes, not a circuit run that carries `ghost_severity`, `claim` or `evidence`: no CI job here asserts a writer
   filling them or a reader joining on them. `docs/evidence/proof-2026-10-29` holds the run records of three such runs; they are records, not checks.
 

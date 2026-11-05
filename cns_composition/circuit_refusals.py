@@ -133,6 +133,14 @@ def _omit_seat(stack: Path, hub: Path, manifest: Dict[str, str], env: Dict[str, 
             del manifest[name]
 
 
+def _omit_warden(stack: Path, hub: Path, manifest: Dict[str, str], env: Dict[str, str]) -> None:
+    """The manifest drops WARDEN while the stack folder still holds its checkout. A manifest must name all five circuit
+    members; until Warden 0.16.5 only the four other members were refused (found by the round-8 red team)."""
+    for name in list(manifest):
+        if name.casefold() == "warden":
+            del manifest[name]
+
+
 def _pin_as(transform: Callable[[str], str]) -> Callable[[Path, Path, Dict[str, str], Dict[str, str]], None]:
     def apply(stack: Path, hub: Path, manifest: Dict[str, str], env: Dict[str, str]) -> None:
         for name in manifest:
@@ -214,6 +222,10 @@ CASES: Tuple[Case, ...] = (
     Case("unnamed_burnish_explicit", "a BURNISH checkout is in the stack folder but not in the manifest, and "
          "--finisher names the seat", _REFUSED, _add_unnamed_seat("burnish"), supply="finisher",
          reason_names="burnish", roster=True),
+    # The roster rule for the fifth circuit member: a pinned manifest must name WARDEN as it names the other four.
+    # Configuration integrity again, not a detector (owner decision 2026-11-04, Warden 0.16.5).
+    Case("omitted_warden", "WARDEN is in the stack folder but not in the manifest", _REFUSED, _omit_warden,
+         reason_names="warden", roster=True),
 )
 
 

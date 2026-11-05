@@ -1,7 +1,7 @@
 {
   "schema": "cns-releases/1",
   "about": "Every CNS release a repository might pin: its tag, the commit the tag points at, and the version the package at that commit declares. cns_composition.cns_versions reads a pin by tag or by full commit and looks it up here. Add a row when a release is tagged and move current. Raise floor as repositories move; when floor equals current's version, every repository must be on the current release.",
-  "current": "v2.2.0",
+  "current": "v2.3.0",
   "floor": "1.9.0",
   "releases": [
     {
@@ -75,6 +75,11 @@
       "ref": "v2.2.0",
       "commit": "ce6bd05578a7a3e3cafa0cfa1e9a2cca8a5f171f",
       "version": "2.2.0"
+    },
+    {
+      "ref": "v2.3.0",
+      "commit": "41592fb7b6735abe140f745353c09ba3eed8e7a2",
+      "version": "2.3.0"
     }
   ]
 }
