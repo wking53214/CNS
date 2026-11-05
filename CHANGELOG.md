@@ -33,9 +33,9 @@ not a release.
   the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
   entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
   are unchanged. The `cns` package is untouched.
-- `chains/spine_run.py` gains thirty-five strict scenarios beside its seven lenient ones: the real objects through the
+- `chains/spine_run.py` gains thirty-six strict scenarios beside its seven lenient ones: the real objects through the
   real attacks (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale replay, a
-  repeat, a truncated ledger, a missing context, a made-up run, a hash the ledger never wrote, a chain broken after
+  repeat, a truncated ledger, a missing context, a made-up run, a hash the ledger never wrote, another Decision's content under the ledger's hashes, a chain broken after
   the run, an unbound append, a second Decision for a recorded event, a run spanning two events, an older Decision
   after a newer one, a KeySet digest of another KeySet), each stating the problem the boundary that should refuse it
   must name; one that holds the four connectors' own copies of the context check to `context_problems`; and three

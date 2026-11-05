@@ -200,7 +200,7 @@ key, so contents made up by someone who recomputes the digests, and reports the 
 `decision_fingerprint` is keyless and covers five of a Decision's thirteen fields, so a rewritten narrative
 (instructions, confidence, reasoning) passes; and a Decision records the union of the locks its rule cited, not which
 the rule required open and which closed, so a Decision citing a closed lock passes. The `chains` workflow runs the
-scenarios (seven lenient, thirty-five strict: five checks that hold, twenty-seven attacks each stating the problem that
+scenarios (seven lenient, thirty-six strict: five checks that hold, twenty-eight attacks each stating the problem that
 should refuse it, and the three gaps above). A second job, `spine-pinned`, runs the same scenarios on exactly the four
 commits `contracts/spine-manifest.json` names, after `cns_composition.spine_manifest` has held every pin and checkout
 to that file.

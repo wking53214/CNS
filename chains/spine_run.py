@@ -152,14 +152,15 @@ def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind
 
 
 def ledger_verified(parts) -> bool:
-    """Ask delta itself: the chain verifies, it still contains the history held outside it, and the entry the run's
-    content names IS the ledger's last entry (so exported content cannot name a hash the ledger never wrote)."""
+    """Ask delta itself: the chain verifies, it still contains the history held outside it, and the content the run
+    carries IS what the ledger's last entry exports, field for field (so content cannot name the hashes of an entry
+    while describing a different Decision, run or time)."""
     try:
         ledger, held, content = parts["ledger"], parts["checkpoint"], parts["delta"]
         entry = ledger.entries[-1]
+        exported = delta_cns.entry_content(entry, context=content.get("context"), decision_digest=content.get("decision_digest"))
         return (ledger.verify_chain_integrity() is True and ledger.verify_against(held) is True
-                and content.get("audit_id") == entry.audit_id and content.get("previous_hash") == entry.previous_hash
-                and content.get("immutable_hash") == entry.immutable_hash)
+                and subject_digest(exported) == subject_digest(content))
     except Exception:  # noqa: BLE001 - nothing to ask, or the ledger refused to answer: not shown to verify
         return False
 
@@ -400,6 +401,15 @@ def delta_content_names_a_hash_the_ledger_never_wrote() -> List[str]:
     return check(p)
 
 
+def delta_content_of_another_decision_under_the_ledgers_hashes() -> List[str]:
+    """Honest ledger, substituted content: the hashes are the ledger's last entry, the Decision, run and time are another
+    run's. The hash fields alone matched; the whole exported entry must."""
+    p, q = stages(SICK), stages(WELL)
+    e = p["ledger"].entries[-1]
+    forged = {**q["delta"], "audit_id": e.audit_id, "previous_hash": e.previous_hash, "immutable_hash": e.immutable_hash}
+    return check({**q, "delta": forged, "ledger": p["ledger"], "checkpoint": p["checkpoint"]})
+
+
 def the_ledger_chain_is_broken_after_the_run() -> List[str]:
     p = stages(SICK)
     first = p["ledger"].entries[0]
@@ -559,6 +569,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], str]] = [
     ("strict: zeta and beta named the digest of another KeySet", zeta_and_beta_named_the_digest_of_another_keyset,
      "(its recorded KeySet fingerprint differs from alpha's)"),
     ("strict: delta's content names a hash the ledger never wrote", delta_content_names_a_hash_the_ledger_never_wrote,
+     "the ledger chain was not shown to verify"),
+    ("strict: delta content of another Decision under the ledger's hashes", delta_content_of_another_decision_under_the_ledgers_hashes,
      "the ledger chain was not shown to verify"),
     ("strict: the ledger chain is broken after the run", the_ledger_chain_is_broken_after_the_run,
      "the ledger chain was not shown to verify"),
