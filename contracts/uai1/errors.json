@@ -91,7 +91,7 @@
   {
    "code": "fenced",
    "consumes_message": null,
-   "implementations": "python",
+   "implementations": "both",
    "layer": "ledger",
    "meaning": "A protected target saw a lower fencing token than one it already acted on; a stale holder is refused.",
    "retry": "never"

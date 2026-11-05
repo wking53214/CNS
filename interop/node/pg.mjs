@@ -23,8 +23,8 @@ import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { MAX_INT, Refused } from "./uai.mjs";
 
-const NAME = /^[a-z_][a-z0-9_]{0,40}$/;
-const NOW_MS = "(extract(epoch from clock_timestamp()) * 1000)::bigint";
+export const NAME = /^[a-z_][a-z0-9_]{0,40}$/;
+export const NOW_MS = "(extract(epoch from clock_timestamp()) * 1000)::bigint";
 const MAX_LEASE_MS = 3600 * 1000;
 const EARLIEST_PLAUSIBLE_MS = 946684800000;   // 2000-01-01T00:00:00Z, as Python's _EARLIEST_PLAUSIBLE_MS
 
