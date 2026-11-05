@@ -99,6 +99,10 @@ not a release.
   negotiated for one capability (`ingest`, say) opened a guard protecting any other action on the same document. A
   caller that built a guard without the keyword now gets a `TypeError`. `interop/act.py` takes `--capability` and
   `--capability-version`, and `chains/evidence_spine.py` and `interop/demo.py` pass them. UAI-1 section 7.
+- `cns_composition.spine_trace.context_problems` reads the mapping once (`dict(context)`) and judges that snapshot, and
+  requires every value to be exactly `str`: a str subclass is a named problem. The four connectors already did both; the
+  runner's `CONTEXT_CASES` drift guard now holds them to it with a str-subclass case, a mapping that changes between
+  reads, and a check that an accepted context comes back as the plain first-read snapshot.
 
 ### Fixed
 

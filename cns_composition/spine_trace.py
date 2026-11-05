@@ -183,21 +183,30 @@ _BETA_RUN_FIELDS = ("context", "keyset_digest", "lock_result_digests")
 
 
 def context_problems(context: object) -> List[str]:
-    """What is wrong with a pipeline context. Empty when it is exactly the four fields, non-empty strings, a known schema."""
+    """What is wrong with a pipeline context. Empty when it is exactly the four fields, non-empty exact strings, a known schema.
+
+    The mapping is read once (`dict(context)`) and the snapshot is what is judged, so a mapping that answers differently
+    on a later read cannot pass here and be recorded as something else elsewhere. A value must be exactly `str`: a
+    subclass can lie about its own equality, hash or text, so it is a named problem, not a pass."""
     if not isinstance(context, Mapping):
         return [f"a pipeline context must be a mapping; got {type(context).__name__}"]
+    try:
+        snapshot = dict(context)
+    except Exception as exc:  # noqa: BLE001 - a mapping that cannot be read once is not a valid context
+        return [f"a pipeline context could not be read: {type(exc).__name__}: {exc}"]
     out: List[str] = []
-    if set(context) != set(_CONTEXT_FIELDS):
-        out.append(f"a pipeline context has exactly the fields {list(_CONTEXT_FIELDS)}; got {sorted(map(str, context))}")
+    if set(snapshot) != set(_CONTEXT_FIELDS):
+        out.append(f"a pipeline context has exactly the fields {list(_CONTEXT_FIELDS)}; got {sorted(map(str, snapshot))}")
         return out
     for name in _CONTEXT_FIELDS:
-        value = context[name]
-        if not isinstance(value, str):
-            out.append(f"context field {name} must be a str; got {type(value).__name__}")
+        value = snapshot[name]
+        if type(value) is not str:
+            kind = f"a str subclass ({type(value).__name__}); the exact type str is required" if isinstance(value, str) else type(value).__name__
+            out.append(f"context field {name} must be a str; got {kind}")
         elif not value:
             out.append(f"context field {name} must be non-empty")
-    if not out and context["schema"] != CONTEXT_SCHEMA:
-        out.append(f"unsupported schema {context['schema']!r}; this check speaks {CONTEXT_SCHEMA!r}")
+    if not out and snapshot["schema"] != CONTEXT_SCHEMA:
+        out.append(f"unsupported schema {snapshot['schema']!r}; this check speaks {CONTEXT_SCHEMA!r}")
     return out
 
 

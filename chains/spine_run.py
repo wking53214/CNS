@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -499,27 +500,63 @@ def GAP_a_decision_cites_a_lock_that_is_closed() -> List[str]:
     return check(p)
 
 
+class StrSub(str):
+    """A str subclass. A context built from one is refused everywhere: a subclass can lie about equality, hash or text."""
+
+
+class Shifty(Mapping):
+    """A mapping that answers differently on every read after the first of each key: run_id is valid once, then empty.
+    A copy-once validator accepts it and returns the first read; one that reads again records or judges something else."""
+
+    def __repr__(self) -> str:
+        return "Shifty(valid on the first read, run_id empty after)"
+
+    def __init__(self) -> None:
+        self._seen: set = set()
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self._seen and key == "run_id":
+            return ""
+        self._seen.add(key)
+        return CTX[key]
+
+    def __iter__(self):
+        return iter(CTX)
+
+    def __len__(self) -> int:
+        return len(CTX)
+
+
 CONTEXT_CASES: List[Any] = [
     dict(CTX), {k: v for k, v in CTX.items() if k != "run_id"}, {**CTX, "extra": "x"}, {**CTX, "run_id": ""},
     {**CTX, "event_id": 4}, {**CTX, "schema": "spine-context/2"}, {**CTX, "entity_id": None}, "run_1", None, [], {},
+    {**CTX, "run_id": StrSub("run_1")}, {**CTX, "entity_id": StrSub("patient_1")}, Shifty(),
 ]
 
 
 def connectors_agree_with_cns_on_what_a_context_is() -> List[str]:
-    """Four repositories each validate their own copy of the context. CNS states the contract; they must agree with it."""
+    """Four repositories each validate their own copy of the context. CNS states the contract; they must agree with it.
+    An accepted context must also come back as the plain snapshot of the FIRST read (exact str values), so a mapping that
+    changes between reads is never recorded as something it was not when it was checked."""
     out: List[str] = []
     checks = {"alpha": alpha_cns._context, "zeta": zeta_cns._context, "beta": beta_cns._context,
               "delta": delta_context.check_context}
+
+    def fresh(case: Any) -> Any:
+        return Shifty() if isinstance(case, Shifty) else case
+
     for case in CONTEXT_CASES:
-        cns_accepts = not context_problems(case)
+        cns_accepts = not context_problems(fresh(case))
         for name, validate in checks.items():
             try:
-                validate(case)
+                kept = validate(fresh(case))
                 accepts = True
             except (ValueError, TypeError, OverflowError):
-                accepts = False
+                accepts, kept = False, None
             if accepts != cns_accepts:
                 out.append(f"{name} {'accepts' if accepts else 'refuses'} {case!r} and CNS {'accepts' if cns_accepts else 'refuses'} it")
+            elif accepts and (type(kept) is not dict or kept != CTX or any(type(v) is not str for v in kept.values())):
+                out.append(f"{name} accepted {case!r} but returned {kept!r}, not the plain first-read snapshot")
     return out
 
 

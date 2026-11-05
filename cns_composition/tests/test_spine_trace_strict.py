@@ -8,6 +8,7 @@ before it. Every property below was shown to fail on the lenient check before th
 """
 
 import copy
+from collections.abc import Mapping
 from typing import Any, Dict
 
 import pytest
@@ -260,6 +261,61 @@ def test_a_malformed_context_is_named_by_context_problems_and_by_the_run_check(b
 
 def test_a_valid_context_has_no_problems():
     assert context_problems(CTX) == []
+
+
+class _Id(str):
+    """A str subclass: it can lie about its own equality, hash or text, so a context must not accept one."""
+
+
+class _Shifty(Mapping):
+    """A mapping that answers differently each time a key is read: the first read is `first`, later reads `later`."""
+
+    def __init__(self, first, later):
+        self._first, self._later, self._seen = dict(first), dict(later), set()
+
+    def __getitem__(self, key):
+        if key in self._seen:
+            return self._later[key]
+        self._seen.add(key)
+        return self._first[key]
+
+    def __iter__(self):
+        return iter(self._first)
+
+    def __len__(self):
+        return len(self._first)
+
+
+@pytest.mark.parametrize("field", ["entity_id", "event_id", "run_id"])
+def test_a_str_subclass_in_a_context_is_a_named_problem(field):
+    found = context_problems({**CTX, field: _Id(CTX[field])})
+    has(found, f"context field {field} must be a str")
+    has(found, "str subclass")
+    parts = build()
+    parts["alpha"]["context"] = {**CTX, field: _Id(CTX[field])}
+    has(problems_of(parts), "alpha context")
+
+
+def test_a_context_is_judged_on_one_read_of_the_mapping():
+    # valid on the first read, invalid on any later one: the snapshot is what is judged, and the snapshot is valid
+    assert context_problems(_Shifty(CTX, {**CTX, "run_id": ""})) == []
+    # invalid on the first read, valid later: a second read must not rescue it
+    has(context_problems(_Shifty({**CTX, "run_id": ""}, CTX)), "non-empty")
+    assert context_problems(_Shifty({**CTX, "run_id": 7}, CTX))
+
+
+def test_a_mapping_that_cannot_be_read_is_a_problem_not_an_exception():
+    class Broken(Mapping):
+        def __getitem__(self, key):
+            raise RuntimeError("boom")
+
+        def __iter__(self):
+            return iter(CTX)
+
+        def __len__(self):
+            return len(CTX)
+
+    has(context_problems(Broken()), "could not be read")
 
 
 def test_a_fabricated_run_with_no_consistent_lineage_is_refused():
