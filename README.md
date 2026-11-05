@@ -356,6 +356,12 @@ The spine also builds the kernel with an evidence guard, which takes a record on
 export of the document: a forged record, one with another document's text or source, or one of another kind is refused.
 A kernel built without that guard takes any evidence, and the spine records that as its second GAP. The roster's kernel
 seat is built with `require_evidence_guard=True` as well, so a kernel like that gets no approval.
+Asking whether a guard exists is satisfied by a function that says yes to everything, so the seat also hands the
+guard to a predicate (`accept_guard`, `accept_evidence_guard`; CCC's `require_permission`, `accept_permission`) that
+accepts only the guards the spine builds. The kernel's `registry` and `ledger` are read-only, so replacing them after
+approval is refused. The spine's decisions expire after five minutes. A direct call that is not stopped here is still
+not stopped: a private name can be written, and a kernel or CCC built without a guard and called directly is the
+recorded GAP.
 
 A passing decision records the one document its seats agreed on (`Decision.subject`).
 `cns_composition.decision_guard.DecisionGuard` turns that into a permission for
@@ -365,7 +371,14 @@ only if it reads as exactly the approved document, and only once. A guard that
 was never authorized, or was given a refused decision, stays shut, and so does
 one given a decision the roster did not issue: `Decision.issued` is a
 process-local proof that `SuperGate.decide` made it, so a decision written or
-copied by hand cannot open a guard. The proof means nothing to another process. It protects
+copied by hand cannot open a guard. The proof means nothing to another process.
+Reading the same document is not the same as being the same object, so a guard can also be bound to one seat:
+`DecisionGuard(reader, seat="Conservation_Kernel:root_admission", binding_of=...)` opens only for the object whose
+`binding_of` equals what that seat's PASS verdict is bound to, so an approval for one root or one CCC call cannot be
+spent on another with the same source and text. Use the digest function the seat's own repository exports as
+`binding_of`, and pass `expected_seats` so a decision from a roster that lacks the seats you require, such as a short
+roster of gates that pass anything, cannot open it. `expected_seats` checks seat names, not what stands behind a
+name. One use means one yes: the guard answers under a lock. It protects
 the kernels built with it. A roster can insist on that: seat the kernel's root
 gate with `require_guard=True` and a kernel built without a guard gets no
 approval. Add `require_evidence_guard=True` and a kernel whose registry takes evidence

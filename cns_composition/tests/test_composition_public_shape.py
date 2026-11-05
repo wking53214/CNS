@@ -45,7 +45,8 @@ def test_decide_keeps_candidates_and_ttl_and_adds_context_as_an_optional_keyword
 def test_the_guard_keeps_its_reader_and_clock_and_adds_optional_keywords_for_the_checks():
     assert shape(DecisionGuard.__init__) == [
         ("self", POS, False), ("subject_of", POS, False), ("clock", KW, True), ("expected_seats", KW, True),
-        ("expected_context", KW, True), ("require_strict_binding", KW, True)]
+        ("expected_context", KW, True), ("require_strict_binding", KW, True), ("seat", KW, True),
+        ("binding_of", KW, True)]
     assert shape(DecisionGuard.authorize) == [("self", POS, False), ("decision", POS, False)]
 
 

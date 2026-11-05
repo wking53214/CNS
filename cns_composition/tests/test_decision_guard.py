@@ -282,3 +282,219 @@ def test_a_clock_must_be_a_function():
     with pytest.raises(ValueError, match="clock"):
         SuperGate([("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("judge", OM))],
                   required=(DOOR, JUDGE), clock="now")
+
+
+# -- bound to a seat's verdict: the same document is not enough -------------------------------------------------------
+
+from cns.gate import subject_digest  # noqa: E402
+
+
+def door_binding(candidate):
+    """What FakeGate binds its verdict to for `candidate`: the (subject, digest) a guard must check."""
+    return "door", subject_digest({"candidate": candidate})
+
+
+def seat_guard(seat=DOOR, binding_of=door_binding):
+    # The document is read from the first two parts, so a candidate can carry a third part that the document
+    # check does not see: same source, same text, and a different object.
+    return DecisionGuard(lambda artifact: Judged(artifact[0], artifact[1]), seat=seat, binding_of=binding_of)
+
+
+def test_a_seat_bound_guard_opens_for_the_exact_object_that_seat_judged_and_only_once():
+    g = seat_guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True and g.spent
+    assert g(("doc-1", "abc")) is False
+
+
+def test_the_same_document_but_another_object_is_refused_and_does_not_spend_the_permission():
+    g = seat_guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc", "a different object")) is False
+    assert not g.spent
+    assert g(("doc-1", "abc")) is True
+
+
+def test_the_same_guard_without_a_seat_cannot_tell_those_two_objects_apart():
+    """The weakness the seat closes, stated as a fact: the document check alone opens for either."""
+    g = DecisionGuard(lambda artifact: Judged(artifact[0], artifact[1]))
+    g.authorize(decision())
+    assert g(("doc-1", "abc", "a different object")) is True
+
+
+def test_a_binding_reader_that_raises_never_permits():
+    def boom(candidate):
+        raise RuntimeError("cannot read")
+    g = seat_guard(binding_of=boom)
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is False and not g.spent
+
+
+@pytest.mark.parametrize("answer", [None, "door", ("door",), ("door", "x", "y"), ["door", "x"]])
+def test_a_binding_reader_that_answers_the_wrong_shape_never_permits(answer):
+    g = seat_guard(binding_of=lambda candidate: answer)
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is False
+
+
+def test_a_seat_that_is_not_on_the_roster_cannot_authorize_and_spends_nothing():
+    decided = decision()
+    g = seat_guard(seat="Conservation_Kernel:root_admission")
+    with pytest.raises(ValueError, match="has no seat"):
+        g.authorize(decided)
+    assert not g.authorized and g(("doc-1", "abc")) is False
+    seat_guard().authorize(decided)  # the refusal did not spend the decision's nonce
+
+
+def test_a_gate_name_two_seats_share_leaves_no_one_verdict_to_bind_to():
+    seats = [("Governance_Gateway", FakeGate("door", A)), ("DIT", FakeGate("door", OM))]
+    keys = ("Governance_Gateway:door", "DIT:door")
+    decided = SuperGate(seats, required=(*keys, "CNS:same_subject"), same_subject={k: reads for k in keys}).decide(
+        {k: ("doc-1", "abc") for k in keys})
+    assert decided.allowed
+    with pytest.raises(ValueError, match="2 verdicts named door"):
+        seat_guard(seat="Governance_Gateway:door").authorize(decided)
+
+
+@pytest.mark.parametrize("kwargs", [{"seat": DOOR}, {"binding_of": door_binding}])
+def test_a_seat_and_its_binding_reader_go_together(kwargs):
+    with pytest.raises(ValueError, match="go together"):
+        DecisionGuard(lambda artifact: Judged(*artifact), **kwargs)
+
+
+@pytest.mark.parametrize("seat", ["door", ":door", "Governance_Gateway:", 7])
+def test_a_seat_must_be_named_as_repository_and_gate(seat):
+    with pytest.raises(ValueError, match="repository:gate"):
+        DecisionGuard(lambda artifact: Judged(*artifact), seat=seat, binding_of=door_binding)
+
+
+# -- bound to a roster: a short roster of gates that pass anything cannot open the guard -------------------------------
+
+def guard_requiring(*seats):
+    return DecisionGuard(lambda artifact: Judged(*artifact), expected_seats=seats)
+
+
+def test_a_decision_whose_roster_seats_every_required_seat_authorizes():
+    g = guard_requiring(DOOR, JUDGE, "CNS:same_subject")
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True
+
+
+def test_a_decision_from_a_roster_missing_a_required_seat_cannot_authorize_and_spends_nothing():
+    decided = decision()
+    g = guard_requiring(DOOR, JUDGE, "Conservation_Kernel:root_admission")
+    with pytest.raises(ValueError, match="roster lacks.*Conservation_Kernel:root_admission"):
+        g.authorize(decided)
+    assert not g.authorized and g(("doc-1", "abc")) is False
+    guard_requiring(DOOR).authorize(decided)  # the refusal did not spend the decision's nonce
+
+
+def test_a_short_roster_that_passes_anything_cannot_open_a_guard_that_requires_the_real_roster():
+    weak = SuperGate([("Governance_Gateway", FakeGate("a", A)), ("DIT", FakeGate("o", OM))],
+                     required=("Governance_Gateway:a",), same_subject={"Governance_Gateway:a": reads, "DIT:o": reads})
+    decided = weak.decide({"Governance_Gateway:a": ("doc-1", "abc"), "DIT:o": ("doc-1", "abc")})
+    assert decided.allowed and decided.issued
+    with pytest.raises(ValueError, match="roster lacks"):
+        guard_requiring(DOOR, JUDGE, "CNS:same_subject").authorize(decided)
+
+
+@pytest.mark.parametrize("seats", [("a", "a"), ("",), (7,)])
+def test_expected_seats_must_be_distinct_non_empty_names(seats):
+    with pytest.raises(ValueError, match="expected_seats"):
+        guard_requiring(*seats)
+
+
+# -- one use means one yes, even when callers arrive together ---------------------------------------------------------
+
+def test_many_callers_at_once_get_exactly_one_yes_from_a_one_use_permission():
+    import time
+
+    def slow_reader(artifact):
+        time.sleep(0.002)  # widens the window between "not spent yet" and "spent now"
+        return Judged(*artifact)
+
+    for _ in range(20):
+        g = DecisionGuard(slow_reader)
+        g.authorize(decision())
+        answers, ready = [], threading.Barrier(8)
+
+        def knock():
+            ready.wait()
+            answers.append(g(("doc-1", "abc")))
+
+        threads = [threading.Thread(target=knock) for _ in range(8)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        assert answers.count(True) == 1 and g.spent
+
+
+def test_many_decisions_authorizing_one_guard_at_once_leave_exactly_one_of_them_in_charge():
+    """`authorize` runs under the guard's lock: of several decisions racing for one guard, exactly one authorizes it,
+    the rest are refused, and the guard answers only for the winner's document."""
+    for _ in range(20):
+        g = DecisionGuard(lambda artifact: Judged(*artifact))
+        decided = [decision() for _ in range(8)]
+        outcomes, ready = [], threading.Barrier(len(decided))
+
+        def race(one):
+            ready.wait()
+            try:
+                g.authorize(one)
+                outcomes.append("won")
+            except ValueError:
+                outcomes.append("refused")
+
+        threads = [threading.Thread(target=race, args=(one,)) for one in decided]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        assert outcomes.count("won") == 1 and outcomes.count("refused") == len(decided) - 1
+        assert g(("doc-1", "abc")) is True
+
+
+# -- commit and abort: a write that fails can give the permission back, one that finished cannot ------------------------
+
+def test_a_committed_permission_stays_used():
+    g = guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True and not g.committed
+    g.commit()
+    assert g.committed and g.spent
+    g.abort()  # too late: the write it permitted happened
+    assert g.spent and g(("doc-1", "abc")) is False
+
+
+def test_an_aborted_permission_is_given_back_and_opens_once_more():
+    g = guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True
+    g.abort()
+    assert not g.spent and not g.committed
+    assert g(("doc-1", "abc")) is True and g.spent
+    g.commit()
+    assert g(("doc-1", "abc")) is False
+
+
+def test_an_abort_with_no_yes_outstanding_changes_nothing():
+    g = guard()
+    g.abort()
+    g.authorize(decision())
+    g.abort()
+    assert g.authorized and not g.spent
+    assert g(("doc-1", "abc")) is True
+
+
+def test_an_abort_gives_back_only_the_permission_for_the_same_object():
+    g = seat_guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc", "a different object")) is False
+    assert g(("doc-1", "abc")) is True
+    g.abort()
+    assert g(("doc-1", "abc", "a different object")) is False
+    assert g(("doc-1", "abc")) is True
+
+
+def test_while_a_yes_is_outstanding_nobody_else_gets_one():
+    g = guard()
+    g.authorize(decision())
+    assert g(("doc-1", "abc")) is True
+    assert g(("doc-1", "abc")) is False  # reserved: neither committed nor given back yet
