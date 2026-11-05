@@ -82,14 +82,31 @@ def test_receiver_documents_validate_a_grants_file_a_job_and_an_approval(tmp_pat
                               "subject_digest": "y", "expires_at": 1, "sig": "0" * 128})
 
 
-def codes_in_source() -> set:
-    found = set()
-    files = [*(ROOT / "cns_interop").glob("*.py"), ROOT / "interop" / "act.py", *(ROOT / "interop" / "node").glob("*.mjs")]
+#: How each implementation spells a refusal. Python: Refused("code"), _refuse("code"), _refuse_startup(cfg, "code").
+#: Node: Refused("code"), refuse("code"), refuseStartup(cfg, "code") (act.mjs's runner refusals, which the first form missed).
+_PY_FORMS = (r'Refused\(\s*"([a-z_]+)"', r'_refuse\(\s*"([a-z_]+)"', r'_refuse_startup\(\s*\w+,\s*"([a-z_]+)"')
+_NODE_FORMS = (r'Refused\(\s*"([a-z_]+)"', r'\brefuse\(\s*"([a-z_]+)"', r'\brefuseStartup\(\s*\w+,\s*"([a-z_]+)"')
+
+
+def codes_emitted(files: list, forms: tuple) -> set:
+    found: set = set()
     for f in files:
         text = f.read_text()
-        found |= set(re.findall(r'Refused\(\s*"([a-z_]+)"', text))
-        found |= set(re.findall(r'_refuse\(\s*"([a-z_]+)"', text))
+        for form in forms:
+            found |= set(re.findall(form, text))
     return found
+
+
+def python_source() -> list:
+    return [*(ROOT / "cns_interop").glob("*.py"), ROOT / "interop" / "act.py"]
+
+
+def node_source() -> list:
+    return [p for p in (ROOT / "interop" / "node").glob("*.mjs") if not p.name.endswith("test.mjs")]
+
+
+def codes_in_source() -> set:
+    return codes_emitted(python_source(), _PY_FORMS) | codes_emitted(node_source(), _NODE_FORMS)
 
 
 def test_the_error_registry_covers_every_code_either_implementation_can_emit():
@@ -103,12 +120,24 @@ def test_the_error_registry_covers_every_code_either_implementation_can_emit():
     missing = codes_in_source() - set(codes)
     assert not missing, f"codes emitted by the source but absent from the registry: {sorted(missing)}"
     # a code the registry says only Python emits must not appear in the Node source (and the reverse for "both")
-    node_src = "".join(p.read_text() for p in (ROOT / "interop" / "node").glob("*.mjs"))
-    node_codes = set(re.findall(r'Refused\(\s*"([a-z_]+)"', node_src))
+    node_codes = codes_emitted(node_source(), _NODE_FORMS)
     for c in reg["codes"]:
         if c["implementations"] == "python":
             assert c["code"] not in node_codes, c["code"]
     assert node_codes <= set(codes)
+
+
+def test_the_registry_says_exactly_which_implementation_emits_each_code_and_the_two_vocabularies_are_the_registry():
+    """R2-C-08: `config` was registered Python-only though act.mjs emits it, and the scan above could not see Node's `refuse(`.
+    For every code the registry's `implementations` must equal what each implementation's source emits, in both directions."""
+    reg = {c["code"]: c["implementations"] for c in json.loads((PKG / "errors.json").read_text())["codes"]}
+    py, node = codes_emitted(python_source(), _PY_FORMS), codes_emitted(node_source(), _NODE_FORMS)
+    wrong = {code: (impl, code in py, code in node) for code, impl in reg.items()
+             if (impl in ("both", "python")) != (code in py) or (impl in ("both", "node")) != (code in node)}
+    assert not wrong, f"code: (registered, emitted by Python, emitted by Node): {wrong}"
+    assert (py | node) <= set(reg)
+    for code in ("config", "clock_skew", "unavailable"):      # the clock-trust vocabulary, named: both implementations, same words
+        assert reg[code] == "both" and code in py and code in node, code
 
 
 def test_the_published_conformance_suite_is_current():

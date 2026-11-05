@@ -259,7 +259,7 @@
   {
    "code": "config",
    "consumes_message": false,
-   "implementations": "python",
+   "implementations": "both",
    "layer": "operator",
    "meaning": "The receiver's own configuration is invalid or incomplete; it refuses to start rather than act without policy.",
    "retry": "after-fix"
