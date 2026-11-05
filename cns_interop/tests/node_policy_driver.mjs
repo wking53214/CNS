@@ -14,6 +14,8 @@ let store;
 try { store = new PP.PostgresGrantStore(dsn, { prefix: job.prefix + "_policy" }); }
 catch (e) { console.log(JSON.stringify([{ code: e.code ?? "config", reason: e.reason ?? e.message }])); process.exit(0); }
 const target = new F.FencedTarget();
+let audit = null;
+const auditor = () => (audit ??= new PP.PostgresAudit(dsn, { prefix: job.prefix + "_audit" }));
 const stubLedger = { reserve() { return { key: "k" }; }, commit() {}, release() {} };
 for (const [op, ...a] of job.ops) {
   try {
@@ -24,6 +26,9 @@ for (const [op, ...a] of job.ops) {
       out.push({ ok: table.checkTerms(a[1]).id });
     }
     else if (op === "fence") { target.check(a[0], a[1]); out.push({ ok: true }); }
+    else if (op === "audit_append") out.push({ ok: auditor().append(a[0]) });
+    else if (op === "audit_verify") out.push({ ok: auditor().verify() });
+    else if (op === "audit_head") out.push({ ok: auditor().head() });
     else throw new Error(`unknown op ${op}`);
   } catch (e) { out.push({ code: e instanceof U.Refused ? e.code : "error", reason: e.reason ?? e.message }); }
 }

@@ -162,3 +162,128 @@ def test_a_stale_fence_from_one_languages_ledger_is_refused_by_the_other_languag
     with pytest.raises(Refused) as e:
         target.check("acct", stale2)
     assert e.value.code == "fenced"
+
+
+# ---------------------------------------------------------------------------------------------------------------------------
+# THE AUDIT CHAIN: Node writes the same chain format into the same table as Python, and each verifies the other's.
+from cns.gate import subject_digest  # noqa: E402
+
+from cns_interop.policy_postgres import PostgresAudit  # noqa: E402
+
+ZERO = "0" * 64
+ENTRIES = [{"at": 1000 + i, "outcome": "permitted" if i % 2 else "withdrawn", "grant": f"g{i}", "version": i, "approver": ""}
+           for i in range(4)]
+
+
+GOLDEN = ["602fff030b7f284439f9047abf0168505e8bb3d4b730ea8825a36d93bfc9fecc",
+          "53618a4d700e48632998bb54d60398301ba1c93d6116c3c90b3481a652851ede",
+          "0c08d894f1bdc3a6cb3d0c7460739d80fd45211bb6f5531783c63993139925ef",
+          "0acc9ab50c3d6c60c37e1abc4d8151e6d64dc52617830a52c4c47621073cd299"]
+
+
+def golden_chain() -> List[str]:
+    """The digests of ENTRIES chained from the zero digest, computed by the unchanged subject_digest: historical hashes."""
+    prev, out = ZERO, []
+    for e in ENTRIES:
+        prev = subject_digest({**e, "prev": prev})
+        out.append(prev)
+    return out
+
+
+def test_the_chain_digests_are_the_historical_ones_and_node_derives_the_same_ones(cluster):
+    # pinned from the code before this change: a change to the digest of any entry would break every existing chain
+    assert golden_chain() == GOLDEN
+    got = node(cluster.dsn, prefix(), [["audit_append", e] for e in ENTRIES])
+    assert [r["ok"] for r in got] == golden_chain()
+
+
+def test_python_verifies_a_node_written_chain_and_node_verifies_a_python_written_chain(cluster):
+    pre = prefix()
+    py = PostgresAudit(cluster.dsn, prefix=pre + "_audit")
+    node_digests = [r["ok"] for r in node(cluster.dsn, pre, [["audit_append", e] for e in ENTRIES[:2]])]
+    assert py.verify() == node_digests[-1] and py.head() == node_digests[-1]
+    py_digests = [py.append(e) for e in ENTRIES[2:]]
+    assert node(cluster.dsn, pre, [["audit_verify"], ["audit_head"]]) == [{"ok": py_digests[-1]}, {"ok": py_digests[-1]}]
+    assert [*node_digests, *py_digests] == golden_chain()          # one chain, whichever language wrote each entry
+    node(cluster.dsn, pre, [["audit_append", {"at": 9, "outcome": "x"}]])
+    assert py.verify() == node(cluster.dsn, pre, [["audit_head"]])[0]["ok"]
+
+
+def test_an_empty_chain_verifies_to_the_zero_digest_in_both(cluster):
+    pre = prefix()
+    assert PostgresAudit(cluster.dsn, prefix=pre + "_audit").verify() == ZERO
+    assert node(cluster.dsn, pre, [["audit_verify"], ["audit_head"]]) == [{"ok": ZERO}, {"ok": ZERO}]
+
+
+def _tamper(cluster: Any, pre: str, how: str) -> None:
+    import psycopg
+    t = f"{pre}_audit_chain"
+    with psycopg.connect(cluster.dsn, autocommit=True) as db:
+        rows = db.execute(f"SELECT seq, digest, entry FROM {t} ORDER BY seq").fetchall()
+        if how == "altered":
+            e = json.loads(rows[1][2])
+            e["outcome"] = "forged"
+            db.execute(f"UPDATE {t} SET entry = %s WHERE seq = %s", (json.dumps(e, sort_keys=True), rows[1][0]))
+        elif how == "removed":
+            db.execute(f"DELETE FROM {t} WHERE seq = %s", (rows[1][0],))
+        elif how == "reordered":
+            db.execute(f"UPDATE {t} SET seq = -1 WHERE seq = %s", (rows[1][0],))
+            db.execute(f"UPDATE {t} SET seq = %s WHERE seq = %s", (rows[1][0], rows[2][0]))
+            db.execute(f"UPDATE {t} SET seq = %s WHERE seq = -1", (rows[2][0],))
+        elif how == "garbage":
+            db.execute(f"UPDATE {t} SET entry = %s WHERE seq = %s", ("not json\tat all\nsecond line", rows[1][0]))
+        elif how == "stored_digest":
+            db.execute(f"UPDATE {t} SET digest = %s WHERE seq = %s", ("f" * 64, rows[1][0]))
+
+
+@pytest.mark.parametrize("how", ["altered", "removed", "reordered", "garbage", "stored_digest"])
+@pytest.mark.parametrize("writer", ["python", "node"])
+def test_a_tampered_chain_is_refused_by_both_languages_whoever_wrote_it(cluster, writer, how):
+    pre = prefix()
+    py = PostgresAudit(cluster.dsn, prefix=pre + "_audit")
+    if writer == "python":
+        for e in ENTRIES:
+            py.append(e)
+    else:
+        node(cluster.dsn, pre, [["audit_append", e] for e in ENTRIES])
+    assert py.verify() == golden_chain()[-1]
+    _tamper(cluster, pre, how)
+    with pytest.raises(Refused) as e:
+        py.verify()
+    assert e.value.code == "unavailable"
+    assert codes(node(cluster.dsn, pre, [["audit_verify"]])) == ["unavailable"]
+
+
+def test_the_newest_entries_cut_off_is_not_detected_by_either_language_and_head_is_what_an_operator_anchors(cluster):
+    import psycopg
+    pre = prefix()
+    py = PostgresAudit(cluster.dsn, prefix=pre + "_audit")
+    node(cluster.dsn, pre, [["audit_append", e] for e in ENTRIES])
+    head = py.head()
+    with psycopg.connect(cluster.dsn, autocommit=True) as db:
+        db.execute(f"DELETE FROM {pre}_audit_chain WHERE seq = (SELECT max(seq) FROM {pre}_audit_chain)")
+    assert py.verify() != head and node(cluster.dsn, pre, [["audit_verify"]])[0]["ok"] == py.verify()   # a shorter, valid chain
+
+
+def test_concurrent_writers_in_both_languages_extend_one_unbroken_chain(cluster):
+    from concurrent.futures import ThreadPoolExecutor
+    pre = prefix()
+    py = PostgresAudit(cluster.dsn, prefix=pre + "_audit")
+    PostgresAudit(cluster.dsn, prefix=pre + "_audit")
+
+    def go(i: int) -> Any:
+        if i % 2:
+            return node(cluster.dsn, pre, [["audit_append", {"at": i, "outcome": "n", "n": j}] for j in range(3)])
+        return [py.append({"at": i, "outcome": "p", "n": j}) for j in range(3)]
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(go, range(8)))
+    last = py.verify()
+    assert node(cluster.dsn, pre, [["audit_verify"]]) == [{"ok": last}]
+    import psycopg
+    with psycopg.connect(cluster.dsn, autocommit=True) as db:
+        assert db.execute(f"SELECT count(*) FROM {pre}_audit_chain").fetchone()[0] == 24
+
+
+def test_a_database_outage_is_unavailable_for_the_audit_chain_too(cluster):
+    dead = "host=127.0.0.1 port=1 user=postgres dbname=postgres"
+    assert codes(node(dead, prefix(), [])) == ["unavailable"]

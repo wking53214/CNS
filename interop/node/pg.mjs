@@ -92,7 +92,7 @@ export class PgGuard {
     const args = ["-X", "-q", "-A", "-t", "-F", "\t", "-v", "ON_ERROR_STOP=1"];
     for (const [k, v] of Object.entries(vars)) args.push("-v", `${k}=${v === null || v === undefined ? "" : String(v)}`);
     const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", ...(process.env.HOME ? { HOME: process.env.HOME } : {}), ...this._env };
-    const r = spawnSync(this._psql, args, { input: `BEGIN;\n${sql}\nCOMMIT;\n`, env, encoding: "utf8", timeout: this._boundMs, killSignal: "SIGKILL" });
+    const r = spawnSync(this._psql, args, { input: `BEGIN;\n${sql}\nCOMMIT;\n`, env, encoding: "utf8", timeout: this._boundMs, killSignal: "SIGKILL", maxBuffer: 256 * 1024 * 1024 });
     if (r.error && r.error.code === "ETIMEDOUT") throw new Refused("unavailable", "the ledger database did not answer in time");
     if (r.error) throw new Refused("unavailable", `the ledger database is unreachable (${r.error.code ?? "spawn failed"})`);
     if (r.status !== 0) throw new Refused("unavailable", "the ledger database did not give a definite answer");
