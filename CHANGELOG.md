@@ -80,6 +80,9 @@ not a release.
   CNS. alpha's run is the reference the other stages are judged against.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.
+  It names the hardened tips (alpha `ac34eec`, zeta `10b5ba7`, beta `c9afa4e`, delta `49106db`); `v2.3.0` and its
+  commit are unchanged. The manifest check was verified on detached worktrees at exactly those commits and
+  `chains/spine_run.py` ran 62 of 62 on them.
 
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring

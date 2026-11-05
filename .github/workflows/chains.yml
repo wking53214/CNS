@@ -19,7 +19,9 @@
 # spine-pinned           the same decision spine, but on the four commits contracts/spine-manifest.json names and nothing else.
 #                        The `chains` job above runs each repository's floating default branch, which is the drift detector;
 #                        this job runs the set the four repositories declare. It first holds every pin and every checkout to
-#                        the manifest (cns_composition.spine_manifest), then runs spine_run.py. Individual green CI is not this.
+#                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 62 scenarios, including the hardened
+#                        components' refusals and the delta receipt. The manifest names the hardened tips (alpha ac34eec, zeta 10b5ba7,
+#                        beta c9afa4e, delta 49106db). Individual green CI is not this.
 #
 # Each script exits 1 when a scenario differs from what it states, so this goes red the day a repository changes in a
 # way that breaks a chain: the failure points at the scenario, and the repositories' own suites cannot see it.
