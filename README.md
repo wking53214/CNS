@@ -211,12 +211,21 @@ the strict check takes, and what each part is worth:
   digest of the delta content given, `entry_hash` and `previous_hash` are the delta content's own, the context is the
   run's, `0 <= index < checkpoint_length <= ledger_length`, the heads are 64 lowercase hex digits, the ledger head is the
   entry's hash when the entry is the last, and the checkpoint head is the ledger head when the checkpoint covers the whole
-  ledger. The receipt is not signed: a hand-built consistent one passes.
+  ledger, and the checkpoint head is the entry's own hash when the entry is the last one the checkpoint covers. The receipt
+  is not signed: a hand-built consistent one passes.
+- **An optional checkpoint held outside the ledger** (`held_checkpoint=(length, head)` or `{"length": ..., "head": ...}`,
+  supplied by the caller from storage the ledger's producer cannot write). The receipt's `checkpoint_length` and
+  `checkpoint_head` must then equal it exactly; a ledger that was tampered with, rechained and given a fresh checkpoint is
+  refused. Without it nothing CNS holds can tell that receipt from an honest one, and behaviour is exactly as before (a
+  recorded gap). With it, what stays undetectable is a tampering the held checkpoint does not cover (entries after its
+  length), a held checkpoint the attacker can also write, and a checkpoint taken from the ledger being checked.
 - **An optional recomputation of alpha's KeySet fingerprint** (`keyset_fingerprint_of`, built by the caller from zeta, which
   owns the rule; CNS imports nothing from zeta). The runner supplies it. Without it only the fingerprint strings alpha,
-  zeta and beta carry are compared, and substituted alpha content that copies the original string passes.
+  zeta and beta carry are compared, and substituted alpha content that copies the original string passes. The callable is
+  asked once per alpha content (a second evaluation of the same run reuses the answer), a root issued with it says so, and
+  `require_keyset_verifier=True` makes its absence a named problem (the default keeps existing callers working).
 - **A KeySet fingerprint and a content fingerprint compared as carried.** Zeta records the fingerprint of the KeySet it
-  evaluated; beta's `content_fingerprint` (13 of a Decision's 15 fields; `decision_fingerprint` covers five and is
+  evaluated; beta's `content_fingerprint` (13 of a Decision's 16 fields; `decision_fingerprint` covers five and is
   unchanged) is compared between beta's content and delta's embedded copy and never recomputed in CNS.
 - **A `content_fingerprint` on every Decision.** Strict verification refuses beta's content, or delta's embedded copy,
   that carries none: a legacy Decision, or one whose fingerprint was blanked, has lost the claim that its fields were not
@@ -244,13 +253,16 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
    the caller reconciles; a retry hands it the same entry. And a receipt written by hand with fields that fit each other
    (limit 1) passes: only where the checkpoint is kept tells it from delta's.
 
-The `chains` workflow runs 83 scenarios: seven lenient, and 76 strict. The strict ones are six checks that hold, 63 attacks
+The `chains` workflow runs 113 scenarios: seven lenient, and 106 more (the strict ones, the oracle and the manifest checks
+held to account with real objects). Of the 113 in all, 21 are checks that hold, 82 are attacks
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
 only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
 that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
-change), and the seven gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
-fingerprint, a cited closed lock, a legacy lock result, a KeySet swapped when no recomputation is supplied, and the sink's
-own store, limit 7). The scenarios attack the receipt itself
+change), and the ten gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
+fingerprint, a cited closed lock, a legacy lock result, a KeySet swapped when no recomputation is supplied, the sink's
+own store, and a rewritten ledger with a fresh checkpoint when none is held outside it, a truncated export and a rewritten, rechained export
+when no checkpoint is held outside, limit 10); 13 of the 106 verify delta's public `export` with `verify_export` and a checkpoint held
+outside the ledger, or follow zeta's entity check. The scenarios attack the receipt itself
 from delta's real one, and delta's refusal of a checkpoint (one sentence for five causes) is explained by the runner's own
 wrapper so each scenario requires its own cause. A scenario table row must be an `Expect`; a plain string is a `TypeError`
 when the script loads.
@@ -748,6 +760,9 @@ Each line names the test or workflow job that holds it. A claim without one is n
 - What each registered repository takes from CNS is still there (`cns_composition/tests/test_consumers.py`), and
   the `links` job re-reads their source daily to keep the registry a fact. The ledger of 42 repositories is held to
   the files it names by the same job (`contracts/cns-links.json`: 37 two-way, 4 exempt, 1 hub on 2026-10-22).
+- `subject_digest` renders exact types only: a subclass of `str`, `int`, `float`, `dict`, `list` or `tuple` is refused with a
+  `TypeError` naming the type, because it would be rendered through methods it can override while the ledger hash reads the
+  raw data. No plain value digests differently (a deliberate contract change, for subclass inputs only; see CHANGELOG).
 - The digest answer key is exactly what `cns.gate.subject_digest` produces (`cns_composition/tests/test_digest_vectors.py`)
   and STACK-Kernel's vendored copy is compared with it in the `links` job.
 - The whole circuit installs from `contracts/install-stack.txt` with `pip check` clean and exactly one `cns`, runs on

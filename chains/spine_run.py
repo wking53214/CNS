@@ -19,13 +19,14 @@ str-subclass or shifting context, an aliased list, a stale content fingerprint, 
 swapped under a copied fingerprint) and state, as an `Expect` (see
 `spine_oracle.py`), the problems the boundary that should refuse each one must name and the only extras it may add.
 A scenario fails if a required problem is missing, if an unlisted problem appears, if it returns nothing when it
-should be refused, if it crashes without declaring it, or if a refusal changed the state it guarded. Seven scenarios,
-marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
+should be refused, if it crashes without declaring it (a SystemExit or KeyboardInterrupt is a crash of that scenario and
+never ends the run), if a refusal's text came back without a refusal having been recorded, or if a refusal changed the
+state it guarded (the whole content of every entry, not only its hash). Eight scenarios, marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
 recomputes every digest and fingerprint and writes a consistent receipt), a receipt written by hand over real contents
 with no ledger behind it, a narrative forged by someone who also recomputes the keyless content fingerprint, a Decision
 citing a closed lock, a legacy lock result with no entity id, a KeySet swapped under a copied fingerprint when no
-recomputation is supplied, and a sink whose own store keeps a write the ledger does not have (delta's idempotency
-contract). They go red the day the gap closes and are then updated on purpose.
+recomputation is supplied, a sink whose own store keeps a write the ledger does not have (delta's idempotency
+contract), and a rewritten ledger given a fresh checkpoint when no checkpoint is held outside it (`held_checkpoint`). They go red the day the gap closes and are then updated on purpose.
 
 The run also attacks the receipt itself (zeroed heads, an index beyond the ledger or the checkpoint, another entry's
 hashes, a lying str-subclass digest or head, a key that only prints like a field name) starting from the receipt delta
@@ -38,7 +39,7 @@ the checkpoint does not cover). Delta's refusal of a checkpoint is one sentence 
 from __future__ import annotations
 
 import dataclasses
-import hashlib
+import json
 import sys
 import threading
 import warnings
@@ -46,12 +47,13 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
 
-from spine_oracle import Expect, check_table, judge
+from spine_oracle import Expect, check_table, entries_digest, judge
 from spine_oracle import refused as _refused
 
 import alpha.cns_connector as alpha_cns
 import beta.cns_connector as beta_cns
 import delta.cns_connector as delta_cns
+import delta as delta_pkg
 import delta.context as delta_context
 import zeta.cns_connector as zeta_cns
 from alpha import VitalsObservation, observe
@@ -60,10 +62,11 @@ from beta import (
     StaleLockResultError, decision_fingerprint)
 from beta.fingerprint import content_fingerprint
 from cns.gate import subject_digest
+from cns_composition import spine_manifest
 from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, SpineRecord, context_problems, problems, root, strict_problems, strict_root)
 from delta import DecisionLedger
-from delta.ledger import LedgerCheckpoint
+from delta.ledger import DuplicateRecordError, LedgerCheckpoint
 from zeta import Combination, Key, KeySet, LockEvaluator, LockRegistry, LockSpec
 
 T0 = datetime(2026, 10, 1, 8, 0, 0)
@@ -204,7 +207,8 @@ def refusal_cause(ledger: DecisionLedger, held: Any) -> str:
                 "(truncated, with its own chain still verifying)")
     if any(e.immutable_hash == head for e in entries):
         return "checkpoint head is another entry of this ledger: its history was reordered or rewritten after the checkpoint"
-    return "wrong-ledger checkpoint: its head names no entry of this ledger"
+    return ("unmatched checkpoint: its head names no entry of this ledger (a checkpoint of another ledger, or of this ledger's own "
+            "history before it was rewritten and rechained; a length and a head cannot tell which)")
 
 
 def ask_delta(ledger: DecisionLedger, held: Any, *, context: Any, decision_digest: Any) -> Dict[str, Any]:
@@ -256,12 +260,12 @@ def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None, ca
 
 
 def ledger_state(ledger: DecisionLedger) -> Callable[[], Any]:
-    """What a refusal must leave alone: the length, the head AND a digest of every entry's hash in order, so a refusal that
-    swapped one entry for another of the same count and head still shows."""
+    """What a refusal must leave alone: the length, the head AND a digest of the whole content of every entry in order (its
+    Decision, ids and timestamp as well as its hashes), so a refusal that swapped an entry for another of the same count and
+    head, or edited an entry and kept its hash, still shows."""
     def state() -> Any:
         entries = list(ledger.entries)
-        return (len(entries), ledger.chain_head,
-                hashlib.sha256("\n".join(e.immutable_hash for e in entries).encode("ascii")).hexdigest())
+        return (len(entries), ledger.chain_head, entries_digest(entries))
     return state
 
 
@@ -285,10 +289,12 @@ def strict_root_is_not_a_lenient_root() -> List[str]:
 
 
 def subject_substituted_between_alpha_and_zeta() -> List[str]:
-    """Zeta's results are bound to another patient's context, though they cite alpha's KeySet digest."""
+    """Zeta's results are bound to another patient's context, though they cite alpha's KeySet digest. Zeta now refuses to
+    bind a result to a context of another entity, so the results here are the other patient's own (evaluated for it)."""
     p = stages(SICK)
     other = {**CTX, "entity_id": "patient_2"}
-    p["zeta"] = {lid: zeta_cns.lock_result_content(r, context=other, keyset_digest=p["da"]) for lid, r in p["results"].items()}
+    p["zeta"] = {lid: zeta_cns.lock_result_content(dataclasses.replace(r, entity_id="patient_2"), context=other,
+                                                   keyset_digest=p["da"]) for lid, r in p["results"].items()}
     return check(p)
 
 
@@ -531,6 +537,47 @@ def a_keyset_substituted_under_a_copied_fingerprint_is_recomputed() -> List[str]
     return substituted_alpha_content_under_the_original_fingerprint(verify_fingerprint=True)
 
 
+def a_verifier_that_answers_differently_the_second_time() -> List[str]:
+    """E55. A substituted alpha under a copied fingerprint, and a verifier that recomputes honestly once and then echoes alpha's
+    own fingerprint. `strict_problems` names the problem; `strict_root` used to ask again, be lied to, and issue a root for the
+    same run. The verifier is asked once, so no root is issued."""
+    p = stages(SICK)
+    other = alpha_cns.keyset_content(observe(SICK_ELSEWHERE), context=CTX)
+    other["keyset_fingerprint"] = p["alpha"]["keyset_fingerprint"]
+    q = rechain_from_alpha(p, other)
+    receipt, why = chain_receipt(q)
+    asked: List[int] = []
+
+    def flaky(alpha: Any) -> str:
+        asked.append(1)
+        return zeta_keyset_fingerprint(alpha) if len(asked) == 1 else alpha["keyset_fingerprint"]
+    args = (q["alpha"], q["zeta"], q["beta"], q["delta"])
+    found = strict_problems(*args, chain=receipt, keyset_fingerprint_of=flaky)
+    try:
+        strict_root(*args, chain=receipt, keyset_fingerprint_of=flaky)
+        found.append("a root was issued for a run strict_problems refused")
+    except ValueError:
+        pass
+    if len(asked) != 1:
+        found.append(f"the verifier was asked {len(asked)} times for one run")
+    return found
+
+
+def a_required_verifier_that_is_missing() -> List[str]:
+    """F-07. Without `keyset_fingerprint_of` CNS cannot recompute alpha's fingerprint (the recorded gap before); a caller that
+    cannot accept that says `require_keyset_verifier=True` and the absence is a named problem."""
+    p = stages(SICK)
+    receipt, why = chain_receipt(p)
+    return strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=receipt, require_keyset_verifier=True)
+
+
+def an_honest_run_with_a_required_verifier() -> List[str]:
+    p = stages(SICK)
+    receipt, why = chain_receipt(p)
+    return strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint,
+                           require_keyset_verifier=True)
+
+
 def GAP_a_keyset_substituted_under_a_copied_fingerprint_without_a_recomputation() -> List[str]:
     """KNOWN GAP, stated as a fact. Without `keyset_fingerprint_of` CNS compares the fingerprint strings alpha, zeta and
     beta carry and never recomputes alpha's from alpha's keys, so substitute content that copies the original string
@@ -644,7 +691,7 @@ def an_append_onto_a_head_that_does_not_match() -> List[str]:
 
 
 def a_narrative_edit_under_the_old_content_fingerprint() -> List[str]:
-    """Beta's decision_fingerprint covers 5 of a Decision's 15 fields; a separate content_fingerprint covers 13 (all but
+    """Beta's decision_fingerprint covers 5 of a Decision's 16 fields; a separate content_fingerprint covers 13 (all but
     audit_hash, decision_fingerprint and itself). Instructions, confidence and reasoning rewritten while the Decision keeps
     its OLD content_fingerprint no longer record: delta refuses at append (it checks the fingerprint when it has a context)."""
     p = stages(SICK)
@@ -780,6 +827,187 @@ def a_receipt_with_an_index_beyond_its_ledger_and_its_checkpoint() -> List[str]:
 
 def a_receipt_for_entry_four_of_nine_under_a_checkpoint_that_covers_one() -> List[str]:
     return altered_receipt(lambda r: {**r, "index": 4, "ledger_length": 9})
+
+
+def a_receipt_whose_checkpoint_ends_at_the_entry_but_names_no_such_head() -> List[str]:
+    """A1. The entry is the last one its checkpoint covers (index == checkpoint_length - 1), so the checkpoint's head must be
+    the entry's own hash; a receipt that names any other head for it was accepted before."""
+    return altered_receipt(lambda r: {**r, "ledger_length": 2, "ledger_head": "a" * 64, "checkpoint_head": "b" * 64})
+
+
+def _rewrite_receipted_under_a_fresh_checkpoint(held: Any) -> List[str]:
+    """macg2 A4. A ledger tampered with, rechained and given a fresh checkpoint: delta issues a receipt for it (a fresh
+    checkpoint of that ledger contains it), and every field agrees. `held` is the checkpoint the verifier kept elsewhere."""
+    q = rewrite_the_run_completely()
+    original = q["checkpoint"]
+    content = q["delta"]
+    receipt = ask_delta(q["ledger"], q["ledger"].checkpoint(), context=content["context"], decision_digest=content["decision_digest"])
+    args = (q["alpha"], q["zeta"], q["beta"], q["delta"])
+    kwargs: Dict[str, Any] = {"chain": receipt, "keyset_fingerprint_of": zeta_keyset_fingerprint}
+    if held is not None:
+        kwargs["held_checkpoint"] = (original.length, original.head)
+    found = strict_problems(*args, **kwargs)
+    try:
+        strict_root(*args, **kwargs)
+        if found:
+            found.append("a root was issued although problems were named")
+    except ValueError:
+        pass
+    return found
+
+
+def a_rewritten_ledger_with_a_fresh_checkpoint_is_refused_against_the_checkpoint_held_outside() -> List[str]:
+    return _rewrite_receipted_under_a_fresh_checkpoint(held=True)
+
+
+def GAP_a_rewritten_ledger_with_a_fresh_checkpoint_and_no_checkpoint_held_outside() -> List[str]:
+    """KNOWN GAP, stated as a fact. The same rewrite, verified without `held_checkpoint`: nothing CNS holds can tell the
+    receipt from an honest one, so no problem is named. Only a checkpoint kept where the ledger's producer cannot write it
+    closes this, and CNS can only compare what it is handed."""
+    return _rewrite_receipted_under_a_fresh_checkpoint(held=None)
+
+
+def an_honest_run_against_the_checkpoint_held_outside() -> List[str]:
+    p = stages(SICK)
+    receipt, why = chain_receipt(p)
+    if receipt is None:
+        return [f"delta issued no receipt: {why}"]
+    held = p["checkpoint"]
+    return strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint,
+                           held_checkpoint=(held.length, held.head))
+
+
+# --- independent verification: delta's public export, verified outside the producer --------------------------------
+
+def _through_json(data: Any) -> Any:
+    """What a verifier in another process receives: the export written as text and read back."""
+    return json.loads(json.dumps(data))
+
+
+def _frozen(data: Any) -> Callable[[], str]:
+    """The state a refusal must leave alone: the export as the verifier received it."""
+    return lambda: json.dumps(data, sort_keys=True)
+
+
+def independent_check(p: Dict[str, Any], data: Any, *, export_checkpoint: Any, held: Any = None) -> List[str]:
+    """The export is verified by delta's `verify_export` (a ValueError is a refusal and propagates), the rebuilt ledger is asked
+    for a receipt, and the strict check runs with that receipt as `chain` and, when given, `held_checkpoint` taken from
+    the checkpoint the verifier kept outside the producer."""
+    rebuilt = delta_pkg.verify_export(data, export_checkpoint)
+    content = p["delta"]
+    receipt = ask_delta(rebuilt, rebuilt.checkpoint(), context=content["context"], decision_digest=content["decision_digest"])
+    kwargs: Dict[str, Any] = {"chain": receipt, "keyset_fingerprint_of": zeta_keyset_fingerprint}
+    if held is not None:
+        kwargs["held_checkpoint"] = (held.length, held.head)
+    return strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"], **kwargs)
+
+
+def _two_entries() -> Tuple[Dict[str, Any], Any]:
+    """A real ledger of two entries (a second run for the same patient) and the checkpoint of its first entry."""
+    p = stages(SICK)
+    first = p["checkpoint"]
+    ctx2 = {**CTX, "run_id": "run_2", "event_id": "event_2"}
+    p["ledger"].append(stages(WELL, ctx=ctx2)["decision"], context=ctx2)
+    p["checkpoint"] = p["ledger"].checkpoint()
+    return p, first
+
+
+def an_honest_export_is_verified_outside_the_producer() -> List[str]:
+    p = stages(SICK)
+    return independent_check(p, _through_json(p["ledger"].export()), export_checkpoint=p["checkpoint"], held=p["checkpoint"])
+
+
+def an_export_with_an_edited_entry_is_refused() -> List[str]:
+    p = stages(SICK)
+    data = _through_json(p["ledger"].export())
+    data["entries"][0]["decision"]["instructions"] = "Send home."
+    return refused(lambda: delta_pkg.verify_export(data, p["checkpoint"]), _frozen(data))
+
+
+def an_export_with_an_edited_hash_is_refused() -> List[str]:
+    p = stages(SICK)
+    data = _through_json(p["ledger"].export())
+    data["entries"][0]["immutable_hash"] = "0" * 64
+    return refused(lambda: delta_pkg.verify_export(data, p["checkpoint"]), _frozen(data))
+
+
+def an_export_with_a_removed_entry_is_refused() -> List[str]:
+    p, _ = _two_entries()
+    data = _through_json(p["ledger"].export())
+    del data["entries"][0]
+    return refused(lambda: delta_pkg.verify_export(data, p["checkpoint"]), _frozen(data))
+
+
+def _truncated_export() -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    p, _ = _two_entries()
+    data = _through_json(p["ledger"].export())
+    del data["entries"][-1]
+    data["chain_head"] = data["entries"][-1]["immutable_hash"]  # a shorter chain that is consistent in itself
+    return p, data
+
+
+def a_truncated_export_is_refused_against_a_held_checkpoint() -> List[str]:
+    p, data = _truncated_export()
+    return refused(lambda: delta_pkg.verify_export(data, p["checkpoint"]), _frozen(data))
+
+
+def GAP_a_truncated_export_without_a_held_checkpoint() -> List[str]:
+    """KNOWN GAP, stated as a fact. The same truncation, verified with no held checkpoint, is a consistent shorter chain and
+    verify_export returns it: integrity only, no rollback detection."""
+    _, data = _truncated_export()
+    if len(delta_pkg.verify_export(data)) != 1:
+        raise AssertionError("the truncated export was expected to verify as a one-entry ledger")
+    return []
+
+
+def an_export_checked_against_an_empty_checkpoint_is_refused() -> List[str]:
+    p = stages(SICK)
+    data = _through_json(p["ledger"].export())
+    empty = LedgerCheckpoint(0, DecisionLedger().chain_head)
+    return refused(lambda: delta_pkg.verify_export(data, empty), _frozen(data))
+
+
+def an_export_checked_against_the_checkpoint_of_another_ledger_is_refused() -> List[str]:
+    p = stages(SICK)
+    data = _through_json(p["ledger"].export())
+    other = stages(SICK, ctx={**CTX, "run_id": "run_2", "event_id": "event_2"})["checkpoint"]
+    return refused(lambda: delta_pkg.verify_export(data, other), _frozen(data))
+
+
+def GAP_a_rewritten_rechained_export_with_a_fresh_checkpoint_and_none_held() -> List[str]:
+    """KNOWN GAP, stated as a fact. The ledger of another history (the WELL run) is exported, and verified against its own
+    fresh checkpoint with no checkpoint held outside: verify_export accepts it and so does the strict check."""
+    w = stages(WELL)
+    return independent_check(w, _through_json(w["ledger"].export()), export_checkpoint=w["checkpoint"])
+
+
+def a_rewritten_rechained_export_is_refused_by_verify_export_against_the_honest_checkpoint() -> List[str]:
+    honest = stages(SICK)["checkpoint"]
+    w = stages(WELL)
+    data = _through_json(w["ledger"].export())
+    return refused(lambda: delta_pkg.verify_export(data, honest), _frozen(data))
+
+
+def a_rewritten_rechained_export_with_a_fresh_checkpoint_is_refused_against_the_held_one() -> List[str]:
+    """verify_export accepts the rewrite against its own fresh checkpoint (the gap above); the strict check, given the honest
+    checkpoint as `held_checkpoint`, does not."""
+    honest = stages(SICK)["checkpoint"]
+    w = stages(WELL)
+    return independent_check(w, _through_json(w["ledger"].export()), export_checkpoint=w["checkpoint"], held=honest)
+
+
+def an_export_with_require_context_cleared_is_refused() -> List[str]:
+    p = stages(SICK)
+    data = _through_json(p["ledger"].export())
+    data["require_context"] = False
+    return refused(lambda: delta_pkg.verify_export(data, p["checkpoint"], require_context=True), _frozen(data))
+
+
+def zeta_refuses_to_bind_a_lock_result_to_another_entitys_context() -> List[str]:
+    p = stages(SICK)
+    other = {**CTX, "entity_id": "patient_2"}
+    lid, result = next(iter(p["results"].items()))
+    return refused(lambda: zeta_cns.lock_result_content(result, context=other, keyset_digest=p["da"]))
 
 
 def a_receipt_naming_another_entrys_hashes() -> List[str]:
@@ -929,16 +1157,22 @@ class AnswersHonestlyOnce(LedgerCheckpoint):
         return object.__getattribute__(self, name)
 
 
-def a_checkpoint_subclass_that_answers_honestly_only_once() -> List[str]:
-    """Delta may refuse it, or issue a receipt; if it issues one, every length and head on it must be the ones it verified."""
+def a_checkpoint_subclass_that_answers_honestly_only_once(context: Any = None) -> List[str]:
+    """Delta may refuse it, or issue a receipt; if it issues one, every length and head on it must be the ones it verified.
+    A refusal counts only when it is about the checkpoint: a refusal for another reason (a wrong run in the context, say)
+    never reached the question and is a problem, so this row cannot pass for the wrong reason."""
+    ctx = CTX if context is None else context
     p = stages(SICK)
     real = p["ledger"].checkpoint()
     sneaky = AnswersHonestlyOnce(real.length, real.head)
     object.__setattr__(sneaky, "_seen", {})
     try:
-        receipt = delta_cns.verification_receipt(p["ledger"], sneaky, context=CTX, decision_digest=p["delta"]["decision_digest"])
-    except (ValueError, TypeError):
-        return []
+        receipt = delta_cns.verification_receipt(p["ledger"], sneaky, context=ctx, decision_digest=p["delta"]["decision_digest"])
+    except (ValueError, TypeError) as exc:
+        if DELTA_GENERIC_REFUSAL in str(exc):
+            return []
+        return [f"delta refused for a reason other than the checkpoint, so the checkpoint question was never asked: "
+                f"{type(exc).__name__}: {exc}"]
     wanted = {"ledger_length": len(p["ledger"].entries), "ledger_head": p["ledger"].chain_head,
               "checkpoint_length": real.length, "checkpoint_head": real.head}
     return [f"the receipt says {k} {receipt[k]!r}, not the verified {v!r}" for k, v in wanted.items() if receipt[k] != v]
@@ -1048,7 +1282,7 @@ def rewrite_the_run_completely(honest_checkpoint_is_stale: bool = True) -> Dict[
     receipt, why = chain_receipt({**p, "checkpoint": original})
     if receipt is not None:
         raise AssertionError("delta accepted the checkpoint of the original history for the rewritten ledger")
-    if "wrong-ledger checkpoint" not in why:
+    if "unmatched checkpoint" not in why:
         raise AssertionError(f"the original checkpoint was refused, but not as one naming no entry of the rewrite: {why}")
     return p
 
@@ -1241,6 +1475,158 @@ def connectors_agree_with_cns_on_what_a_context_is() -> List[str]:
     return out
 
 
+# --- the oracle held to account with real objects (hacker1 F58 to F66): each returns no problem when the oracle failed
+# --- what it should fail, and names the attack that went through when it did not -------------------------------------
+
+def _oracle_must_flag(what: str, expect: Expect, scenario: Callable[[], List[str]]) -> List[str]:
+    _, why = judge(expect, scenario)
+    return [] if why else [f"the oracle judged this scenario a pass: {what}"]
+
+
+def _expect_of(name: str) -> Expect:
+    return next(e for n, _, e in SCENARIOS if n == name)
+
+
+def the_oracle_flags_a_component_that_exits() -> List[str]:
+    """F65. A scenario whose component raises SystemExit(0) is a failed scenario; before, it ended the run green with the
+    remaining rows never judged. Here it must not propagate out of `judge`."""
+    def exits() -> List[str]:
+        raise SystemExit(0)
+    return _oracle_must_flag("a component that exits", CLEAN, exits)
+
+
+def the_oracle_flags_a_refusal_that_edited_an_entrys_content() -> List[str]:
+    """F61. Inside a refused call an entry's Decision is edited, its hashes kept, and the expected refusal raised. The state
+    digest covers the whole entry, so the refusal is flagged; before, it covered hashes only."""
+    ledger = stages(SICK)["ledger"]
+
+    def tamper_then_refuse() -> None:
+        entry = ledger.entries[0]
+        ledger.entries[0] = dataclasses.replace(entry, decision=dataclasses.replace(entry.decision, instructions="Send home."))
+        raise DuplicateRecordError("run 'run_1' already recorded a Decision for event 'event_1'")
+    return _oracle_must_flag("a refusal that edited an entry's content", _expect_of("strict: the same Decision recorded twice in one run"),
+                             lambda: refused(tamper_then_refuse, ledger_state(ledger), catch=(DuplicateRecordError,)))
+
+
+def the_oracle_flags_refusal_text_returned_while_the_attack_succeeded() -> List[str]:
+    """F60. The append succeeds and the scenario returns the refusal text anyway; before, returned text was all the oracle
+    judged."""
+    p = stages(SICK)
+    ledger = DecisionLedger(require_context=True)
+
+    def lies() -> List[str]:
+        ledger.append(p["decision"], context=CTX)
+        return ["DuplicateRecordError: run 'run_1' already recorded a Decision for event 'event_1'"]
+    return _oracle_must_flag("refusal text with the attack through", _expect_of("strict: the same Decision recorded twice in one run"), lies)
+
+
+def the_oracle_refuses_expect_texts_that_match_anything() -> List[str]:
+    """F64. A str subclass whose length lies, and a text of one space, are construction errors; before, both built an
+    Expect that matched any problem."""
+    class Truthy(str):
+        def __len__(self) -> int:
+            return 1
+    out: List[str] = []
+    for label, text in (("a str subclass", Truthy("")), ("a single space", " ")):
+        try:
+            Expect("problems", required=(text,))
+        except (TypeError, ValueError):
+            continue
+        out.append(f"an Expect was built from {label} and would match any problem")
+    return out
+
+
+def a_rewrite_of_the_ledger_itself_is_not_called_a_wrong_ledger() -> List[str]:
+    """F59. The checkpoint the original run left, asked of the rewritten ledger, is refused. Length and head cannot say whether
+    it came from another ledger or from this one before it was rewritten, so the cause must not claim the first."""
+    q = rewrite_the_run_completely()
+    _, why = chain_receipt({**q, "checkpoint": q["checkpoint"]})
+    out: List[str] = []
+    if "wrong-ledger" in why:
+        out.append(f"a same-ledger rewrite was labelled wrong-ledger: {why}")
+    if "rewritten" not in why:
+        out.append(f"the cause does not name the rewrite of this ledger's own history: {why}")
+    return out
+
+
+def a_checkpoint_row_cannot_pass_on_an_unrelated_refusal() -> List[str]:
+    """F66. The checkpoint-subclass row with a context for another run: delta refuses at the run check, before the
+    checkpoint is asked; before, that returned no problems and the row passed anyway."""
+    return a_checkpoint_subclass_that_answers_honestly_only_once(context={**CTX, "run_id": "run_X"})
+
+
+# --- the manifest checks, attacked with real git and real-shaped pyproject text (hacker1 E50, hacker2 74b/74c/75) ------
+
+_M_A, _M_Z, _M_B, _M_D = ("a" * 40, "b" * 40, "c" * 40, "d" * 40)
+_M_CNS = "41592fb7b6735abe140f745353c09ba3eed8e7a2"
+_M_MANIFEST = {"schema": spine_manifest.SCHEMA, "cns": {"tag": "v2.3.0", "commit": _M_CNS},
+               "repos": {"interconnected_alpha": _M_A, "interconnected_zeta": _M_Z, "interconnected_beta": _M_B, "interconnected_delta": _M_D}}
+_M_RELEASES = {"releases": [{"ref": "v2.3.0", "commit": _M_CNS, "version": "2.3.0"}]}
+
+
+def _pyproject(deps: Tuple[Tuple[str, str], ...], inside: str = "") -> str:
+    lines = "".join(f'    "{n} @ git+https://github.com/wking53214/interconnected_{n}@{ref}",\n' for n, ref in deps)
+    return (f'[project]\nname = "x"\n{inside}dependencies = [\n{lines}]\n\n[project.optional-dependencies]\ndev = ["pytest>=7.0"]\n'
+            f'cns = ["cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"]\n')
+
+
+def _manifest_texts(delta: str) -> Dict[str, str]:
+    return {"interconnected_alpha": _pyproject((("zeta", _M_Z),)), "interconnected_zeta": _pyproject(()),
+            "interconnected_beta": _pyproject((("zeta", _M_Z),)), "interconnected_delta": delta}
+
+
+def a_dependency_hidden_behind_a_bracket_in_a_comment() -> List[str]:
+    """E50. A comment line ending in `]` ended the dependency list early for the old reader, so `evil-pkg` after it was never
+    read while pip still installs it. Read as TOML (or refused when it cannot be read completely), it is not accepted."""
+    good = _pyproject((("zeta", _M_Z), ("beta", _M_B)))
+    hidden = good.replace('dependencies = [\n', 'dependencies = [\n    # see issue [12]\n    "evil-pkg>=1",\n', 1)
+    return spine_manifest.check(_M_MANIFEST, _manifest_texts(hidden), dict(_M_MANIFEST["repos"]), _M_RELEASES)
+
+
+def a_decoy_dependency_list_in_a_multiline_string() -> List[str]:
+    """74b V13. A decoy `dependencies = [...]` inside a multi-line string, and the real list pinning zeta from an attacker at a
+    branch. The old reader saw the decoy. TOML sees the real list; the 3.10 fallback refuses the multi-line string."""
+    decoy = (f'description = """\ndependencies = [\n    "zeta @ git+https://github.com/wking53214/interconnected_zeta@{_M_Z}",\n]\n"""\n')
+    real = _pyproject((("zeta", "main"), ("beta", _M_B)), inside=decoy).replace("wking53214/interconnected_zeta@main", "attacker/interconnected_zeta@main")
+    return spine_manifest.check(_M_MANIFEST, _manifest_texts(real), dict(_M_MANIFEST["repos"]), _M_RELEASES)
+
+
+def a_checkout_at_the_pinned_commit_with_an_edited_file() -> List[str]:
+    """74c. HEAD is the commit the manifest names, but a tracked file was edited and another planted: the files that are
+    imported are not that commit. The old check read `git rev-parse HEAD` only."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        git = ["git", "-C", str(folder), "-c", "user.email=t@example.invalid", "-c", "user.name=t"]
+        subprocess.run(["git", "init", "-q", str(folder)], check=True)
+        (folder / "mod.py").write_text("x = 1\n", encoding="utf-8")
+        subprocess.run([*git, "add", "-A"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "c"], check=True)
+        head = subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        (folder / "mod.py").write_text("x = 2\n", encoding="utf-8")
+        (folder / "planted.py").write_text("print('untracked')\n", encoding="utf-8")
+        status = spine_manifest._status(folder)
+    manifest = {**_M_MANIFEST, "repos": {**_M_MANIFEST["repos"], "interconnected_zeta": head}}
+    texts = _manifest_texts(_pyproject((("zeta", head), ("beta", _M_B))))
+    texts["interconnected_alpha"] = texts["interconnected_beta"] = _pyproject((("zeta", head),))
+    heads = dict(manifest["repos"])
+    clean: Dict[str, Any] = {r: [] for r in spine_manifest.SPINE}
+    return spine_manifest.check(manifest, texts, heads, _M_RELEASES, dirty={**clean, "interconnected_zeta": status})
+
+
+def an_older_zeta_installed_beside_the_others() -> List[str]:
+    """75. An older zeta was silently accepted. What pip recorded for the installed distribution (direct_url.json) names the
+    commit, and `--installed` holds it to the manifest's."""
+    def vcs(repo: str, commit: str) -> Dict[str, Any]:
+        return {"direct_url": {"url": f"https://github.com/wking53214/{repo}", "vcs_info": {"vcs": "git", "commit_id": commit}},
+                "location": "/site", "imported_from": f"/site/{repo.split('_')[1]}/__init__.py"}
+    installed = {pkg: [vcs(repo, _M_MANIFEST["repos"][repo])] for repo, pkg in spine_manifest.SPINE.items()}
+    installed["zeta"] = [vcs("interconnected_zeta", "f416b02" + "0" * 33)]
+    return spine_manifest.installed_problems(_M_MANIFEST, installed)
+
+
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
@@ -1349,7 +1735,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: an empty checkpoint against an honest ledger", an_empty_checkpoint_against_an_honest_ledger,
      Expect("refused", required=("cause: empty checkpoint: length 0",), raises=("ValueError",))),
     ("strict: a checkpoint taken from another ledger", a_checkpoint_taken_from_another_ledger,
-     Expect("refused", required=("cause: wrong-ledger checkpoint: its head names no entry of this ledger",), raises=("ValueError",))),
+     Expect("refused", required=("cause: unmatched checkpoint: its head names no entry of this ledger",), raises=("ValueError",))),
     ("strict: a lock result zeta refused as stale is rested on", a_stale_lock_result_is_rested_on,
      Expect("problems", required=("zeta lock sepsis_lock was refused as stale", "zeta lock abnormal_vitals_lock was refused as stale"))),
     ("strict: a lock result is filed under another lock's id", a_lock_result_filed_under_another_locks_id,
@@ -1394,7 +1780,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("head does not match",), raises=("LedgerCorruptError",))),
     # --- the receipt itself: each starts from delta's real receipt and alters it in one way; no root may be issued ---
     ("strict: a receipt whose heads are not the entry's own hash", a_receipt_with_both_heads_zeroed,
-     Expect("problems", required=("its ledger_head is not the entry's own hash",), allowed_extra=(CHAIN_NOT_SHOWN,))),
+     Expect("problems", required=("its ledger_head is not the entry's own hash",),
+            allowed_extra=("its checkpoint_head is not the entry's own hash", CHAIN_NOT_SHOWN))),
     ("strict: a receipt whose index is beyond the ledger", a_receipt_with_an_index_beyond_its_ledger_and_its_checkpoint,
      Expect("problems", required=("index 4 is not within a ledger of 1 entries",),
             allowed_extra=("is not covered by its checkpoint_length 1", CHAIN_NOT_SHOWN))),
@@ -1467,6 +1854,48 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: a checkpoint subclass that answers honestly only once", a_checkpoint_subclass_that_answers_honestly_only_once, CLEAN),
     ("strict: a receipt asked for an entry beyond the checkpoint is refused", a_receipt_asked_for_an_entry_beyond_the_checkpoint,
      Expect("refused", required=("is not covered by the checkpoint (length 1)",), raises=("ValueError",))),
+    ("strict: a receipt whose checkpoint ends at the entry but names no such head", a_receipt_whose_checkpoint_ends_at_the_entry_but_names_no_such_head,
+     Expect("problems", required=("its checkpoint_head is not the entry's own hash",), allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: a rewritten ledger with a fresh checkpoint is refused against the checkpoint held outside",
+     a_rewritten_ledger_with_a_fresh_checkpoint_is_refused_against_the_checkpoint_held_outside,
+     Expect("problems", required=("the ledger receipt's checkpoint_head is not the checkpoint held outside the ledger",),
+            allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: an honest run against the checkpoint held outside", an_honest_run_against_the_checkpoint_held_outside, CLEAN),
+    ("strict: GAP, a rewritten ledger with a fresh checkpoint and no checkpoint held outside",
+     GAP_a_rewritten_ledger_with_a_fresh_checkpoint_and_no_checkpoint_held_outside, GAP),
+    ("strict: an export verified outside the producer, with the checkpoint held outside", an_honest_export_is_verified_outside_the_producer, CLEAN),
+    ("strict: an export with an edited entry is refused by verify_export", an_export_with_an_edited_entry_is_refused,
+     Expect("refused", required=("Decision.content_fingerprint does not match",), raises=("ValueError",))),
+    ("strict: an export with an edited hash is refused by verify_export", an_export_with_an_edited_hash_is_refused,
+     Expect("refused", required=("immutable_hash does not match the entry's content",), raises=("ValueError",))),
+    ("strict: an export with a removed entry is refused by verify_export", an_export_with_a_removed_entry_is_refused,
+     Expect("refused", required=("previous_hash does not continue the chain",), raises=("ValueError",))),
+    ("strict: a truncated export is refused against a held checkpoint", a_truncated_export_is_refused_against_a_held_checkpoint,
+     Expect("refused", required=("the export holds 1 entries but the held checkpoint names 2",), raises=("ValueError",))),
+    ("strict: GAP, a truncated export with no held checkpoint", GAP_a_truncated_export_without_a_held_checkpoint, GAP),
+    ("strict: an export checked against an empty checkpoint is refused", an_export_checked_against_an_empty_checkpoint_is_refused,
+     Expect("refused", required=("does not contain the history the held checkpoint recorded",), raises=("ValueError",))),
+    ("strict: an export checked against the checkpoint of another ledger is refused",
+     an_export_checked_against_the_checkpoint_of_another_ledger_is_refused,
+     Expect("refused", required=("does not contain the history the held checkpoint recorded",), raises=("ValueError",))),
+    ("strict: GAP, a rewritten and rechained export with a fresh checkpoint and none held",
+     GAP_a_rewritten_rechained_export_with_a_fresh_checkpoint_and_none_held, GAP),
+    ("strict: a rewritten and rechained export is refused against the honest checkpoint by verify_export",
+     a_rewritten_rechained_export_is_refused_by_verify_export_against_the_honest_checkpoint,
+     Expect("refused", required=("does not contain the history the held checkpoint recorded",), raises=("ValueError",))),
+    ("strict: a rewritten and rechained export with a fresh checkpoint is refused against the held one",
+     a_rewritten_rechained_export_with_a_fresh_checkpoint_is_refused_against_the_held_one,
+     Expect("problems", required=("the ledger receipt's checkpoint_head is not the checkpoint held outside the ledger",),
+            allowed_extra=(CHAIN_NOT_SHOWN,))),
+    ("strict: an export with require_context cleared is refused by verify_export", an_export_with_require_context_cleared_is_refused,
+     Expect("refused", required=("the export says require_context=False; the verifier requires True",), raises=("ValueError",))),
+    ("strict: zeta refuses a lock result bound to another entity's context", zeta_refuses_to_bind_a_lock_result_to_another_entitys_context,
+     Expect("refused", required=("the LockResult was evaluated for entity 'patient_1'",), raises=("ValueError",))),
+    ("strict: a verifier that answers differently the second time cannot split problems from root", a_verifier_that_answers_differently_the_second_time,
+     Expect("problems", required=("alpha's KeySet fingerprint does not match a recomputation from alpha's keys",))),
+    ("strict: a required verifier that is missing is a named problem", a_required_verifier_that_is_missing,
+     Expect("problems", required=("no keyset_fingerprint_of was supplied, and require_keyset_verifier is set",))),
+    ("strict: an honest run with a required verifier", an_honest_run_with_a_required_verifier, CLEAN),
     # --- known gaps, stated as facts ---
     ("strict: GAP, a narrative forged by someone who recomputes the content fingerprint",
      GAP_a_decisions_narrative_forged_by_someone_who_recomputes_the_content_fingerprint, GAP),
@@ -1479,6 +1908,23 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: GAP, a sink keeps a write the ledger does not have", GAP_a_sink_keeps_a_write_the_ledger_does_not_have, GAP),
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
+    # --- the oracle held to account with real objects ---
+    ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),
+    ("oracle: a refusal that edited an entry's content is a state change", the_oracle_flags_a_refusal_that_edited_an_entrys_content, CLEAN),
+    ("oracle: refusal text returned while the attack succeeded fails", the_oracle_flags_refusal_text_returned_while_the_attack_succeeded, CLEAN),
+    ("oracle: an Expect text that matches anything is refused", the_oracle_refuses_expect_texts_that_match_anything, CLEAN),
+    ("oracle: a rewrite of the ledger itself is not called a wrong ledger", a_rewrite_of_the_ledger_itself_is_not_called_a_wrong_ledger, CLEAN),
+    ("oracle: a checkpoint row cannot pass on an unrelated refusal", a_checkpoint_row_cannot_pass_on_an_unrelated_refusal,
+     Expect("problems", required=("delta refused for a reason other than the checkpoint",))),
+    # --- the manifest checks ---
+    ("manifest: a dependency hidden behind a bracket in a comment", a_dependency_hidden_behind_a_bracket_in_a_comment,
+     Expect("problems", required=("interconnected_delta",))),
+    ("manifest: a decoy dependency list in a multi-line string", a_decoy_dependency_list_in_a_multiline_string,
+     Expect("problems", required=("interconnected_delta",))),
+    ("manifest: a checkout at the pinned commit with an edited file", a_checkout_at_the_pinned_commit_with_an_edited_file,
+     Expect("problems", required=("interconnected_zeta has 2 uncommitted or untracked change(s) in its checkout",))),
+    ("manifest: an older zeta installed beside the others", an_older_zeta_installed_beside_the_others,
+     Expect("problems", required=("zeta is installed from commit f416b02",))),
 ]
 
 

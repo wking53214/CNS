@@ -5,9 +5,10 @@
 #                        DGK's perimeter are shown differently, which `same_subject` refuses.
 # chains/spine_run.py    interconnected alpha, zeta, beta and delta run for real, then checked at their seams by
 #                        cns_composition.spine_trace, leniently (seven scenarios) and strictly, from each stage's content with a
-#                        pipeline context and a delta verification receipt (76: six checks that hold, 63 real attacks each naming the
-#                        problem or refusal that should answer it, four of which must come out clean because the record must not change,
-#                        and seven gaps the check does not close, recorded as facts: 83 in all). Each scenario declares an Expect
+#                        pipeline context and a delta verification receipt (93, with the oracle and the manifest checks held to account on real
+#                        objects: 13 checks that hold, 72 real attacks each naming the problem or refusal that should answer it, four of
+#                        which must come out clean because the record must not change, and eight gaps the check does not close, recorded
+#                        as facts: 113 in all with the seven lenient). Each scenario declares an Expect
 #                        (chains/spine_oracle.py): required problems, the only extras allowed, and whether state may change.
 # chains/ecology_answer.py  an Ecology answer record judged by DIT's gates through cns_composition.super_gate, the
 #                        verdicts bound to the answer text and tied to Ecology's record by its answer hash. Six scenarios, one of
@@ -20,7 +21,7 @@
 # spine-pinned           the same decision spine, but on the four commits contracts/spine-manifest.json names and nothing else.
 #                        The `chains` job above runs each repository's floating default branch, which is the drift detector;
 #                        this job runs the set the four repositories declare. It first holds every pin and every checkout to
-#                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 83 scenarios, including the hardened
+#                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 113 scenarios, including the hardened
 #                        components' refusals and the delta receipt. The manifest names the hardened tips (alpha ac34eec, zeta 10b5ba7,
 #                        beta c9afa4e, delta e3a9d70). Individual green CI is not this.
 #
@@ -46,6 +47,7 @@ on:
       - cns_composition/gate_chain.py
       - cns_composition/repo_gates.py
       - cns_composition/spine_trace.py
+      - cns_composition/delivery.py
       - cns_composition/spine_manifest.py
       - contracts/spine-manifest.json
       - cns_composition/super_gate.py

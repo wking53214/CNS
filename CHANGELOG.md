@@ -29,6 +29,12 @@ behaviour change is a refusal that was an acceptance at `v2.3.0`: `subject_diges
 `memoryview` or `array.array`. Every other root and outcome for valid input is unchanged. The `cns` package gains no
 new shape.
 
+In the strict check, `strict_problems` and `strict_root` gained keywords (`chain=`, whose absence is now a problem, then
+`held_checkpoint` and `require_keyset_verifier`), `chain_verified` no longer counts as evidence, and a root issued with a
+`keyset_fingerprint_of` carries that fact (a root issued without one, and every lenient `root`, is unchanged). `subject_digest`
+also refuses a subclass of `str`, `int`, `float`, `dict`, `list` or `tuple` (a deliberate change limited to subclass inputs;
+plain values digest as before).
+
 ### Moved
 
 - UAI-1 left this repository for github.com/wking53214/UAI-2, unchanged, from commit `03eca66`: `cns_interop/`,
@@ -52,7 +58,9 @@ new shape.
   the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
   entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
   are unchanged. The `cns` package is untouched.
-- `chains/spine_run.py` gains 76 strict scenarios beside its seven lenient ones (83 in all, counted from the runner): six
+- `chains/spine_run.py` gains 106 scenarios beside its seven lenient ones (113 in all, counted from the runner, 13 of them the independent-verification and zeta-entity scenarios of part two, which are included below only in this total; 76 of them the
+  strict ones described here, and 17 that hold the oracle, the manifest checks, the held checkpoint and the verifier to
+  account, listed under "Remediation of the 2026-11-05 retest" below): six
   checks that hold (a sick and a well patient, a run with an origin record, roots that differ by run and never equal a
   lenient root, and the four connectors' own copies of the context check held to `context_problems`, with a str-subclass
   case and a mapping that changes between reads); 63 real attacks each stating the problem or refusal the boundary that
@@ -139,6 +147,55 @@ new shape.
   `REQUIRED`. The command passes the ledger's repositories, so the registry can no longer miss a consumer nobody listed.
 - `chains/full_chain.py` seats `CNS:same_subject` over the gateway and DGK's perimeter, so one cannot judge a request the
   other was not shown; a scenario holds it. `chains/evidence_spine.py` pins its two guards to its `REQUIRED_SEATS`.
+
+### Remediation of the 2026-11-05 retest (CNS part two; uncommitted working tree)
+
+- `cns.gate._canonical` (and so `subject_digest`) renders exact types only (D-C(a); attack: `r7/reviewer/f1.py`). A `str`,
+  `int`, `float`, `dict`, `list` or `tuple` subclass (an `IntEnum` or a `str` Enum included), as a value, a member or a key, is
+  refused with a `TypeError` naming the type. Before, `_canonical` rendered a subclass through `__format__`, `__repr__`,
+  `keys` or `__iter__`, which it can override, while the ledger hash and a component's own fingerprint read the raw data
+  through `json`, so one value carried two renderings. This is a deliberate digest-contract change limited to subclass
+  inputs: the digest of every plain value is unchanged (`contracts/digest-vectors.json` and its tests pass untouched, and the
+  Node implementation under `interop/node` reads those vectors, which hold plain values only). A mapping's keys and a
+  sequence's items are read once. Only the canonicalisation function changed; the `cns` package still decides nothing.
+- `chains/spine_run.py`: the runner follows zeta's new entity check (the "bound to another subject" scenario now builds the
+  other patient's own results), and gains the independent-verification scenarios built on delta's `export`, `verify_export`
+  and a checkpoint held outside the ledger.
+
+### Remediation of the 2026-11-05 retest (CNS part one; uncommitted working tree)
+
+Each item names the attack it answers. Nothing in `cns/` changed, no pin moved, and `contracts/spine-manifest.json` is as it was.
+
+- `cns_composition/spine_manifest` (F-05, F-16). The pyproject is read as TOML (`tomllib` on 3.11 and later; on 3.10 a strict
+  fallback that refuses what it cannot read completely: a multi-line string, a repeated section or key, a bracket in a comment
+  inside a list). A comment ending in `]` ended the dependency list early for the old reader, and a decoy list in a
+  multi-line string hid a dependency pinned to another owner at a branch; both are now named or refused. A checkout is
+  refused when `git status --porcelain` lists anything, untracked files included, because HEAD at the pinned commit said
+  nothing about the files imported. Messages show whole 40 character commits. `--installed` holds each installed
+  distribution's `direct_url.json` commit (importlib.metadata, no network) to the manifest, and that the package imported
+  is the installed one; it does not see an installed tree edited in place.
+- `chains/spine_oracle.py` and `chains/spine_run.py` (F-08). A `SystemExit` or `KeyboardInterrupt` from a scenario fails that
+  scenario and never ends the run; a refusal's returned text counts only when `refused()` recorded a refusal while the
+  scenario ran; the state a refusal must leave alone is a digest of the whole content of every entry, not its hash;
+  `Expect` texts are exact, non-blank `str`; a checkpoint row cannot pass on a refusal for another reason; a same-ledger
+  rewrite is no longer labelled a wrong ledger. Not changed: `raises` still matches by class name.
+- `strict_problems` and `strict_root` (F-04). Optional `held_checkpoint`, a checkpoint the caller keeps where the ledger's
+  producer cannot write: the receipt must carry exactly it. A tampered, rechained ledger with a fresh checkpoint (macg2 A4)
+  is refused with it and, as recorded, undetectable without it. A receipt whose entry is the last one its checkpoint
+  covers must name that entry's hash as the checkpoint head (macg2 A1). A root issued against a held checkpoint carries
+  that fact; without it every root is what it was.
+- `strict_problems` and `strict_root` (F-07). The keyset verifier is asked once per alpha content and the answer is
+  reused, so a verifier that answers differently the second time can no longer make `strict_problems` name a problem and
+  `strict_root` issue a root (hacker1 E55). A root issued with a verifier says so. `require_keyset_verifier=True` makes the
+  absence a named problem. An echo verifier (hacker1 E54) is still the caller's trust.
+- Documentation (F-17): "13 of a Decision's 15 fields" is 16 (README, `chains/spine_run.py`); the manifest docstring's
+  Python floor and its success message; the scenario counts; the statement that no signature moved.
+- Pre-existing tests edited, each by the step named: `tests/test_spine_oracle.py` (two refusal tests build their refusal
+  inside the scenario, F-08); `cns_composition/tests/test_spine_manifest.py` (two messages carry 40 character commits, F-05);
+  `cns_composition/tests/test_spine_trace_strict.py` (two receipts name the entry's own hash as the checkpoint head, F-04);
+  `cns_composition/tests/test_composition_public_shape.py` (the strict signature gained `held_checkpoint` and
+  `require_keyset_verifier`, F-04, F-07). `chains/spine_run.py` rows edited: the zeroed-heads row allows the checkpoint-head
+  problem (F-04) and the checkpoint cause is worded "unmatched checkpoint" (F-08).
 
 ### Changed
 
