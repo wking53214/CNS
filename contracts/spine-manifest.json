@@ -1,0 +1,13 @@
+{
+  "schema": "spine-manifest/1",
+  "repos": {
+    "interconnected_alpha": "88faa57299a9ea6f644e21769447c5fdf64ec6e6",
+    "interconnected_zeta": "f416b02abe75f808041718bdffb85b26345f21c4",
+    "interconnected_beta": "ffe2fcfbfedd04170ee7f42122e55450cecd6b69",
+    "interconnected_delta": "eae7e6b9c2234c94c040ec476f6348b5dd945155"
+  },
+  "cns": {
+    "tag": "v2.3.0",
+    "commit": "41592fb7b6735abe140f745353c09ba3eed8e7a2"
+  }
+}

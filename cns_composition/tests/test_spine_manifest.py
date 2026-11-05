@@ -206,3 +206,12 @@ def test_the_pinned_job_checks_the_pins_and_the_checkouts_before_it_runs_the_spi
 def test_the_pinned_job_runs_on_the_paths_that_can_change_what_it_proves():
     triggers = WORKFLOW.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
     assert "contracts/spine-manifest.json" in triggers and "cns_composition/spine_manifest.py" in triggers
+
+
+def test_the_committed_manifest_is_well_formed_and_names_the_cns_release_the_table_records():
+    releases = json.loads((ROOT / "contracts" / "cns-releases.json").read_text(encoding="utf-8"))
+    assert sm.manifest_problems(sm.load(), releases) == []
+    assert sm.load()["cns"]["tag"] == releases["current"]
+    assert set(sm.load()["repos"]) == set(SPINE)
+
+

@@ -17,6 +17,7 @@ from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, TRACE_SCHEMA, context_problems, strict_problems, strict_root)
 
 CTX = {"schema": CONTEXT_SCHEMA, "entity_id": "p1", "event_id": "ev-1", "run_id": "run-1"}
+FP = "e" * 64  # the KeySet fingerprint zeta computes; alpha, every lock result and the Decision must carry the same one
 DECISION_ONLY = ("entity_id", "decision_id", "decision", "timestamp", "confidence", "triggered_by_locks",
                  "triggered_by_keys", "newly_triggered_locks", "decision_fingerprint", "reasoning",
                  "reversal_conditions", "instructions")
@@ -28,17 +29,18 @@ def build(ctx=CTX, **over) -> Dict[str, Any]:
         "min_confidence": 0.0,
         "keys": [{"name": "septic_shock", "present": True, "confidence": 1.0, "reason": "r"},
                  {"name": "fever", "present": False, "confidence": 1.0, "reason": "r"}],
-        "context": dict(ctx), "present_names": ["septic_shock"],
+        "context": dict(ctx), "present_names": ["septic_shock"], "keyset_fingerprint": FP,
     }
     da = subject_digest(alpha)
     zeta = {}
     for lock, is_open in (("sepsis_lock", True), ("abnormal_vitals_lock", False)):
         zeta[lock] = {"entity_id": ctx["entity_id"], "lock_id": lock, "open": is_open, "changed": True, "forced": False,
-                      "reasons": ["x"], "context": dict(ctx), "keyset_digest": da}
+                      "reasons": ["x"], "context": dict(ctx), "keyset_digest": da, "keyset_fingerprint": FP}
     core = {"entity_id": ctx["entity_id"], "decision_id": "escalate", "decision": "ESCALATE",
             "timestamp": "2026-01-01T12:00:00", "confidence": 0.9, "triggered_by_locks": ["sepsis_lock"],
             "triggered_by_keys": ["septic_shock"], "newly_triggered_locks": ["sepsis_lock"],
-            "decision_fingerprint": "f" * 64, "reasoning": "r", "reversal_conditions": [], "instructions": "i"}
+            "decision_fingerprint": "f" * 64, "reasoning": "r", "reversal_conditions": [], "instructions": "i",
+            "keyset_fingerprint": FP}
     beta = {**core, "context": dict(ctx), "keyset_digest": da,
             "lock_result_digests": {k: subject_digest(v) for k, v in sorted(zeta.items())}}
     delta = {"audit_id": "a" * 16, "timestamp": "2026-01-01T12:00:00", "previous_hash": "p" * 64,
@@ -49,8 +51,8 @@ def build(ctx=CTX, **over) -> Dict[str, Any]:
     return out
 
 
-def problems_of(parts) -> list:
-    return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+def problems_of(parts, chain_verified=True) -> list:
+    return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=chain_verified)
 
 
 def relink(parts, *, keep_decision_digest=False):
@@ -74,7 +76,7 @@ def has(found, text):
 def test_a_consistent_run_has_no_problems_and_a_root():
     parts = build()
     assert problems_of(parts) == []
-    assert len(strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])) == 64
+    assert len(strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=True)) == 64
 
 
 def test_the_root_is_stable_and_ignores_the_order_locks_were_listed_in():
@@ -82,16 +84,16 @@ def test_the_root_is_stable_and_ignores_the_order_locks_were_listed_in():
     b = build()
     b["zeta"] = dict(reversed(list(b["zeta"].items())))
     args = lambda p: (p["alpha"], p["zeta"], p["beta"], p["delta"])  # noqa: E731
-    assert strict_root(*args(a)) == strict_root(*args(b)) == strict_root(*args(build()))
+    assert strict_root(*args(a), chain_verified=True) == strict_root(*args(b), chain_verified=True) == strict_root(*args(build()), chain_verified=True)
 
 
 def test_the_root_changes_when_any_stage_changes_and_is_not_a_lenient_root():
     base = build()
-    root = strict_root(base["alpha"], base["zeta"], base["beta"], base["delta"])
+    root = strict_root(base["alpha"], base["zeta"], base["beta"], base["delta"], chain_verified=True)
     other = relink(build())
     other["alpha"]["keys"][0]["reason"] = "a different reading"
     relink(other)
-    assert strict_root(other["alpha"], other["zeta"], other["beta"], other["delta"]) != root
+    assert strict_root(other["alpha"], other["zeta"], other["beta"], other["delta"], chain_verified=True) != root
     assert TRACE_SCHEMA == "spine-trace/2"
 
 
@@ -104,9 +106,11 @@ def test_a_stage_bound_to_another_subject_event_or_run_is_named(stage, field, va
     parts[stage]["context"][field] = value
     if stage == "delta" and field in ("event_id", "run_id"):
         parts[stage][field] = value  # the entry is consistent with its own context, only the run is wrong
-    has(problems_of(parts), f"{stage} is bound to a different run")
+    # The run is alpha's context. An alpha that differs makes beta the stage that is not bound to alpha's run.
+    blamed = "beta" if stage == "alpha" else stage
+    has(problems_of(parts), f"{blamed} is bound to a different run")
     with pytest.raises(ValueError, match="does not hold together"):
-        strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+        strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=True)
 
 
 @pytest.mark.parametrize("field, value", [("entity_id", "p2"), ("event_id", "ev-2"), ("run_id", "run-2")])
@@ -133,7 +137,7 @@ def test_the_whole_run_replayed_under_another_run_id_is_a_different_run_not_a_va
     replay = build(ctx={**CTX, "run_id": "run-2"})
     assert problems_of(replay) == []  # internally consistent
     a, b = build(), replay
-    assert strict_root(a["alpha"], a["zeta"], a["beta"], a["delta"]) != strict_root(b["alpha"], b["zeta"], b["beta"], b["delta"])
+    assert strict_root(a["alpha"], a["zeta"], a["beta"], a["delta"], chain_verified=True) != strict_root(b["alpha"], b["zeta"], b["beta"], b["delta"], chain_verified=True)
 
 
 def test_stages_taken_from_two_different_runs_are_refused_even_though_each_is_consistent():
@@ -273,7 +277,7 @@ def test_a_fabricated_run_with_no_consistent_lineage_is_refused():
     assert found
     has(found, "evaluated from a different KeySet")
     with pytest.raises(ValueError):
-        strict_root(fake["alpha"], fake["zeta"], fake["beta"], fake["delta"])
+        strict_root(fake["alpha"], fake["zeta"], fake["beta"], fake["delta"], chain_verified=True)
 
 
 @pytest.mark.parametrize("stage", ["alpha", "beta", "delta"])
@@ -377,12 +381,12 @@ def test_a_mapping_that_answers_differently_each_time_it_is_read_cannot_get_a_ro
     parts["delta"]["decision_digest"] = subject_digest(dict(parts["beta"]))
     args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
     try:
-        root = strict_root(*args)
+        root = strict_root(*args, chain_verified=True)
     except ValueError:
         return  # refused: fine
     # accepted: then the root must be over exactly what was checked, i.e. the first reading
     first = build()
-    assert root == strict_root(first["alpha"], first["zeta"], first["beta"], first["delta"])
+    assert root == strict_root(first["alpha"], first["zeta"], first["beta"], first["delta"], chain_verified=True)
 
 
 def test_a_mapping_that_raises_when_read_is_named_not_raised():
@@ -404,3 +408,73 @@ def test_a_lenient_record_whose_digest_ends_in_a_newline_is_not_a_full_sha256():
                       decision_digest=subject_digest({"x": 3}), ledger_decision_digest=subject_digest({"x": 3}),
                       entry_digest=subject_digest({"x": 4}))
     has(problems(rec), "alpha keyset digest is not a full SHA-256")
+
+
+# --- the KeySet fingerprint, chain evidence, and who is blamed for a mixed run ------------------------------------
+
+def test_a_lock_result_recording_another_keysets_fingerprint_is_named_even_when_every_digest_chains():
+    """The binder names alpha's digest in zeta's content, but zeta itself recorded evaluating a different KeySet."""
+    parts = build()
+    parts["zeta"]["sepsis_lock"]["keyset_fingerprint"] = "d" * 64
+    relink(parts)
+    has(problems_of(parts), "zeta lock sepsis_lock was evaluated from a different KeySet than alpha produced "
+                            "(its recorded KeySet fingerprint differs from alpha's)")
+
+
+def test_a_decision_recording_another_keysets_fingerprint_is_named():
+    parts = build()
+    parts["beta"]["keyset_fingerprint"] = "d" * 64
+    parts["delta"]["decision"]["keyset_fingerprint"] = "d" * 64
+    relink(parts)
+    has(problems_of(parts), "beta's Decision was made from a different KeySet than alpha produced "
+                            "(its recorded KeySet fingerprint differs from alpha's)")
+
+
+@pytest.mark.parametrize("stage", ["alpha", "beta"])
+def test_a_stage_that_carries_no_keyset_fingerprint_is_refused_not_skipped(stage):
+    parts = build()
+    del parts[stage]["keyset_fingerprint"]
+    if stage == "beta":
+        del parts["delta"]["decision"]["keyset_fingerprint"]
+    relink(parts)
+    has(problems_of(parts), f"{stage} carries no keyset_fingerprint")
+
+
+def test_a_zeta_lock_that_carries_no_keyset_fingerprint_is_refused():
+    parts = build()
+    del parts["zeta"]["sepsis_lock"]["keyset_fingerprint"]
+    relink(parts)
+    has(problems_of(parts), "zeta lock sepsis_lock carries no keyset_fingerprint")
+
+
+@pytest.mark.parametrize("bad", ["short", "E" * 64, "e" * 64 + "\n", 5])
+def test_a_malformed_fingerprint_is_named(bad):
+    parts = build()
+    parts["alpha"]["keyset_fingerprint"] = bad
+    relink(parts)
+    has(problems_of(parts), "alpha carries no keyset_fingerprint")
+
+
+def test_a_run_whose_ledger_chain_was_not_shown_to_verify_is_refused():
+    has(problems_of(build(), chain_verified=False), "the ledger chain was not shown to verify")
+    parts = build()
+    with pytest.raises(ValueError, match="ledger chain was not shown to verify"):
+        strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+
+
+def test_chain_evidence_must_be_exactly_true():
+    for not_true in (None, 1, "yes", [True]):
+        has(problems_of(build(), chain_verified=not_true), "the ledger chain was not shown to verify")
+
+
+def test_when_one_stage_is_the_outlier_in_a_large_registry_the_outlier_is_blamed_not_the_honest_stages():
+    parts = build()
+    extra = {}
+    for n in range(4):
+        content = dict(parts["zeta"]["sepsis_lock"], lock_id=f"extra_{n}")
+        content["context"] = dict(CTX, run_id="run-2")  # four locks outvote the other three stages
+        extra[f"extra_{n}"] = content
+    parts["zeta"] = {**parts["zeta"], **extra}
+    found = problems_of(parts)
+    assert any("zeta lock extra_0 is bound to a different run than alpha's: run_id 'run-2' vs 'run-1'" in p for p in found)
+    assert not any(p.startswith(("alpha is bound", "beta is bound", "delta is bound")) for p in found), found

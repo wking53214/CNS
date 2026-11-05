@@ -191,12 +191,19 @@ the Decision is right, and `present_names` is stated by alpha so CNS never re-im
 limits stay. A native stage can still compute a result from a foreign input in memory (zeta's KeySet and LockResult
 carry no identity), so the result is refused when it is bound, recorded or verified, not when it is computed. And
 delta's ledger is an in-memory reference ledger: a checkpoint held outside it is what detects truncation or a
-rewrite, and nothing survives a restart. Two more are recorded as facts, not hidden: the strict check verifies that
-contents agree and chain by digest, not who made them (there is no key, so contents made up by someone who
-recomputes the digests pass), and zeta never sees the KeySet a result is bound to, so a result evaluated from one
-KeySet and bound to another's digest passes. The `chains` workflow runs the scenarios (seven lenient, twenty-five
-strict: five checks that hold, eighteen attacks each stating the problem that should refuse it, and the two gaps above,
-which expect no problem and go red the day they close).
+rewrite, and nothing survives a restart. The strict check also asks delta's own ledger whether the chain verifies (and
+whether a checkpoint held outside it still holds) rather than taking a caller's word, and it compares the KeySet
+fingerprint zeta records on every lock result, alpha reports and beta's Decision carries, so a result evaluated from
+one KeySet and bound to another's digest is refused. Three limits are recorded as facts, not hidden, and go red the
+day they close: the strict check verifies that contents agree and chain by digest, not who made them (there is no
+key, so contents made up by someone who recomputes the digests, and reports the chain as verified, pass); beta's
+`decision_fingerprint` is keyless and covers five of a Decision's thirteen fields, so a rewritten narrative
+(instructions, confidence, reasoning) passes; and a Decision records the union of the locks its rule cited, not which
+the rule required open and which closed, so a Decision citing a closed lock passes. The `chains` workflow runs the
+scenarios (seven lenient, thirty-five strict: five checks that hold, twenty-seven attacks each stating the problem that
+should refuse it, and the three gaps above). A second job, `spine-pinned`, runs the same scenarios on exactly the four
+commits `contracts/spine-manifest.json` names, after `cns_composition.spine_manifest` has held every pin and checkout
+to that file.
 
 ## The rule
 
