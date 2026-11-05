@@ -56,3 +56,26 @@ test("a plain clock function without sync is used as before", () => {
   const guard = new U.RemoteDecisionGuard((a) => a, { actingFor: R.agent, capability: [CAP.name, 1], trust: new U.PinnedTrust([D.agent]), ledger, clock: Date.now });
   assert.equal(guard.authorize(d.wire, { terms: d.terms, acceptDigest: d.acceptDigest }).allowed, true);
 });
+
+// RACE-02 I-07b (R2-C-04): the database's answer to the time query is read as an integer or refused as 'unavailable'; it is
+// never NaN, never a float, never a passing check. (cns_interop/tests/test_clock_fail_closed.py runs the same answers through
+// act.mjs against a real server.)
+test("the database's time is read only when it is a plausible integer in ms", () => {
+  assert.equal(P.serverTimeOf([["1793000000000"]]), 1793000000000);
+  assert.equal(P.serverTimeOf([["946684800000"]]), 946684800000);
+  for (const bad of [[], [[]], [[""]], [["NaN"]], [["-5"]], [["abc"]], [["1e3"]], [["1.5"]], [["Infinity"]], [["0"]], [["+1793000000000"]], [[" 1793000000000"]],
+    [["0x10"]], [["946684799999"]], [["9007199254740992"]], [["12345678901234567890"]], [["1793000000000", "2"]], [["1793000000000"], ["2"]], [[null]], [[1793000000000]]]) {
+    assert.equal(code(() => P.serverTimeOf(bad)), "unavailable", JSON.stringify(bad));
+  }
+});
+
+test("a measurement whose database time is unreadable refuses 'unavailable' and never passes as agreement", () => {
+  for (const answer of ["NaN", "abc", "-5", "Infinity"]) {
+    const g = Object.create(P.PgGuard.prototype);
+    g._run = () => [[answer]];
+    assert.equal(code(() => g.checkClock(5000)), "unavailable", answer);
+  }
+  const g = Object.create(P.PgGuard.prototype);
+  g._run = () => [];
+  assert.equal(code(() => g.checkClock(5000)), "unavailable");
+});

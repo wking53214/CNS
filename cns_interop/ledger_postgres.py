@@ -38,13 +38,26 @@ import threading
 import time
 from typing import Any, Callable, Optional, Tuple
 
-from .envelope import Refused, now_ms
+from .envelope import MAX_INT, Refused, now_ms
 from .ledger import Reservation, _check_lease
 
 __all__ = ["PostgresLedger", "PgGuard", "TrustedClock"]
 
 _NAME = re.compile(r"\A[a-z_][a-z0-9_]{0,40}\Z")
 _NOW_MS = "(extract(epoch from clock_timestamp()) * 1000)::bigint"
+#: 2000-01-01T00:00:00Z. A database that answers an earlier time (or a negative one) has no clock worth judging lifetimes by.
+_EARLIEST_PLAUSIBLE_MS = 946_684_800_000
+
+
+def _server_time(row: Any) -> int:
+    """The database's answer to the time query as an integer, or Refused('unavailable') when it is not a plausible time in
+    ms: no row, NULL, not an integer (a bool, text, a float), negative, before 2000, or beyond 2**53 - 1. A reference that
+    cannot be read is no reference: the receiver does not act on it, and never treats it as a passing check (R2-C-09)."""
+    value = row[0] if isinstance(row, (tuple, list)) and len(row) == 1 else None
+    if isinstance(value, bool) or not isinstance(value, int) or not _EARLIEST_PLAUSIBLE_MS <= value <= MAX_INT:
+        raise Refused("unavailable", "the ledger database did not answer the time query with a plausible time in ms, so "
+                                     "message lifetimes cannot be judged")
+    return value
 
 
 class PgGuard:
@@ -101,8 +114,9 @@ class PgGuard:
             raise Refused("unavailable", f"the ledger database is unreachable ({type(exc).__name__})") from None
 
     def server_now_ms(self) -> int:
-        """The database's clock, in ms: the clock every lease is judged by."""
-        return int(self._guard(lambda db: db.execute(f"SELECT {_NOW_MS}").fetchone()[0]))
+        """The database's clock, in ms: the clock every lease is judged by. An answer that is missing, malformed or
+        implausible is Refused('unavailable'), never a number and never a crash."""
+        return _server_time(self._guard(lambda db: db.execute(f"SELECT {_NOW_MS}").fetchone()))
 
     def _measure(self, max_skew_ms: int, clock: Optional[Callable[[], int]]) -> Tuple[int, int]:
         """(skew, server): this host's clock minus the database's, and the database's time. Refuses ('clock_skew') when the
@@ -207,6 +221,8 @@ class PostgresLedger(PgGuard):
     def _grant(self, db: Any, sender: str, message_id: str, expires_at: Optional[int], state: str, token: Optional[str],
                lease_ms: int, now: Optional[int]) -> Optional[tuple]:
         t_sql, t_args = self._time(now)
+        if not self._caller_time:
+            _server_time(db.execute(f"SELECT {_NOW_MS}").fetchone())  # no usable database time: nothing is judged or written
         if expires_at is not None and db.execute(f"SELECT {t_sql} >= %s", (*t_args, expires_at)).fetchone()[0]:
             raise Refused("expired", "the message has expired by the ledger database's clock, so it is not spent")
         db.execute(f"DELETE FROM {self._t} WHERE expires_at IS NOT NULL AND expires_at <= {t_sql} - %s",

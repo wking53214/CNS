@@ -55,7 +55,8 @@ from .identity import Signer, is_agent_id, public_of
 from .ledger import MemoryLedger, Reservation
 from .negotiate import TERMS_KEYS, terms_digest
 
-__all__ = ["Grant", "GrantTable", "GrantStore", "Approval", "approve", "Permit", "verify_audit", "load_grants"]
+__all__ = ["Grant", "GrantTable", "GrantStore", "Approval", "approve", "Permit", "verify_audit", "append_audit",
+           "load_grants"]
 
 _APPROVAL_TAG = b"uai/1 approval\n"
 
@@ -385,21 +386,29 @@ class GrantTable:
                 entry["prev"] = self._last
                 self._last = subject_digest(entry)
                 return self._last
-            try:
-                import fcntl
+            self._last = append_audit(self._audit, entry)
+            return self._last
 
-                with open(self._audit, "a+b") as fh:
-                    fcntl.flock(fh, fcntl.LOCK_EX)  # every writer, in any process, chains onto the REAL last entry
-                    entry["prev"] = _tail_digest(fh)
-                    digest = subject_digest(entry)
-                    fh.write((json.dumps({**entry, "digest": digest}, sort_keys=True) + "\n").encode("utf-8"))
-                    fh.flush()
-                    os.fsync(fh.fileno())
-            except OSError as exc:
-                raise Refused("unavailable", f"the audit record could not be written, so nothing is permitted "
-                                             f"({type(exc).__name__})") from None
-            self._last = digest
-            return digest
+
+def append_audit(path: "os.PathLike[str] | str", entry: Dict[str, Any]) -> str:
+    """Append one entry to a hash-chained audit file, under its lock, chained onto the REAL last entry, and return its
+    digest. `GrantTable` writes every permit and refusal this way; a receiver uses it directly for a record that is not a
+    permit decision, such as a start-up refusal (`clock_skew`, `unavailable`, `config`), so that a refusal to act leaves
+    evidence in the same chain (RACE-02 I-07b). Refused('unavailable') when the file cannot be written."""
+    try:
+        import fcntl
+
+        with open(path, "a+b") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)  # every writer, in any process, chains onto the REAL last entry
+            entry["prev"] = _tail_digest(fh)
+            digest = subject_digest(entry)
+            fh.write((json.dumps({**entry, "digest": digest}, sort_keys=True) + "\n").encode("utf-8"))
+            fh.flush()
+            os.fsync(fh.fileno())
+    except OSError as exc:
+        raise Refused("unavailable", f"the audit record could not be written, so nothing is permitted "
+                                     f"({type(exc).__name__})") from None
+    return digest
 
 
 def _tail_digest(fh: Any) -> str:

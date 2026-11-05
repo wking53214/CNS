@@ -21,11 +21,22 @@
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { Refused } from "./uai.mjs";
+import { MAX_INT, Refused } from "./uai.mjs";
 
 const NAME = /^[a-z_][a-z0-9_]{0,40}$/;
 const NOW_MS = "(extract(epoch from clock_timestamp()) * 1000)::bigint";
 const MAX_LEASE_MS = 3600 * 1000;
+const EARLIEST_PLAUSIBLE_MS = 946684800000;   // 2000-01-01T00:00:00Z, as Python's _EARLIEST_PLAUSIBLE_MS
+
+// The database's answer to the time query as an integer, or Refused('unavailable') when it is not a plausible time in ms:
+// no row, NULL (an empty line), more than one row or column, not decimal digits (so never NaN, a sign, a fraction, an
+// exponent or "Infinity"), before 2000, or beyond 2**53 - 1. As Python's _server_time (R2-C-04: NaN used to pass).
+export function serverTimeOf(rows) {
+  const text = Array.isArray(rows) && rows.length === 1 && Array.isArray(rows[0]) && rows[0].length === 1 ? rows[0][0] : null;
+  const value = typeof text === "string" && /^[0-9]{1,16}$/.test(text) ? Number(text) : NaN;
+  if (!Number.isSafeInteger(value) || value < EARLIEST_PLAUSIBLE_MS || value > MAX_INT) throw new Refused("unavailable", "the ledger database did not answer the time query with a plausible time in ms, so message lifetimes cannot be judged");
+  return value;
+}
 const ENV_OF = {
   host: "PGHOST", hostaddr: "PGHOSTADDR", port: "PGPORT", user: "PGUSER", password: "PGPASSWORD", dbname: "PGDATABASE",
   sslmode: "PGSSLMODE", sslrootcert: "PGSSLROOTCERT", sslcert: "PGSSLCERT", sslkey: "PGSSLKEY", sslcrl: "PGSSLCRL",
@@ -88,8 +99,9 @@ export class PgGuard {
     return r.stdout.split("\n").filter((l) => l !== "").map((l) => l.split("\t"));
   }
 
-  // The database's clock, in ms: the clock every lease is judged by.
-  serverNowMs() { return Number(this._run(`SELECT ${NOW_MS};`)[0][0]); }
+  // The database's clock, in ms: the clock every lease is judged by. A missing, malformed or implausible answer is
+  // Refused('unavailable'), never a number.
+  serverNowMs() { return serverTimeOf(this._run(`SELECT ${NOW_MS};`)); }
 
   // [skew, server]: this host's clock minus the database's, and the database's time. Refuses ('clock_skew') when the skew
   // exceeds maxSkewMs plus half the round trip, which bounds what the measurement cannot know. As Python's PgGuard._measure.
@@ -146,17 +158,23 @@ CREATE SEQUENCE IF NOT EXISTS ${table}_fence;`);
   get keepMs() { return this._keep; }
 
   _grant(sender, id, expiresAt, state, token, leaseMs, now) {
-    const t = this._callerTime && now !== undefined && now !== null ? ":'now'::bigint" : NOW_MS, T = this._t;
+    const callerNow = this._callerTime && now !== undefined && now !== null;
+    const t = callerNow ? ":'now'::bigint" : NOW_MS, T = this._t;
     const lease = state === "leased" ? `${t} + :'lease'::bigint` : "NULL";
     // The first row says whether the message has already expired by the ledger's clock ('t' or 'f'); then nothing is written
     // for an expired one (as Python refuses before its writes), and the rest is the grant.
-    const expired = `COALESCE(${t} >= NULLIF(:'exp', '')::bigint, false)`;
-    const [[isExpired], ...rows] = this._run(`SELECT ${expired};
+    // A database time that is NULL or before 2000 counts as expired HERE too, so that nothing is written on it (the check
+    // below then reports it as 'unavailable'): the write is guarded in SQL, not by what JavaScript does afterwards.
+    const expired = `(COALESCE(${t} >= NULLIF(:'exp', '')::bigint, false)${callerNow ? "" : ` OR COALESCE(${t} < ${EARLIEST_PLAUSIBLE_MS}, true)`})`;
+    // And before it, the database's time as text ('null' for NULL, so no row vanishes): without a usable one nothing is written.
+    const [[nowText], [isExpired], ...rows] = this._run(`SELECT COALESCE((${t})::text, 'null');
+SELECT ${expired};
 DELETE FROM ${T} WHERE expires_at IS NOT NULL AND expires_at <= ${t} - :'keep'::bigint;
 INSERT INTO ${T} (sender, id, state, token, lease_until, expires_at, fence) SELECT :'sender', :'id', :'state', NULLIF(:'token', ''), ${lease}, NULLIF(:'exp', '')::bigint, nextval('${T}_fence') WHERE NOT ${expired}
 ON CONFLICT (sender, id) DO UPDATE SET state = EXCLUDED.state, token = EXCLUDED.token, lease_until = EXCLUDED.lease_until, expires_at = EXCLUDED.expires_at, fence = EXCLUDED.fence
 WHERE ${T}.state = 'leased' AND ${T}.lease_until <= ${t} RETURNING fence, lease_until;`,
     { sender, id, state, token, lease: leaseMs, exp: expiresAt, now, keep: this._keep });
+    if (!callerNow) serverTimeOf([[nowText]]);
     if (isExpired === "t") throw new Refused("expired", "the message has expired by the ledger database's clock, so it is not spent");
     if (rows.length === 0) throw new Refused("replayed", "this message was already accepted once or is being redeemed right now");
     return rows[0];
