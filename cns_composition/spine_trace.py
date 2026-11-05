@@ -77,8 +77,11 @@ does not prove where they came from. The recorded limits:
     receipt pass. A receipt and a fingerprint detect mistakes and partial edits, not an author.
   - `LockResult` fields (`keyset_fingerprint`, `stale`, `entity_id`) are caller-settable, and an empty `entity_id` is
     accepted as legacy, so a lock result built by hand says whatever it likes.
+  - A receipt written by hand over real contents, with no ledger behind it, passes if its fields fit one another (an
+    index of 4 in a ledger of 9 whose checkpoint head is the ledger head, say): nothing signs it.
   - Checkpoint custody and durability are not implemented here: delta's ledger is in memory, and a checkpoint is only as
-    good as the place its holder keeps it.
+    good as the place its holder keeps it. A ledger's sink runs before the ledger changes, so a sink's own store can keep a
+    write the ledger does not have; delta's contract is an idempotent sink and a caller who reconciles.
   - `content_fingerprint` is keyless: it catches an edit that forgets to recompute it.
   - `origin` is the producer's own claim: CNS checks its form and order, not who made it or whether it is true.
   - A Decision records the union of the locks its rule cited, so one citing a closed lock passes.

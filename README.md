@@ -227,11 +227,21 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
 6. A Decision records the union of the locks its rule cited, not which the rule required open and which closed, so a
    Decision citing a closed lock passes. And a native stage can still compute a result from a foreign input in memory;
    the result is refused when it is bound, recorded or verified, not when it is computed.
+7. A ledger's sink runs before the ledger changes, so a sink that writes to its own store and then fails leaves a write the
+   ledger does not have (a scenario shows it). Delta's contract: the sink must be idempotent, keyed by the entry's hash, and
+   the caller reconciles; a retry hands it the same entry. And a receipt written by hand with fields that fit each other
+   (limit 1) passes: only where the checkpoint is kept tells it from delta's.
 
-The `chains` workflow runs 62 scenarios: seven lenient, and 55 strict. The strict ones are six checks that hold, 44 attacks
+The `chains` workflow runs 83 scenarios: seven lenient, and 76 strict. The strict ones are six checks that hold, 63 attacks
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
-only extras it may add; two of them, a context that changes between reads and a list a caller mutates after recording, must
-come out clean because the record must not change), and the five gaps above stated as facts that go red the day they close.
+only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
+that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
+change), and the seven gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
+fingerprint, a cited closed lock, a legacy lock result, a KeySet swapped when no recomputation is supplied, and the sink's
+own store, limit 7). The scenarios attack the receipt itself
+from delta's real one, and delta's refusal of a checkpoint (one sentence for five causes) is explained by the runner's own
+wrapper so each scenario requires its own cause. A scenario table row must be an `Expect`; a plain string is a `TypeError`
+when the script loads.
 Each scenario declares an `Expect` (`chains/spine_oracle.py`): the problems it requires, the only extras it may add, texts it
 forbids, and whether it is clean, a problem, a refusal or a gap. A missing required problem, an unlisted extra problem, an
 unexpected success, an undeclared crash, or a refusal that changed the ledger it guarded fails the scenario; the oracle has

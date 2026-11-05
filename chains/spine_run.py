@@ -19,12 +19,20 @@ str-subclass or shifting context, an aliased list, a stale content fingerprint, 
 swapped under a copied fingerprint) and state, as an `Expect` (see
 `spine_oracle.py`), the problems the boundary that should refuse each one must name and the only extras it may add.
 A scenario fails if a required problem is missing, if an unlisted problem appears, if it returns nothing when it
-should be refused, if it crashes without declaring it, or if a refusal changed the state it guarded. Five scenarios,
+should be refused, if it crashes without declaring it, or if a refusal changed the state it guarded. Seven scenarios,
 marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
-recomputes every digest and fingerprint and writes a consistent receipt), a narrative forged by someone who also
-recomputes the keyless content fingerprint, a Decision citing a closed lock, a legacy lock result with no entity id, and
-a KeySet swapped under a copied fingerprint when no recomputation is supplied. They go red the day the gap closes and
-are then updated on purpose.
+recomputes every digest and fingerprint and writes a consistent receipt), a receipt written by hand over real contents
+with no ledger behind it, a narrative forged by someone who also recomputes the keyless content fingerprint, a Decision
+citing a closed lock, a legacy lock result with no entity id, a KeySet swapped under a copied fingerprint when no
+recomputation is supplied, and a sink whose own store keeps a write the ledger does not have (delta's idempotency
+contract). They go red the day the gap closes and are then updated on purpose.
+
+The run also attacks the receipt itself (zeroed heads, an index beyond the ledger or the checkpoint, another entry's
+hashes, a lying str-subclass digest or head, a key that only prints like a field name) starting from the receipt delta
+really issues, and the hardened ledger (a replay with the fingerprint blanked, a lying entity id, a list that changes
+between reads, a datetime subclass, a sink that appends, a checkpoint that answers honestly once, a receipt for an entry
+the checkpoint does not cover). Delta's refusal of a checkpoint is one sentence for five causes; the runner's own wrapper
+(`ask_delta`) names the cause so each scenario requires its own.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import sys
+import threading
 import warnings
 from collections.abc import Mapping
 from datetime import datetime, timedelta
@@ -807,6 +816,192 @@ def a_receipt_whose_real_key_is_replaced_by_one_that_prints_alike() -> List[str]
     return altered_receipt(lambda r: {(KeyLike(k) if k == "index" else k): v for k, v in r.items()})
 
 
+# --- the reviewers' attacks on the hardened components, with real objects (each states what must refuse it) -----------
+
+def a_replay_with_the_content_fingerprint_blanked() -> List[str]:
+    """The identical Decision brought back under a fresh event and run with its content_fingerprint blanked, so that a replay
+    key which included the fingerprint would see a new record. A ledger that requires a context refuses it as a downgrade."""
+    p = stages(SICK)
+    blanked = dataclasses.replace(p["decision"], content_fingerprint="")
+    return refused(lambda: p["ledger"].append(blanked, context={**CTX, "run_id": "run_2", "event_id": "event_2"}),
+                   ledger_state(p["ledger"]))
+
+
+class LyingEntity(str):
+    """A str that is never equal to anything, itself included: an entity check by equality would never fire on it."""
+
+    def __eq__(self, other: object) -> bool:
+        return False
+
+    def __ne__(self, other: object) -> bool:
+        return False
+
+    __hash__ = str.__hash__
+
+
+def an_entity_id_that_lies_about_its_equality() -> List[str]:
+    p = stages(SICK)
+    ledger = DecisionLedger(require_context=True)
+    lying = dataclasses.replace(p["decision"], entity_id=LyingEntity(p["decision"].entity_id))
+    return refused(lambda: ledger.append(lying, context=CTX), ledger_state(ledger))
+
+
+class ShiftingList(list):
+    """Honest the first time it is iterated, a forged key every time after."""
+
+    reads = 0
+
+    def __iter__(self):
+        ShiftingList.reads += 1
+        return iter(list.__iter__(self)) if ShiftingList.reads == 1 else iter(["forged_key"])
+
+
+def a_list_that_changes_between_reads_is_stored_as_its_first_read() -> List[str]:
+    """Problems only if something other than the first read was validated or recorded."""
+    p = stages(SICK)
+    honest = tuple(p["decision"].triggered_by_keys)
+    shifting = dataclasses.replace(p["decision"])
+    ShiftingList.reads = 0
+    object.__setattr__(shifting, "triggered_by_keys", ShiftingList(honest))
+    ledger = DecisionLedger(require_context=True)
+    out: List[str] = []
+    try:
+        entry = ledger.append(shifting, context=CTX)
+    except (ValueError, TypeError) as exc:  # a refusal is as good as a faithful copy: nothing forged is recorded
+        return [] if len(ledger.entries) == 0 else [f"refused ({type(exc).__name__}) but the ledger changed"]
+    if tuple(entry.decision.triggered_by_keys) != honest:
+        out.append(f"the ledger stored {entry.decision.triggered_by_keys!r}, not the first read {honest!r}")
+    try:
+        Decision.validate(entry.decision, check_fingerprint=True)
+    except ValueError as exc:
+        out.append(f"the stored Decision fails its own validation: {exc}")
+    if not ledger.verify_chain_integrity():
+        out.append("the ledger's chain does not verify after recording a list that changed between reads")
+    return out
+
+
+class NeverEarlier(datetime):
+    """A datetime that says it is never earlier than anything, so an ordering check would let 1970 through."""
+
+    def __lt__(self, other: Any) -> bool:
+        return False
+
+
+def a_datetime_subclass_that_backdates_an_entry() -> List[str]:
+    p = stages(SICK)
+    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    return refused(lambda: p["ledger"].append(other, timestamp=NeverEarlier(1970, 1, 1), context={**CTX, "run_id": "run_9", "event_id": "event_9"}),
+                   ledger_state(p["ledger"]))
+
+
+def a_sink_that_appends_to_its_own_ledger() -> List[str]:
+    """The sink calls `append` on the ledger it was handed an entry by. Delta refuses with RuntimeError, before taking the
+    lock it already holds, so it neither deadlocks nor records twice. The call runs in a thread with a timeout: a hang is a
+    problem, not a stuck script."""
+    p = stages(SICK)
+    holder: List[DecisionLedger] = []
+
+    def sink(entry: Any) -> None:
+        holder[0].append(p["decision"], context={**CTX, "run_id": "run_7", "event_id": "event_7"})
+
+    ledger = DecisionLedger(require_context=True, sink=sink)
+    holder.append(ledger)
+    result: List[List[str]] = []
+    worker = threading.Thread(
+        target=lambda: result.append(refused(lambda: ledger.append(p["decision"], context=CTX), ledger_state(ledger), catch=(RuntimeError,))),
+        daemon=True)
+    worker.start()
+    worker.join(timeout=10)
+    if worker.is_alive() or not result:
+        return ["the append from inside the sink did not return within 10 seconds (a deadlock)"]
+    return result[0]
+
+
+class AnswersHonestlyOnce(LedgerCheckpoint):
+    """A checkpoint whose length and head are honest on the first read of each and a different, fitting-looking pair after."""
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in ("length", "head"):
+            seen = object.__getattribute__(self, "_seen")
+            seen[name] = seen.get(name, 0) + 1
+            if seen[name] > 1:
+                return {"length": 7, "head": "f" * 64}[name]
+        return object.__getattribute__(self, name)
+
+
+def a_checkpoint_subclass_that_answers_honestly_only_once() -> List[str]:
+    """Delta may refuse it, or issue a receipt; if it issues one, every length and head on it must be the ones it verified."""
+    p = stages(SICK)
+    real = p["ledger"].checkpoint()
+    sneaky = AnswersHonestlyOnce(real.length, real.head)
+    object.__setattr__(sneaky, "_seen", {})
+    try:
+        receipt = delta_cns.verification_receipt(p["ledger"], sneaky, context=CTX, decision_digest=p["delta"]["decision_digest"])
+    except (ValueError, TypeError):
+        return []
+    wanted = {"ledger_length": len(p["ledger"].entries), "ledger_head": p["ledger"].chain_head,
+              "checkpoint_length": real.length, "checkpoint_head": real.head}
+    return [f"the receipt says {k} {receipt[k]!r}, not the verified {v!r}" for k, v in wanted.items() if receipt[k] != v]
+
+
+def a_receipt_asked_for_an_entry_beyond_the_checkpoint() -> List[str]:
+    """The checkpoint was held before the second entry existed, so it is no independent evidence about that entry: delta
+    issues no receipt for it."""
+    p = stages(SICK)
+    held = p["checkpoint"]
+    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    second = {**CTX, "run_id": "run_2", "event_id": "event_2"}
+    p["ledger"].append(other, context=second)
+    return refused(lambda: ask_delta(p["ledger"], held, context=second, decision_digest="a" * 64), ledger_state(p["ledger"]))
+
+
+def GAP_a_fully_hand_built_consistent_receipt_is_accepted() -> List[str]:
+    """KNOWN GAP, stated as a fact. The receipt is not signed. Real contents from a real run, and a receipt written by hand
+    with no ledger behind it: the right entry digest, hashes and context, an index of 4 in a ledger of 9, a checkpoint that
+    covers all nine and one head that is neither the entry's nor any ledger's. Every field fits the others, so the strict
+    check names nothing. Only where the checkpoint is kept, which CNS cannot see, tells it from delta's."""
+    p = stages(SICK)
+    delta = p["delta"]
+    head = "1" * 64
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(delta), "index": 4,
+               "entry_hash": delta["immutable_hash"], "previous_hash": delta["previous_hash"], "ledger_length": 9,
+               "ledger_head": head, "checkpoint_length": 9, "checkpoint_head": head, "context": dict(CTX)}
+    return strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint)
+
+
+def GAP_a_sink_keeps_a_write_the_ledger_does_not_have() -> List[str]:
+    """KNOWN GAP, stated as a fact, and delta's idempotency contract with it. The sink runs before the ledger changes, so a
+    sink that writes to its own store and then raises leaves that write behind while the ledger holds nothing: the store has
+    an entry the ledger never recorded. A retry hands the sink the same entry (same immutable_hash), so a store keyed by it
+    holds one record, not two. Delta supplies the hook, not the storage; the sink must be idempotent and the caller must
+    reconcile. No problem is found when the fact holds; one is reported if the phantom write ever disappears."""
+    p = stages(SICK)
+    store: Dict[str, Any] = {}
+    failing = [True]
+
+    def sink(entry: Any) -> None:
+        store[entry.immutable_hash] = entry  # idempotent: keyed by the entry's own hash
+        if failing[0]:
+            raise RuntimeError("the store's acknowledgement was lost")
+
+    ledger = DecisionLedger(require_context=True, sink=sink)
+    out = refused(lambda: ledger.append(p["decision"], context=CTX), catch=(RuntimeError,))
+    if not out:
+        return ["the failing sink did not stop the append"]
+    out = []
+    if len(ledger.entries) != 0:
+        out.append("the ledger recorded an entry although its sink raised")
+    if len(store) != 1:
+        out.append(f"the gap has closed: the sink's own store holds {len(store)} write(s) after the ledger refused, not the one phantom")
+    failing[0] = False
+    ledger.append(p["decision"], context=CTX)
+    if len(ledger.entries) != 1 or len(store) != 1:
+        out.append(f"the retry is not idempotent: the ledger holds {len(ledger.entries)} and the store {len(store)}")
+    if set(store) != {ledger.entries[0].immutable_hash}:
+        out.append("the retry handed the sink a different entry than the one it first wrote")
+    return out
+
+
 # --- the hardened components, attacked as the matrix did (row numbers are the attack matrix's) -------------------------
 
 def a_forged_chain_verified_flag() -> List[str]:
@@ -1259,6 +1454,19 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      a_context_mapping_that_changes_between_reads_is_recorded_as_first_read, CLEAN),
     ("strict: a list the caller mutates after recording does not reach the stored Decision",
      a_list_the_caller_mutates_after_recording_does_not_reach_the_stored_decision, CLEAN),
+    # --- the reviewers' attacks, with real objects ---
+    ("strict: a replay with the content fingerprint blanked is refused as a downgrade", a_replay_with_the_content_fingerprint_blanked,
+     Expect("refused", required=("content_fingerprint is empty", "downgrade"), raises=("ValueError",))),
+    ("strict: an entity id that lies about its equality is refused", an_entity_id_that_lies_about_its_equality,
+     Expect("refused", required=("Decision.entity_id must be exactly a str",), raises=("TypeError",))),
+    ("strict: a list that changes between reads is stored as its first read", a_list_that_changes_between_reads_is_stored_as_its_first_read, CLEAN),
+    ("strict: a datetime subclass that backdates an entry is refused", a_datetime_subclass_that_backdates_an_entry,
+     Expect("refused", required=("timestamp must be exactly a datetime",), raises=("TypeError",))),
+    ("strict: a sink that appends to its own ledger is refused", a_sink_that_appends_to_its_own_ledger,
+     Expect("refused", required=("append from inside a sink is not allowed",), raises=("RuntimeError",))),
+    ("strict: a checkpoint subclass that answers honestly only once", a_checkpoint_subclass_that_answers_honestly_only_once, CLEAN),
+    ("strict: a receipt asked for an entry beyond the checkpoint is refused", a_receipt_asked_for_an_entry_beyond_the_checkpoint,
+     Expect("refused", required=("is not covered by the checkpoint (length 1)",), raises=("ValueError",))),
     # --- known gaps, stated as facts ---
     ("strict: GAP, a narrative forged by someone who recomputes the content fingerprint",
      GAP_a_decisions_narrative_forged_by_someone_who_recomputes_the_content_fingerprint, GAP),
@@ -1267,6 +1475,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      GAP_a_legacy_lock_result_with_no_entity_id_is_accepted, GAP),
     ("strict: GAP, a KeySet substituted under a copied fingerprint, no recomputation supplied",
      GAP_a_keyset_substituted_under_a_copied_fingerprint_without_a_recomputation, GAP),
+    ("strict: GAP, a fully hand-built consistent receipt is accepted", GAP_a_fully_hand_built_consistent_receipt_is_accepted, GAP),
+    ("strict: GAP, a sink keeps a write the ledger does not have", GAP_a_sink_keeps_a_write_the_ledger_does_not_have, GAP),
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
 ]
