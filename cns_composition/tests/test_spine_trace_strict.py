@@ -710,3 +710,109 @@ def test_the_receipt_binds_the_root_to_nothing_it_does_not_already_hold():
     two = root_of(parts, chain=receipt_for(parts, ledger_length=7, index=4, checkpoint_length=2, ledger_head="a" * 64,
                                            checkpoint_head="b" * 64))
     assert one == two
+
+
+# --- keyset_fingerprint_of: a recomputation of alpha's fingerprint, supplied by the caller from zeta ------------------
+
+MISMATCH = "alpha's KeySet fingerprint does not match a recomputation from alpha's keys"
+
+
+def _toy_fingerprint(alpha):
+    """Stands in for zeta's rule (CNS never implements it): a SHA-256 over what alpha's keys say."""
+    import hashlib
+    import json
+    body = json.dumps({"m": alpha["min_confidence"], "k": alpha["keys"]}, sort_keys=True)
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def _honest_with_toy_fingerprint():
+    """A run whose every KeySet fingerprint is the toy rule's answer for alpha's keys, relinked."""
+    parts = build()
+    fp = _toy_fingerprint(parts["alpha"])
+    parts["alpha"]["keyset_fingerprint"] = fp
+    for c in parts["zeta"].values():
+        c["keyset_fingerprint"] = fp
+    parts["beta"]["keyset_fingerprint"] = fp
+    parts["delta"]["decision"]["keyset_fingerprint"] = fp
+    return relink(parts)
+
+
+def test_a_recomputation_that_agrees_with_alpha_is_clean():
+    parts = _honest_with_toy_fingerprint()
+    assert strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                           keyset_fingerprint_of=_toy_fingerprint) == []
+
+
+def test_row_2b_content_substituted_under_the_original_fingerprint_string_is_refused_when_a_recomputation_is_supplied():
+    parts = _honest_with_toy_fingerprint()
+    original = parts["alpha"]["keyset_fingerprint"]
+    parts["alpha"]["keys"][0]["reason"] = "other readings than the ones zeta evaluated"
+    parts["alpha"]["keyset_fingerprint"] = original  # the original string is copied in
+    relink(parts)
+    args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+    found = strict_problems(*args, chain=receipt_for(parts), keyset_fingerprint_of=_toy_fingerprint)
+    assert found == [MISMATCH]
+    with pytest.raises(ValueError, match="does not match a recomputation"):
+        strict_root(*args, chain=receipt_for(parts), keyset_fingerprint_of=_toy_fingerprint)
+
+
+def test_row_2b_passes_when_no_recomputation_is_supplied_which_is_a_recorded_gap():
+    parts = _honest_with_toy_fingerprint()
+    original = parts["alpha"]["keyset_fingerprint"]
+    parts["alpha"]["keys"][0]["reason"] = "other readings than the ones zeta evaluated"
+    parts["alpha"]["keyset_fingerprint"] = original
+    relink(parts)
+    assert problems_of(parts) == []  # the gap: fingerprint strings agree, nothing recomputed them
+
+
+@pytest.mark.parametrize("verifier", [
+    lambda alpha: "f" * 64,                      # another fingerprint
+    lambda alpha: None,                          # no answer
+    lambda alpha: 5,                             # not a str
+    lambda alpha: (_ for _ in ()).throw(RuntimeError("zeta is unavailable")),   # raises
+    lambda alpha: _toy_fingerprint(alpha).upper(),
+], ids=["other", "none", "not-str", "raises", "upper"])
+def test_a_recomputation_that_raises_or_does_not_match_is_the_same_named_problem(verifier):
+    parts = _honest_with_toy_fingerprint()
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                            keyset_fingerprint_of=verifier)
+    assert found == [MISMATCH]
+
+
+def test_a_recomputation_that_answers_with_an_always_equal_object_is_refused():
+    class Yes(str):
+        def __eq__(self, other):
+            return True
+
+        __hash__ = str.__hash__
+
+    parts = _honest_with_toy_fingerprint()
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                            keyset_fingerprint_of=lambda alpha: Yes("whatever"))
+    assert found == [MISMATCH]
+
+
+def test_the_recomputation_is_given_a_copy_and_cannot_change_what_is_judged():
+    parts = _honest_with_toy_fingerprint()
+    seen = []
+
+    def meddling(alpha):
+        seen.append(alpha)
+        alpha["keys"].clear()
+        alpha["present_names"].append("invented")
+        return _toy_fingerprint(parts["alpha"])
+
+    before = copy.deepcopy(parts["alpha"])
+    assert strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                           keyset_fingerprint_of=meddling) == []
+    assert seen and parts["alpha"] == before
+
+
+def test_the_recomputation_is_not_called_when_none_is_given_and_alpha_without_a_fingerprint_is_named_once():
+    parts = build()
+    del parts["alpha"]["keyset_fingerprint"]
+    calls = []
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                            keyset_fingerprint_of=lambda alpha: calls.append(1) or "x")
+    has(found, "alpha carries no keyset_fingerprint")
+    assert MISMATCH not in found and calls == []

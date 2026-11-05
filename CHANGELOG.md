@@ -55,7 +55,11 @@ not a release.
   shown to belong to a verified chain and no root is issued. `chain_verified` is a deprecated alias: passing it warns
   (`DeprecationWarning`) and is always the problem "chain_verified is a bare assertion and is not evidence", whatever
   its value. The receipt is not signed, so a forger who writes a consistent one passes; that stays a recorded limit.
-  They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
+  `keyset_fingerprint_of`, when a caller supplies it (the runner builds it from zeta's `KeySet`), recomputes alpha's
+  KeySet fingerprint from alpha's keys; a result that differs, or a function that raises, is the problem "alpha's KeySet
+  fingerprint does not match a recomputation from alpha's keys". CNS never implements the rule and imports nothing from
+  zeta; without the function, substituted alpha content that copies the original fingerprint string passes (a recorded
+  gap). They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
   alpha, zeta, beta and delta. `blame` names alpha's run as the reference.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.

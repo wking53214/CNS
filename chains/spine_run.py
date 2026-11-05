@@ -45,7 +45,7 @@ from cns.gate import subject_digest
 from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, SpineRecord, context_problems, problems, root, strict_problems, strict_root)
 from delta import DecisionLedger
-from zeta import Combination, LockEvaluator, LockRegistry, LockSpec
+from zeta import Combination, Key, KeySet, LockEvaluator, LockRegistry, LockSpec
 
 T0 = datetime(2026, 10, 1, 8, 0, 0)
 SICK = VitalsObservation(heart_rate=148, oxygen_saturation=90.0, respiratory_rate=36, temperature=39.6, age_months=14)
@@ -157,6 +157,15 @@ def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind
             "decision": decision, "keys": keys, "results": results, "da": da, "checkpoint": ledger.checkpoint()}
 
 
+def zeta_keyset_fingerprint(alpha_content) -> str:
+    """Zeta's own fingerprint of the KeySet that alpha's content describes: rebuilt from alpha's keys (name, present,
+    confidence, reason) and min_confidence by zeta's constructors, then zeta's `fingerprint()`. Zeta owns the rule; CNS is
+    handed this function and only compares what it returns with the fingerprint alpha carries."""
+    keys = [Key(name=k["name"], present=k["present"], confidence=k["confidence"], reason=k["reason"])
+            for k in alpha_content["keys"]]
+    return KeySet(keys, min_confidence=alpha_content["min_confidence"]).fingerprint()
+
+
 def chain_receipt(parts) -> Tuple[Any, str]:
     """Ask delta itself for a verification receipt about the ledger's last entry, against the checkpoint the scenario holds.
 
@@ -176,9 +185,12 @@ def chain_receipt(parts) -> Tuple[Any, str]:
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def check(parts) -> List[str]:
+def check(parts, *, verify_fingerprint: bool = True) -> List[str]:
+    """The strict check as the runner asks it: with delta's receipt and, unless a scenario says otherwise, with zeta's
+    recomputation of alpha's KeySet fingerprint."""
     receipt, refusal = chain_receipt(parts)
-    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt)
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt,
+                            keyset_fingerprint_of=zeta_keyset_fingerprint if verify_fingerprint else None)
     return found + ([f"delta issued no verification receipt: {refusal}"] if refusal else [])
 
 
@@ -198,13 +210,15 @@ def strict_clean(vitals) -> List[str]:
 
 def strict_roots_differ_by_run() -> List[str]:
     a, b = stages(SICK), stages(SICK, ctx={**CTX, "run_id": "run_2"})
-    ra, rb = (strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=chain_receipt(p)[0]) for p in (a, b))
+    ra, rb = (strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=chain_receipt(p)[0],
+                         keyset_fingerprint_of=zeta_keyset_fingerprint) for p in (a, b))
     return [] if ra != rb else ["the same readings in two runs produced one root"]
 
 
 def strict_root_is_not_a_lenient_root() -> List[str]:
     p = stages(SICK)
-    strict = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=chain_receipt(p)[0])
+    strict = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], chain=chain_receipt(p)[0],
+                         keyset_fingerprint_of=zeta_keyset_fingerprint)
     lenient = root(facts(p["keys"], p["results"], p["decision"], p["ledger"].entries[0]))
     return [] if strict != lenient else ["a strict root equals a lenient root"]
 
@@ -385,15 +399,46 @@ def zeta_and_beta_named_the_digest_of_another_keyset() -> List[str]:
     return check(p)
 
 
+def rechain_from_alpha(p, alpha):
+    """Recompute every downstream digest with the real connectors, from the real objects, given another alpha content."""
+    da = subject_digest(alpha)
+    zeta = {lid: zeta_cns.lock_result_content(r, context=CTX, keyset_digest=da) for lid, r in p["results"].items()}
+    beta = beta_cns.decision_content(
+        p["decision"], context=CTX, keyset_digest=da, lock_result_digests={lid: subject_digest(c) for lid, c in zeta.items()})
+    delta = delta_cns.entry_content(p["ledger"].entries[-1], context=CTX, decision_digest=subject_digest(beta))
+    return {**p, "alpha": alpha, "zeta": zeta, "beta": beta, "delta": delta}
+
+
+def substituted_alpha_content_under_the_original_fingerprint(*, verify_fingerprint: bool) -> List[str]:
+    """Matrix row 2b. Alpha's content is replaced by another KeySet's (other readings in the reasons, the same present
+    Keys) that carries the ORIGINAL fingerprint string, and every digest downstream is recomputed from the real objects,
+    so the lineage digests chain. Comparing fingerprint strings cannot see it; recomputing from alpha's keys does."""
+    p = stages(SICK)
+    other = alpha_cns.keyset_content(observe(SICK_ELSEWHERE), context=CTX)
+    other["keyset_fingerprint"] = p["alpha"]["keyset_fingerprint"]
+    return check(rechain_from_alpha(p, other), verify_fingerprint=verify_fingerprint)
+
+
+def a_keyset_substituted_under_a_copied_fingerprint_is_recomputed() -> List[str]:
+    return substituted_alpha_content_under_the_original_fingerprint(verify_fingerprint=True)
+
+
+def GAP_a_keyset_substituted_under_a_copied_fingerprint_without_a_recomputation() -> List[str]:
+    """KNOWN GAP, stated as a fact. Without `keyset_fingerprint_of` CNS compares the fingerprint strings alpha, zeta and
+    beta carry and never recomputes alpha's from alpha's keys, so substitute content that copies the original string
+    passes. The runner supplies the recomputation (the scenario before this one); a caller that does not gets this."""
+    return substituted_alpha_content_under_the_original_fingerprint(verify_fingerprint=False)
+
+
 def GAP_contents_fabricated_by_someone_who_recomputes_the_digests() -> List[str]:
     """KNOWN GAP, stated as a fact. There is no key in this check: four contents that agree with each other, carry one
-    KeySet fingerprint, chain by digest and come with a receipt the forger wrote to match (the receipt is not signed)
-    pass whether or not any component produced them. It verifies agreement, not authorship. (Without the fingerprints,
+    KeySet fingerprint (recomputed with zeta's own function, which is public), chain by digest and come with a receipt the
+    forger wrote to match (the receipt is not signed) pass whether or not any component produced them. It verifies agreement, not authorship. (Without the fingerprints,
     or without a receipt that fits, it is refused; the other scenarios hold that.) No problem is found."""
     ctx = dict(CTX)
-    fp = "e" * 64
     alpha = {"min_confidence": 0.0, "keys": [{"name": "anything", "present": True, "confidence": 1.0, "reason": "made up"}],
-             "context": dict(ctx), "present_names": ["anything"], "keyset_fingerprint": fp}
+             "context": dict(ctx), "present_names": ["anything"]}
+    fp = alpha["keyset_fingerprint"] = zeta_keyset_fingerprint(alpha)  # the forger recomputes it, with zeta's own function
     da = subject_digest(alpha)
     zeta = {"any_lock": {"entity_id": "patient_1", "lock_id": "any_lock", "open": True, "changed": True, "forced": False,
                          "reasons": ["made up"], "context": dict(ctx), "keyset_digest": da, "keyset_fingerprint": fp}}
@@ -412,7 +457,7 @@ def GAP_contents_fabricated_by_someone_who_recomputes_the_digests() -> List[str]
     head = "f" * 64
     receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(delta), "index": 0, "ledger_length": 1,
                "ledger_head": head, "checkpoint_length": 1, "checkpoint_head": head, "context": dict(ctx)}
-    return strict_problems(alpha, zeta, beta, delta, chain=receipt)
+    return strict_problems(alpha, zeta, beta, delta, chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint)
 
 
 def delta_content_names_a_hash_the_ledger_never_wrote() -> List[str]:
@@ -692,6 +737,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
             required=("zeta lock sepsis_lock was evaluated from a different KeySet than alpha produced (its recorded KeySet fingerprint differs",
                       "zeta lock abnormal_vitals_lock was evaluated from a different KeySet than alpha produced (its recorded KeySet fingerprint differs",
                       "beta's Decision was made from a different KeySet than alpha produced (its recorded KeySet fingerprint differs"))),
+    ("strict: a KeySet substituted under a copied fingerprint string is recomputed", a_keyset_substituted_under_a_copied_fingerprint_is_recomputed,
+     Expect("problems", required=("alpha's KeySet fingerprint does not match a recomputation from alpha's keys",))),
     # Each of the next five fails to verify, and now says why. Delta refuses to issue a receipt where the ledger is not
     # what the checkpoint held outside it recorded, and CNS refuses a receipt that is not for the content it was given.
     # CHAIN_NOT_SHOWN is the consequence of either, so it is an allowed extra beside the named cause.
@@ -718,6 +765,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
      Expect("refused", required=("head does not match",), raises=("LedgerCorruptError",))),
     ("strict: GAP, a Decision's narrative forged under a valid fingerprint", GAP_a_decisions_narrative_forged_with_a_valid_fingerprint, GAP),
     ("strict: GAP, a Decision cites a lock that is closed", GAP_a_decision_cites_a_lock_that_is_closed, GAP),
+    ("strict: GAP, a KeySet substituted under a copied fingerprint, no recomputation supplied",
+     GAP_a_keyset_substituted_under_a_copied_fingerprint_without_a_recomputation, GAP),
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
 ]

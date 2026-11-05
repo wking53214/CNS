@@ -296,8 +296,13 @@ def strict_problems(
     DeprecationWarning and is always the problem "chain_verified is a bare assertion and is not evidence; pass chain= a
     delta verification receipt".
 
-    `keyset_fingerprint_of`, when supplied, recomputes alpha's KeySet fingerprint from alpha's keys (the caller builds it
-    from zeta, which owns the rule; CNS never implements it); see `strict_root`.
+    `keyset_fingerprint_of`, when supplied, is a callable(alpha content) -> str that recomputes alpha's KeySet fingerprint
+    from alpha's keys. The caller builds it from zeta, which owns the rule; CNS never implements it and imports nothing
+    from zeta. Its result must equal alpha's `keyset_fingerprint`; if it raises or answers anything else the problem is
+    "alpha's KeySet fingerprint does not match a recomputation from alpha's keys". Left out, CNS only compares the
+    fingerprint strings that alpha, zeta and beta carry, so a substituted alpha content that copies the original
+    fingerprint string passes (a recorded gap). The callable is itself supplied by the caller, which is one more thing
+    that is trusted.
     """
     if chain_verified is not _UNSET:
         warnings.warn("chain_verified is deprecated and never counts as evidence; pass chain= a delta verification receipt",
@@ -522,6 +527,16 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
             elif fz != fa:
                 out.append(f"zeta lock {lock_id} was evaluated from a different KeySet than alpha produced "
                            "(its recorded KeySet fingerprint differs from alpha's)")
+        if keyset_fingerprint_of is not None:
+            # Zeta owns the fingerprint rule; the caller hands CNS a function built from it. CNS only compares. A copy of
+            # alpha is handed over so the function cannot alter what is judged, and a function that raises or answers
+            # anything but alpha's own fingerprint is the same problem.
+            try:
+                recomputed = keyset_fingerprint_of(_plain(alpha))
+            except Exception:  # noqa: BLE001 - a verifier that cannot recompute has not verified
+                recomputed = None
+            if type(recomputed) is not str or recomputed != fa:
+                out.append(FINGERPRINT_NOT_RECOMPUTED)
         fb = beta.get("keyset_fingerprint")
         if not _is_sha256(fb):
             out.append("beta carries no keyset_fingerprint, so its Decision cannot be matched to alpha's KeySet")
