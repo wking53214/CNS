@@ -243,7 +243,7 @@
   {
    "code": "stale_policy",
    "consumes_message": false,
-   "implementations": "python",
+   "implementations": "both",
    "layer": "receiver-policy",
    "meaning": "This host's grants are not the published policy (shared policy store).",
    "retry": "after-fix"
@@ -251,7 +251,7 @@
   {
    "code": "conflict",
    "consumes_message": false,
-   "implementations": "python",
+   "implementations": "both",
    "layer": "receiver-policy",
    "meaning": "A policy version was not the next one; another operator published first.",
    "retry": "after-fix"

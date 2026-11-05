@@ -207,6 +207,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if crypto_backend.production() and not shared_policy and not cfg.decision_only:
         return _refuse_startup(cfg, "config", "the production profile does not accept host-local withdrawals and audit; "
                                               "use --policy-backend postgres")
+    if cfg.publish_policy is not None and not shared_policy:
+        return _refuse_startup(cfg, "config", "--publish-policy belongs to --policy-backend postgres")
     policy_args = (cfg.grants, cfg.action) if shared_policy else (cfg.grants, cfg.grant_store, cfg.action, cfg.audit)
     if cfg.decision_only:
         if any(policy_args) or cfg.permit_ledger:

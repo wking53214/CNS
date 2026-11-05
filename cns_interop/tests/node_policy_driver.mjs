@@ -26,10 +26,14 @@ for (const [op, ...a] of job.ops) {
       out.push({ ok: table.checkTerms(a[1]).id });
     }
     else if (op === "fence") { target.check(a[0], a[1]); out.push({ ok: true }); }
+    else if (op === "policy_digest") out.push({ ok: PP.policyDigest(G.loadGrants(JSON.stringify(a[0]))) });
+    else if (op === "publish") { store.publishPolicy(a[0], a[1]); out.push({ ok: true }); }
+    else if (op === "current") out.push({ ok: store.currentPolicy() });
+    else if (op === "require") out.push({ ok: store.requirePolicy(a[0]) });
     else if (op === "audit_append") out.push({ ok: auditor().append(a[0]) });
     else if (op === "audit_verify") out.push({ ok: auditor().verify() });
     else if (op === "audit_head") out.push({ ok: auditor().head() });
     else throw new Error(`unknown op ${op}`);
-  } catch (e) { out.push({ code: e instanceof U.Refused ? e.code : "error", reason: e.reason ?? e.message }); }
+  } catch (e) { out.push({ code: e instanceof U.Refused ? e.code : e instanceof RangeError ? "caller_error" : "error", reason: e.reason ?? e.message }); }
 }
 console.log(JSON.stringify(out));
