@@ -13,6 +13,8 @@
 //   [--policy-backend postgres [--publish-policy <next version>]]: withdrawals, the policy version and ONE hash-chained audit
 //   record in the same database (pg_policy.mjs), exactly as act.py: --grant-store and --audit are then not given, a host whose
 //   grants file is not the published policy refuses to start (stale_policy), --publish-policy publishes it and exits
+//   [--require-sync-replication]: refuse (unavailable, exit 2) unless the server demands a synchronous standby, and commit only
+//   once it confirms (pg.mjs requireSyncReplication), as act.py
 //   [--max-clock-skew-ms <ms>]: compare this host's clock with the database's first, and refuse (exit 2, clock_skew) if
 //   they differ by more; then judge every lifetime by the DATABASE's time carried on this host's monotonic clock
 //   (pg.mjs TrustedClock), never by this host's wall clock. The tolerance must be strictly below the ledger's retention
@@ -32,7 +34,7 @@ import * as PP from "./pg_policy.mjs";
 
 const refuse = (code, reason, status = 0) => { console.log(JSON.stringify({ refused: { code, reason } })); return status; };
 const APPROVAL_KEYS = "action,approver,decision_id,expires_at,sig,subject_digest";
-const FLAGS = new Set(["decision-only"]);
+const FLAGS = new Set(["decision-only", "require-sync-replication"]);
 const PRODUCTION = U.cryptoDiagnostics().profile === "production";   // UAI_PROFILE, read once, as in Python
 
 // A refusal that is not a permit decision (config, clock_skew, unavailable): exit 2 at start-up, nothing verified or spent.
@@ -49,7 +51,7 @@ function auditRefusal(cfg, code, reason, stage) {
   try {
     if (cfg["policy-backend"] === "postgres" && (cfg["ledger-backend"] ?? "sqlite") === "postgres" && cfg["ledger-dsn-env"]) {
       const dsn = process.env[cfg["ledger-dsn-env"]] ?? "";
-      if (dsn) { new PP.PostgresAudit(dsn, { prefix: (cfg["ledger-prefix"] ?? "uai") + "_audit" }).append({ ...entry }); recorded = "postgres"; }
+      if (dsn) { new PP.PostgresAudit(dsn, { prefix: (cfg["ledger-prefix"] ?? "uai") + "_audit", requireSyncReplication: cfg["require-sync-replication"] === true }).append({ ...entry }); recorded = "postgres"; }
     } else if (cfg.audit) { mkdirSync(dirname(cfg.audit), { recursive: true }); G.appendAudit(cfg.audit, { ...entry }); recorded = "file"; }
   }
   catch (e) { note = `${e && e.name}: ${e && e.message}`; }
@@ -80,6 +82,7 @@ function main() {
   try { cfg = parse(process.argv.slice(2)); } catch (e) { return refuse("config", e.message, 2); }
   for (const k of ["acting-for", "capability", "capability-version", "trust"]) if (!cfg[k]) return refuse("config", `--${k} is required`, 2);
   const backend = cfg["ledger-backend"] ?? "sqlite";
+  const sync = cfg["require-sync-replication"] === true;   // quorum-durable commits: refuse unless the server demands a synchronous standby
   let ledgerFor, dsn = "", prefix = "uai";
   if (backend === "postgres") {
     if (cfg.ledger || cfg["permit-ledger"]) return refuseStartup(cfg, "config", "--ledger and --permit-ledger name files; the postgres backend takes only --ledger-dsn-env");
@@ -87,10 +90,10 @@ function main() {
     dsn = process.env[cfg["ledger-dsn-env"]] ?? "";
     if (!dsn) return refuseStartup(cfg, "config", `the environment variable ${cfg["ledger-dsn-env"]} is not set; there is no fallback to a file ledger`);
     prefix = cfg["ledger-prefix"] ?? "uai";
-    ledgerFor = (kind) => new P.PostgresLedger(dsn, { table: `${prefix}_${kind}` });
+    ledgerFor = (kind) => new P.PostgresLedger(dsn, { table: `${prefix}_${kind}`, requireSyncReplication: sync });
   } else if (backend === "sqlite") {
     if (!cfg.ledger) return refuseStartup(cfg, "config", "--ledger is required");
-    if (cfg["ledger-dsn-env"] || cfg["ledger-prefix"]) return refuseStartup(cfg, "config", "--ledger-dsn-env and --ledger-prefix belong to the postgres backend");
+    if (cfg["ledger-dsn-env"] || cfg["ledger-prefix"] || sync) return refuseStartup(cfg, "config", "--ledger-dsn-env, --ledger-prefix and --require-sync-replication belong to the postgres backend");
     ledgerFor = (kind) => new G.SqliteLedger(kind === "decisions" ? cfg.ledger : (cfg["permit-ledger"] ?? cfg.ledger + ".permits"));
   } else return refuseStartup(cfg, "config", "--ledger-backend is sqlite or postgres");
   const maxSkew = cfg["max-clock-skew-ms"] === undefined ? null : Number(cfg["max-clock-skew-ms"]);
@@ -129,7 +132,7 @@ function main() {
       const loaded = G.loadGrants(readFileSync(cfg.grants, "utf8"));
       let store, sink = null;
       if (shared) {
-        store = new PP.PostgresGrantStore(dsn, { prefix: prefix + "_policy" }); sink = new PP.PostgresAudit(dsn, { prefix: prefix + "_audit" });
+        store = new PP.PostgresGrantStore(dsn, { prefix: prefix + "_policy", requireSyncReplication: sync }); sink = new PP.PostgresAudit(dsn, { prefix: prefix + "_audit", requireSyncReplication: sync });
         if (cfg["publish-policy"] !== undefined) {
           const version = Number(cfg["publish-policy"]);
           store.publishPolicy(version, PP.policyDigest(loaded));
