@@ -18,8 +18,9 @@ WHAT IT CHECKS (`check`)
     full 40 character SHA, the CNS tag a version tag and its commit a full SHA;
   - the CNS commit is the one `contracts/cns-releases.json` records for that tag, so the tag cannot be moved;
   - each repository declares the dependencies the architecture allows, at the manifest's commits: alpha pins zeta,
-    zeta pins nothing, beta pins zeta, delta pins zeta and beta, and no other runtime dependency appears;
-    every `cns` extra pins the manifest's tag;
+    zeta pins nothing, beta pins zeta, delta pins zeta and beta, and no other dependency appears, in the runtime list
+    or in any extra (a plain `name>=1` requirement and a URL from another host are named like any other);
+    every pin is owned by `OWNER`, the repository owner, and every `cns` extra pins the manifest's tag;
   - each checkout is at the commit the manifest names (`git rev-parse HEAD`).
 
 pip refuses two different commit URLs for the same package, so "alpha, beta and delta pin one zeta" is not a style
@@ -28,7 +29,8 @@ rule: it is what makes the four installable together.
 WHAT IT DOES NOT CHECK
 
 That the four are the newest commits (they are meant to lag until someone moves them on purpose), or that the
-repositories behave (that is `spine_run.py`). The files are read as text and never executed.
+repositories behave (that is `spine_run.py`). The files are read as text and never executed. A manifest with a repeated JSON key is
+refused, because a reader that keeps the last one and a reader that keeps the first would see different commits.
 
 THE COMMANDS
 
@@ -51,7 +53,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from cns_composition import delivery
 from cns_composition.spine_trace import SPINE
 
-__all__ = ["DEFAULT_MANIFEST", "EXPECTED_RUNTIME", "SCHEMA", "check", "declared", "main", "manifest_problems", "load"]
+__all__ = ["ALLOWED_EXTRAS", "DEFAULT_MANIFEST", "EXPECTED_RUNTIME", "OWNER", "SCHEMA", "check", "declared", "main", "manifest_problems", "load"]
 
 SCHEMA = "spine-manifest/1"
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[1] / "contracts" / "spine-manifest.json"
@@ -64,23 +66,39 @@ EXPECTED_RUNTIME: Mapping[str, Tuple[str, ...]] = {
     "interconnected_beta": ("zeta",),
     "interconnected_delta": ("beta", "zeta"),
 }
+#: What each optional extra may hold, by normalised distribution name. `dev` is tooling; `cns` is the CNS pin.
+ALLOWED_EXTRAS: Mapping[str, Tuple[str, ...]] = {"cns": ("cns",), "dev": ("pytest",)}
+#: The GitHub owner of the four repositories and of CNS. Every direct-URL pin must name it.
+OWNER = "wking53214"
 #: The package a runtime dependency name refers to.
 _PACKAGE_REPO = {"zeta": "interconnected_zeta", "beta": "interconnected_beta"}
 
-_SHA = re.compile(r"^[0-9a-f]{40}$")
-_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
+# Matched with fullmatch: `$` also matches before a trailing newline, and `\d` matches non-ASCII digits.
+_SHA = re.compile(r"[0-9a-f]{40}")
+_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
 _DEP = re.compile(
     r"""["']\s*(?P<name>[A-Za-z0-9_.-]+)\s*(?:\[[^\]]*\])?\s*@\s*git\+https://github\.com/"""
     r"""(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+?)(?:\.git)?@(?P<ref>[0-9A-Za-z._/-]+)["']"""
 )
 
 
+def _no_duplicate_keys(pairs: List[Tuple[str, object]]) -> Dict[str, object]:
+    out: Dict[str, object] = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError(f"duplicate JSON key {key!r}")
+        out[key] = value
+    return out
+
+
 def load(path: Path = DEFAULT_MANIFEST) -> Dict[str, object]:
     """The manifest as read. A file that is not JSON, or not an object, raises ValueError."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_no_duplicate_keys)
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"{path} cannot be read as JSON: {exc}") from exc
+    except ValueError as exc:
+        raise ValueError(f"{path} is refused: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"{path} must hold a JSON object")
     return data
@@ -98,16 +116,16 @@ def manifest_problems(manifest: Mapping[str, object], releases: Optional[Mapping
     if set(repos) != set(SPINE):
         out.append(f"repos must be exactly {sorted(SPINE)}; got {sorted(map(str, repos))}")
     for name, commit in repos.items():
-        if not isinstance(commit, str) or not _SHA.match(commit):
+        if not isinstance(commit, str) or not _SHA.fullmatch(commit):
             out.append(f"repos.{name} must be a full 40 character lowercase commit SHA")
     cns = manifest.get("cns")
     if not isinstance(cns, Mapping):
         out.append("cns must be an object with a tag and a commit")
     else:
         tag, commit = cns.get("tag"), cns.get("commit")
-        if not isinstance(tag, str) or not _TAG.match(tag):
+        if not isinstance(tag, str) or not _TAG.fullmatch(tag):
             out.append("cns.tag must be a release tag such as v2.3.0")
-        if not isinstance(commit, str) or not _SHA.match(commit):
+        if not isinstance(commit, str) or not _SHA.fullmatch(commit):
             out.append("cns.commit must be a full 40 character lowercase commit SHA")
         if releases is not None and isinstance(tag, str) and isinstance(commit, str):
             rows = releases.get("releases")
@@ -133,11 +151,33 @@ def _section_bodies(text: str) -> Dict[str, str]:
     return {name: "\n".join(lines) for name, lines in bodies.items()}
 
 
+def _uncommented(text: str) -> str:
+    return re.sub(r"(?m)^\s*#.*$|\s#[^\"']*$", "", text)
+
+
 def _pins(text: str) -> Dict[str, Tuple[str, str]]:
     found: Dict[str, Tuple[str, str]] = {}
-    for m in _DEP.finditer(re.sub(r"(?m)^\s*#.*$|\s#[^\"']*$", "", text)):
+    for m in _DEP.finditer(_uncommented(text)):
         found[m.group("name").lower()] = (m.group("repo"), m.group("ref"))
     return found
+
+
+def _owners(text: str) -> Dict[str, str]:
+    return {m.group("name").lower(): m.group("owner") for m in _DEP.finditer(_uncommented(text))}
+
+
+def _requirements(list_body: str) -> List[Tuple[str, str]]:
+    """Every quoted requirement in a list body, as (normalised name, text). Direct URL or not, any host."""
+    found: List[Tuple[str, str]] = []
+    for item in re.findall(r"[\"']([^\"']+)[\"']", _uncommented(list_body)):
+        m = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", item)
+        found.append((re.sub(r"[-_.]+", "-", m.group(1)).lower() if m else item.strip(), item))
+    return found
+
+
+def _extras(section_body: str) -> Dict[str, List[Tuple[str, str]]]:
+    return {m.group(1): _requirements(m.group(2))
+            for m in re.finditer(r"(?ms)^([A-Za-z0-9_.-]+)\s*=\s*\[(.*?)\]\s*$", _uncommented(section_body))}
 
 
 def declared(pyproject_text: str) -> Dict[str, Dict[str, Tuple[str, str]]]:
@@ -182,12 +222,30 @@ def check(
             continue
         found = declared(text)
         allowed = set(EXPECTED_RUNTIME[repo])
-        extra = sorted(set(found["runtime"]) - allowed)
+        bodies = _section_bodies(text)
+        listed = re.search(r"(?ms)^dependencies\s*=\s*\[(.*?)\]\s*$", bodies.get("project", ""))
+        runtime = _requirements(listed.group(1)) if listed else []
+        extra = sorted({name for name, _ in runtime} - allowed)
         if extra:
             out.append(f"{repo} declares runtime dependenc(ies) the spine does not allow: {', '.join(extra)}")
+        for name, requirement in runtime:
+            if name in allowed and name not in found["runtime"]:
+                out.append(f"{repo} pins {name} other than by a git+https://github.com/ direct URL: {requirement!r}")
+        for extra_name, requirements in sorted(_extras(bodies.get("project.optional-dependencies", "")).items()):
+            for name, requirement in requirements:
+                if name not in ALLOWED_EXTRAS.get(extra_name, ()):
+                    out.append(f"{repo} extra [{extra_name}] declares {name}, which the spine does not allow: {requirement!r}")
+                elif "@" in requirement and name not in found["optional"]:
+                    out.append(f"{repo} extra [{extra_name}] pins {name} other than by a git+https://github.com/ direct URL: {requirement!r}")
+        owners = _owners(listed.group(1) if listed else "")
+        owners.update({f"{n} (extra)": o for n, o in _owners(bodies.get("project.optional-dependencies", "")).items()})
+        for name, owner in sorted(owners.items()):
+            if owner.lower() != OWNER.lower():
+                out.append(f"{repo} pins {name} from owner {owner!r}, not {OWNER!r}")
         for name in sorted(allowed):
             if name not in found["runtime"]:
-                out.append(f"{repo} does not pin {name}")
+                if not any(n == name for n, _ in runtime):
+                    out.append(f"{repo} does not pin {name}")
                 continue
             target, ref = found["runtime"][name]
             want_repo = _PACKAGE_REPO[name]

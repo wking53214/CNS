@@ -108,6 +108,12 @@ not a release.
 - `cns_composition.spine_manifest` now ends `main` with `delivery.run`, as every command in the package must; on
   `main` (8bd1ca2) `test_every_command_in_the_package_ends_with_deliver` failed because it did not. The one existing
   test edit is the command's registration in that test's list (Step 8a).
+- `cns_composition.spine_manifest` accepted a SHA or tag followed by a newline (`$` matched before it), a manifest with a
+  repeated JSON key (the last one won), a pin owned by anyone (only the repository name was compared), and any
+  dependency that was not a `git+https://github.com/` URL (a plain requirement, or a URL on another host, was
+  invisible). It now matches with `fullmatch`, refuses a repeated key naming it, requires every pin to be owned by
+  `OWNER` (`wking53214`), and names any dependency in the runtime list or in any extra that `EXPECTED_RUNTIME` and
+  `ALLOWED_EXTRAS` do not list. The committed manifest and the four repositories' pyprojects at its commits still pass.
 - `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)
   lost earlier entries and a spent decision was accepted again. It now appends one line and fsyncs, and when it drops
   expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.
