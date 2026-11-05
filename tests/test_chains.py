@@ -294,3 +294,19 @@ def test_the_evidence_script_gives_every_decision_a_lifetime_and_checks_the_evid
     decides = [c for c in ast.walk(decide) if isinstance(c, ast.Call) and getattr(c.func, "attr", "") == "decide"]
     assert len(decides) == 1 and any(k.arg == "ttl" for k in decides[0].keywords)
     assert "added_by_now(record.created_at)" in ast.get_source_segment(text, functions["tie_evidence_guard"])
+
+
+def test_every_spine_scenario_declares_an_expect_and_none_is_a_plain_string():
+    """The scenarios cannot run in this suite, so the table is read by syntax: each row's third element is `Expect(...)` or
+    one of the two shared Expects (CLEAN, GAP), never a string. The script itself also refuses a table that is not so, when
+    it loads (`check_table`)."""
+    tree = ast.parse(SPINE_RUN.read_text(encoding="utf-8"))
+    table = next(n for n in tree.body if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "SCENARIOS")
+    rows = table.value.elts  # type: ignore[union-attr]
+    assert len(rows) > 60
+    for row in rows:
+        assert isinstance(row, ast.Tuple) and len(row.elts) == 3
+        third = row.elts[2]
+        assert (isinstance(third, ast.Call) and getattr(third.func, "id", "") == "Expect") or \
+            (isinstance(third, ast.Name) and third.id in ("CLEAN", "GAP")), ast.get_source_segment(SPINE_RUN.read_text(encoding="utf-8"), row)
+    assert "check_table(SCENARIOS)" in SPINE_RUN.read_text(encoding="utf-8")

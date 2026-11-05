@@ -179,6 +179,83 @@ def test_the_command_fails_closed_on_unreadable_input_and_on_a_missing_repositor
     assert sm.main(["--manifest", str(good), "--releases", str(rel)]) == 1
 
 
+# --- hardening (C10): fullmatch, duplicate keys, the owner of every pin, and dependencies nobody listed ----------------
+
+def test_a_sha_with_a_trailing_newline_is_refused():
+    found = sm.check(manifest(repos={**manifest()["repos"], "interconnected_zeta": Z + "\n"}), good_texts(), heads(), RELEASES)
+    has(found, "repos.interconnected_zeta must be a full 40 character lowercase commit SHA")
+    found = sm.check(manifest(cns={"tag": "v2.3.0", "commit": CNS_COMMIT + "\n"}), good_texts(), heads(), RELEASES)
+    has(found, "cns.commit must be a full 40 character lowercase commit SHA")
+
+
+def test_a_tag_with_a_trailing_newline_is_refused():
+    found = sm.check(manifest(cns={"tag": "v2.3.0\n", "commit": CNS_COMMIT}), good_texts(), heads(), RELEASES)
+    has(found, "cns.tag must be a release tag")
+
+
+def test_a_manifest_with_a_duplicate_key_is_refused_and_the_key_is_named(tmp_path):
+    path = tmp_path / "m.json"
+    path.write_text('{"schema": "spine-manifest/1", "cns": {"tag": "v2.3.0", "commit": "' + CNS_COMMIT + '"}, '
+                    '"repos": {"interconnected_zeta": "' + Z + '", "interconnected_zeta": "' + B + '"}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate JSON key 'interconnected_zeta'"):
+        sm.load(path)
+    rel = tmp_path / "r.json"
+    rel.write_text(json.dumps(RELEASES), encoding="utf-8")
+    assert sm.main(["--manifest", str(path), "--releases", str(rel), "--github-output", str(tmp_path / "o")]) == 1
+    assert not (tmp_path / "o").exists()
+
+
+def test_a_duplicate_key_in_a_nested_object_is_refused_too(tmp_path):
+    path = tmp_path / "m.json"
+    path.write_text('{"schema": "x", "cns": {"tag": "v1.0.0", "tag": "v2.0.0"}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate JSON key 'tag'"):
+        sm.load(path)
+
+
+def test_a_pin_owned_by_an_attacker_is_named_for_zeta_and_for_cns():
+    texts = good_texts()
+    texts["interconnected_alpha"] = pyproject([("zeta", Z)]).replace("wking53214/interconnected_zeta", "attacker/interconnected_zeta")
+    has(sm.check(manifest(), texts, heads(), RELEASES), "interconnected_alpha pins zeta from owner 'attacker', not 'wking53214'")
+    texts = good_texts()
+    texts["interconnected_beta"] = pyproject([("zeta", Z)]).replace("wking53214/CNS.git", "attacker/CNS.git")
+    has(sm.check(manifest(), texts, heads(), RELEASES), "interconnected_beta pins cns (extra) from owner 'attacker', not 'wking53214'")
+
+
+def test_an_extra_runtime_dependency_that_is_not_a_url_is_named():
+    texts = good_texts()
+    texts["interconnected_zeta"] = pyproject().replace("dependencies = [\n\n]", 'dependencies = [\n    "requests>=2",\n]')
+    has(sm.check(manifest(), texts, heads(), RELEASES), "interconnected_zeta declares runtime dependenc(ies) the spine does not allow: requests")
+
+
+def test_an_extra_runtime_dependency_from_another_host_is_named_and_so_is_an_allowed_name_pinned_there():
+    texts = good_texts()
+    texts["interconnected_zeta"] = pyproject().replace(
+        "dependencies = [\n\n]", 'dependencies = [\n    "evil @ git+https://gitlab.com/x/evil@' + A + '",\n]')
+    has(sm.check(manifest(), texts, heads(), RELEASES), "interconnected_zeta declares runtime dependenc(ies) the spine does not allow: evil")
+    texts = good_texts()
+    texts["interconnected_alpha"] = pyproject([("zeta", Z)]).replace("https://github.com/wking53214/interconnected_zeta", "https://gitlab.com/wking53214/interconnected_zeta")
+    has(sm.check(manifest(), texts, heads(), RELEASES), "interconnected_alpha pins zeta other than by a git+https://github.com/ direct URL")
+
+
+def test_an_extra_dependency_in_an_optional_extra_is_named():
+    texts = good_texts()
+    texts["interconnected_delta"] = pyproject([("zeta", Z), ("beta", B)], extra_optional='docs = ["sphinx>=7"]\ntools = ["x @ https://example.com/x.whl"]')
+    found = sm.check(manifest(), texts, heads(), RELEASES)
+    has(found, "interconnected_delta extra [docs] declares sphinx")
+    has(found, "interconnected_delta extra [tools] declares x")
+
+
+def test_the_committed_manifest_passes_on_pyprojects_like_the_real_ones():
+    releases = json.loads((ROOT / "contracts" / "cns-releases.json").read_text(encoding="utf-8"))
+    m = sm.load()
+    r = m["repos"]
+    texts = {"interconnected_alpha": pyproject([("zeta", r["interconnected_zeta"])], cns=m["cns"]["tag"]),
+             "interconnected_zeta": pyproject(cns=m["cns"]["tag"]),
+             "interconnected_beta": pyproject([("zeta", r["interconnected_zeta"])], cns=m["cns"]["tag"]),
+             "interconnected_delta": pyproject([("zeta", r["interconnected_zeta"]), ("beta", r["interconnected_beta"])], cns=m["cns"]["tag"])}
+    assert sm.check(m, texts, dict(r), releases) == []
+
+
 # --- the job that runs the manifest. The test that the committed manifest file itself is well formed is added with the file, once
 # --- the four repositories' merge commits exist to name. -------------------------------------------------------------
 

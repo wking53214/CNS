@@ -48,18 +48,46 @@ requires:
     beta's Decision content, whose fields its own embedded copy must equal;
   - the Decision cites only Keys alpha listed as present (`present_names`, which alpha states so that CNS never
     re-implements zeta's confidence rule) and only Locks zeta evaluated;
-  - delta's entry was recorded under that run and event.
+  - delta's entry was recorded under that run and event;
+  - beta's Decision and delta's embedded copy of it both carry a `content_fingerprint` (a full lowercase SHA-256): the
+    legacy form, with none, is refused here only (the lenient `problems` and `root` are unchanged), because a Decision
+    whose fingerprint was blanked has lost the claim that its fields were not edited. The fingerprint is compared as
+    carried and never recomputed;
+  - a ledger receipt (`chain=`, what `delta.cns_connector.verification_receipt` returns after delta's own chain check and a
+    check against a checkpoint held outside the ledger) that is for exactly the delta content given and the run's context,
+    read once, with exactly its ten plain-str keys and exact types, its entry_hash and previous_hash equal to the delta
+    content's, `0 <= index < checkpoint_length <= ledger_length`, the ledger head equal to the entry's hash when the entry is
+    the last, and the checkpoint head equal to the ledger head when the checkpoint covers the whole ledger. The receipt is
+    not signed: a forger who writes a consistent one passes. The old `chain_verified` boolean is a deprecated alias and
+    never counts.
+
+When alpha content carries an `origin` (source, producer, observed_at, collection_context, transformation) it is checked
+for well-formedness and for `observed_at` not being later than the Decision's timestamp, and for nothing else: these are
+the producer's own claims, and CNS makes no authenticity, authorization or truthfulness claim about them.
 
 A missing field is a problem, not a skip. Content that cannot be digested or read is a problem, not an exception.
 
 WHAT STRICT DOES NOT PROVE (recorded as facts in `chains/spine_run.py`, scenarios marked GAP)
 
-It verifies that the supplied contents AGREE with each other and chain by digest. It does not prove where they came
-from. There is no key in it, so four contents made up by someone who recomputes the digests pass. And zeta never
-sees the KeySet a result is bound to: `keyset_digest` is asserted by whoever binds it, so a result evaluated from
-one KeySet and bound to another's digest passes. Closing the second needs zeta to record the KeySet it evaluated.
-CNS
-reads fields by their documented names and applies no decision policy: it does not say which Key should be
+It verifies that the supplied contents AGREE with each other, chain by digest, and sit behind a receipt that fits them. It
+does not prove where they came from. The recorded limits:
+
+  - No authorship key. Four contents made up by someone who recomputes every digest and fingerprint (zeta's rule, beta's
+    `decision_fingerprint` and `content_fingerprint`, all public and keyless) and writes a consistent, unsigned ledger
+    receipt pass. A receipt and a fingerprint detect mistakes and partial edits, not an author.
+  - `LockResult` fields (`keyset_fingerprint`, `stale`, `entity_id`) are caller-settable, and an empty `entity_id` is
+    accepted as legacy, so a lock result built by hand says whatever it likes.
+  - A receipt written by hand over real contents, with no ledger behind it, passes if its fields fit one another (an
+    index of 4 in a ledger of 9 whose checkpoint head is the ledger head, say): nothing signs it.
+  - Checkpoint custody and durability are not implemented here: delta's ledger is in memory, and a checkpoint is only as
+    good as the place its holder keeps it. A ledger's sink runs before the ledger changes, so a sink's own store can keep a
+    write the ledger does not have; delta's contract is an idempotent sink and a caller who reconciles.
+  - `content_fingerprint` is keyless: it catches an edit that forgets to recompute it.
+  - `origin` is the producer's own claim: CNS checks its form and order, not who made it or whether it is true.
+  - A Decision records the union of the locks its rule cited, so one citing a closed lock passes.
+  - Without `keyset_fingerprint_of`, alpha's fingerprint string is compared and never recomputed.
+
+CNS reads fields by their documented names and applies no decision policy: it does not say which Key should be
 present, which Lock should open, or whether the Decision is right. `strict_root` is domain-separated
 (`TRACE_SCHEMA`), so it can never equal a lenient `root`, and it is never a native digest of any stage.
 """
@@ -67,8 +95,10 @@ present, which Lock should open, or whether the Decision is right. `strict_root`
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from cns.gate import subject_digest
 
@@ -76,6 +106,7 @@ __all__ = [
     "CONTEXT_SCHEMA",
     "SPINE",
     "SpineRecord",
+    "RECEIPT_SCHEMA",
     "TRACE_SCHEMA",
     "context_problems",
     "problems",
@@ -175,6 +206,18 @@ def root(record: SpineRecord) -> str:
 CONTEXT_SCHEMA = "spine-context/1"
 #: Names the strict root, so it can never equal a lenient `root`.
 TRACE_SCHEMA = "spine-trace/2"
+#: The only ledger receipt this check reads: the mapping `delta.cns_connector.verification_receipt` returns.
+RECEIPT_SCHEMA = "ledger-receipt/1"
+CHAIN_NOT_SHOWN = ("the ledger chain was not shown to verify (delta's verify_chain_integrity, with the recorded entry "
+                   "as a member of that chain), so the entry may not belong to the chain")
+BARE_ASSERTION = "chain_verified is a bare assertion and is not evidence; pass chain= a delta verification receipt"
+LEGACY_DECISION = ("{who} carries no content_fingerprint (a full lowercase SHA-256): strict verification refuses a legacy "
+                   "Decision, because a blanked fingerprint is a downgrade that removes the integrity claim")
+FINGERPRINT_NOT_RECOMPUTED = "alpha's KeySet fingerprint does not match a recomputation from alpha's keys"
+_ORIGIN_FIELDS = ("source", "producer", "observed_at", "collection_context", "transformation")
+_RECEIPT_FIELDS = ("schema", "entry_digest", "index", "entry_hash", "previous_hash", "ledger_length", "ledger_head",
+                   "checkpoint_length", "checkpoint_head", "context")
+_UNSET: Any = object()
 
 _CONTEXT_FIELDS = ("schema", "entity_id", "event_id", "run_id")
 _RUN_FIELDS = ("entity_id", "event_id", "run_id")
@@ -183,21 +226,30 @@ _BETA_RUN_FIELDS = ("context", "keyset_digest", "lock_result_digests")
 
 
 def context_problems(context: object) -> List[str]:
-    """What is wrong with a pipeline context. Empty when it is exactly the four fields, non-empty strings, a known schema."""
+    """What is wrong with a pipeline context. Empty when it is exactly the four fields, non-empty exact strings, a known schema.
+
+    The mapping is read once (`dict(context)`) and the snapshot is what is judged, so a mapping that answers differently
+    on a later read cannot pass here and be recorded as something else elsewhere. A value must be exactly `str`: a
+    subclass can lie about its own equality, hash or text, so it is a named problem, not a pass."""
     if not isinstance(context, Mapping):
         return [f"a pipeline context must be a mapping; got {type(context).__name__}"]
+    try:
+        snapshot = dict(context)
+    except Exception as exc:  # noqa: BLE001 - a mapping that cannot be read once is not a valid context
+        return [f"a pipeline context could not be read: {type(exc).__name__}: {exc}"]
     out: List[str] = []
-    if set(context) != set(_CONTEXT_FIELDS):
-        out.append(f"a pipeline context has exactly the fields {list(_CONTEXT_FIELDS)}; got {sorted(map(str, context))}")
+    if set(snapshot) != set(_CONTEXT_FIELDS):
+        out.append(f"a pipeline context has exactly the fields {list(_CONTEXT_FIELDS)}; got {sorted(map(str, snapshot))}")
         return out
     for name in _CONTEXT_FIELDS:
-        value = context[name]
-        if not isinstance(value, str):
-            out.append(f"context field {name} must be a str; got {type(value).__name__}")
+        value = snapshot[name]
+        if type(value) is not str:
+            kind = f"a str subclass ({type(value).__name__}); the exact type str is required" if isinstance(value, str) else type(value).__name__
+            out.append(f"context field {name} must be a str; got {kind}")
         elif not value:
             out.append(f"context field {name} must be non-empty")
-    if not out and context["schema"] != CONTEXT_SCHEMA:
-        out.append(f"unsupported schema {context['schema']!r}; this check speaks {CONTEXT_SCHEMA!r}")
+    if not out and snapshot["schema"] != CONTEXT_SCHEMA:
+        out.append(f"unsupported schema {snapshot['schema']!r}; this check speaks {CONTEXT_SCHEMA!r}")
     return out
 
 
@@ -248,7 +300,9 @@ def strict_problems(
     beta: Mapping[str, Any],
     delta: Mapping[str, Any],
     *,
-    chain_verified: bool = False,
+    chain: Optional[Mapping[str, Any]] = None,
+    chain_verified: Any = _UNSET,
+    keyset_fingerprint_of: Optional[Callable[[Mapping[str, Any]], str]] = None,
 ) -> List[str]:
     """Everything that does not hold together in four stages' contents. Empty when they describe one run.
 
@@ -257,15 +311,40 @@ def strict_problems(
     context=..., keyset_digest=..., lock_result_digests=...)` and `delta` is `entry_content(entry, context=...,
     decision_digest=...)`. Every digest is recomputed here.
 
-    `chain_verified` is the one fact the contents cannot carry: that delta's own `verify_chain_integrity()` held and
-    the recorded entry is a member of that chain. CNS imports no repository, so the caller (the integration runner,
-    which holds the real ledger) states it. It defaults to False, and anything but exactly True is a problem, so a
-    caller that never asked delta cannot get a clean result.
+    `chain` is the one fact the contents cannot carry: that delta's own ledger verified, with the recorded entry a
+    member of it, against a checkpoint held outside it. It is the receipt `delta.cns_connector.verification_receipt`
+    returns (schema `ledger-receipt/1`). CNS imports no repository and never sees the ledger, so it checks the receipt
+    against what it already holds: the receipt is read once into a snapshot and must be a mapping with exactly the ten
+    plain-str keys (schema, entry_digest, index, entry_hash, previous_hash, ledger_length, ledger_head, checkpoint_length,
+    checkpoint_head, context), each value of its exact type (a str or int subclass is refused); its `entry_digest` must
+    equal the digest of the delta content given, its `entry_hash` and `previous_hash` the delta content's `immutable_hash`
+    and `previous_hash`, its context the run's; its lengths and index must be ints (not bools) with
+    `0 <= index < checkpoint_length <= ledger_length`; its heads must be 64 lowercase hex digits; the ledger head must be
+    the entry's hash when the entry is the ledger's last, and the checkpoint head the ledger head when the checkpoint
+    covers the whole ledger. Every failure is a named problem; without a valid receipt the chain is "not shown to
+    verify" and no root is issued. The receipt is not signed: someone who can build a consistent one can pass this check,
+    so it raises the bar for mistakes and partial forgeries and is not proof of custody.
+
+    `chain_verified` is a deprecated alias that is never evidence. Passing it, whatever the value, emits a
+    DeprecationWarning and is always the problem "chain_verified is a bare assertion and is not evidence; pass chain= a
+    delta verification receipt".
+
+    `keyset_fingerprint_of`, when supplied, is a callable(alpha content) -> str that recomputes alpha's KeySet fingerprint
+    from alpha's keys. The caller builds it from zeta, which owns the rule; CNS never implements it and imports nothing
+    from zeta. Its result must equal alpha's `keyset_fingerprint`; if it raises or answers anything else the problem is
+    "alpha's KeySet fingerprint does not match a recomputation from alpha's keys". Left out, CNS only compares the
+    fingerprint strings that alpha, zeta and beta carry, so a substituted alpha content that copies the original
+    fingerprint string passes (a recorded gap). The callable is itself supplied by the caller, which is one more thing
+    that is trusted.
     """
+    if chain_verified is not _UNSET:
+        warnings.warn("chain_verified is deprecated and never counts as evidence; pass chain= a delta verification receipt",
+                      DeprecationWarning, stacklevel=2)
     snap, unread = _snapshot(alpha, zeta, beta, delta)
     if unread:
         return unread
-    return _strict_problems(*snap, chain_verified=chain_verified)
+    return _strict_problems(*snap, chain=chain, bare_assertion=chain_verified is not _UNSET,
+                            keyset_fingerprint_of=keyset_fingerprint_of)
 
 
 def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, Any, Any, Any], List[str]]:
@@ -281,7 +360,147 @@ def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, 
     return (copies[0], copies[1], copies[2], copies[3]), unread
 
 
-def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain_verified: Any = False) -> List[str]:
+def _origin_problems(origin: Any, decided_at: Any) -> List[str]:
+    """What is wrong with the origin record alpha carries, or about its ordering against the Decision. Empty if none.
+
+    Well-formedness and order only: exactly the five fields, each a non-empty exact str, `observed_at` ISO 8601 text
+    (`datetime.fromisoformat`) that is not later than the Decision's timestamp. These are the producer's own assertions.
+    Nothing here says who the producer is, that the source is real, that the observation is true, or that anyone was
+    authorized: CNS makes no authenticity claim."""
+    if not isinstance(origin, Mapping):
+        return [f"alpha origin must be a mapping; got {type(origin).__name__}"]
+    out: List[str] = []
+    if set(map(str, origin)) != set(_ORIGIN_FIELDS) or len(origin) != len(_ORIGIN_FIELDS):
+        return [f"alpha origin has exactly the fields {list(_ORIGIN_FIELDS)}; got {sorted(map(str, origin))}"]
+    for name in _ORIGIN_FIELDS:
+        value = origin[name]
+        if type(value) is not str:
+            out.append(f"alpha origin {name} must be a str; got {type(value).__name__}")
+        elif not value:
+            out.append(f"alpha origin {name} must be non-empty")
+    if out:
+        return out
+    try:
+        observed = datetime.fromisoformat(origin["observed_at"])
+    except ValueError:
+        return [f"alpha origin observed_at is not ISO 8601 text: {origin['observed_at']!r}"]
+    if not isinstance(decided_at, str):
+        return ["alpha origin observed_at cannot be ordered against the Decision: beta carries no timestamp text"]
+    try:
+        decided = datetime.fromisoformat(decided_at)
+    except ValueError:
+        return [f"alpha origin observed_at cannot be ordered against the Decision: beta's timestamp {decided_at!r} is not ISO 8601 text"]
+    if (observed.utcoffset() is None) != (decided.utcoffset() is None):
+        return ["alpha origin observed_at and the Decision's timestamp cannot be ordered: one carries a time zone and the other does not"]
+    if observed > decided:
+        return [f"alpha origin observed_at {origin['observed_at']!r} is later than the Decision's timestamp {decided_at!r}"]
+    return []
+
+
+def _is_int(value: object) -> bool:
+    return type(value) is int
+
+
+def _is_hex_str(value: object) -> bool:
+    return type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _shown(value: object) -> str:
+    """How a receipt value is named in a problem. Only plain values are shown as themselves: a hostile object's own repr is
+    never called."""
+    if value is None or type(value) in (str, int, bool, float):
+        return repr(value)
+    return f"<{type(value).__name__}>"
+
+
+def _receipt_problems(chain: Any, delta: Any, delta_digest: Optional[str], run: Optional[Mapping[str, Any]]) -> List[str]:
+    """What is wrong with a ledger receipt, judged against the delta content and the run CNS already holds. Empty if none.
+
+    The receipt is read ONCE into a plain dict and everything below is judged from that snapshot, so a mapping that answers
+    differently on a later read cannot pass and be used as something else. Only an exact set of ten `str` keys is a receipt,
+    every value must be of its exact type (a subclass can lie about its own equality), and the receipt's hashes and
+    positions must agree with the delta content and with each other. Nothing here raises: every failure is a named problem."""
+    if not isinstance(chain, Mapping):
+        return [f"the ledger receipt must be a mapping (delta's verification_receipt); got {type(chain).__name__}"]
+    try:
+        receipt = dict(chain)
+    except Exception as exc:  # noqa: BLE001 - a receipt that cannot be read once is not evidence
+        return [f"the ledger receipt could not be read: {type(exc).__name__}: {exc}"]
+    out: List[str] = []
+    schema = receipt.get("schema")
+    if type(schema) is not str or schema != RECEIPT_SCHEMA:
+        out.append(f"the ledger receipt has schema {_shown(schema)}; this check reads {RECEIPT_SCHEMA!r}")
+    foreign = sum(1 for k in receipt if type(k) is not str)
+    present = {k for k in receipt if type(k) is str}
+    odd = sorted(present ^ set(_RECEIPT_FIELDS))
+    if odd or foreign:
+        detail = ", ".join(odd + ([f"{foreign} key(s) that are not a plain str"] if foreign else []))
+        out.append(f"the ledger receipt has exactly the fields {list(_RECEIPT_FIELDS)} as plain str keys; these differ: {detail}")
+        return out
+    entry_digest = receipt["entry_digest"]
+    if not _is_hex_str(entry_digest):
+        out.append("the ledger receipt's entry_digest is not a full lowercase SHA-256 (an exact str)")
+    elif delta_digest is not None and entry_digest != delta_digest:
+        out.append("the ledger receipt is for other content: its entry_digest is not the digest of the delta content given")
+    held_context = receipt["context"]
+    snapshot: Any = held_context
+    if isinstance(held_context, Mapping):
+        try:
+            snapshot = dict(held_context)
+        except Exception as exc:  # noqa: BLE001 - a context that cannot be read once is not a context
+            out.append(f"the ledger receipt's context could not be read: {type(exc).__name__}: {exc}")
+            snapshot = None
+    if snapshot is not None:
+        issues = context_problems(snapshot)
+        if issues:
+            out += [f"the ledger receipt's context: {issue}" for issue in issues]
+        elif run is not None and snapshot != dict(run):
+            out.append("the ledger receipt is for another run: its context is not the run's context")
+    ints = True
+    for name in ("index", "ledger_length", "checkpoint_length"):
+        if not _is_int(receipt[name]):
+            out.append(f"the ledger receipt's {name} must be an int (not a bool, not a subclass); got {type(receipt[name]).__name__}")
+            ints = False
+    heads = True
+    for name in ("ledger_head", "checkpoint_head"):
+        if not _is_hex_str(receipt[name]):
+            out.append(f"the ledger receipt's {name} is not a full lowercase SHA-256 (an exact str)")
+            heads = False
+    # The entry the receipt is about must be the entry the delta content describes: hashes of the entry itself, which
+    # delta's own content carries (and whose digest the entry_digest above already binds).
+    hashes = True
+    for name, field in (("entry_hash", "immutable_hash"), ("previous_hash", "previous_hash")):
+        value = receipt[name]
+        if type(value) is not str or not value:
+            out.append(f"the ledger receipt's {name} must be a non-empty exact str; got {type(value).__name__}")
+            hashes = False
+        elif not isinstance(delta, Mapping) or field not in delta:
+            out.append(f"the delta content carries no {field}, so the ledger receipt's {name} cannot be matched to it")
+            hashes = False
+        elif not _same(value, delta[field]):
+            out.append(f"the ledger receipt's {name} is not the delta content's {field}: the receipt is about another entry")
+            hashes = False
+    if ints:
+        index, length, held = receipt["index"], receipt["ledger_length"], receipt["checkpoint_length"]
+        if not 0 <= index < length:
+            out.append(f"the ledger receipt's index {index} is not within a ledger of {length} entries")
+        if held < 1:
+            out.append("the ledger receipt's checkpoint_length is below 1: an empty checkpoint carries no evidence")
+        elif held > length:
+            out.append(f"the ledger receipt's checkpoint_length {held} is beyond its ledger_length {length}")
+        if 0 <= index and held >= 1 and index >= held:
+            out.append(f"the ledger receipt's index {index} is not covered by its checkpoint_length {held}: "
+                       "the checkpoint held outside the ledger says nothing of that entry")
+        if heads:
+            if index == length - 1 and hashes and receipt["ledger_head"] != receipt["entry_hash"]:
+                out.append("the ledger receipt's entry is the ledger's last, but its ledger_head is not the entry's own hash")
+            if 1 <= held == length and receipt["checkpoint_head"] != receipt["ledger_head"]:
+                out.append("the ledger receipt's checkpoint covers the whole ledger but its head is not the ledger's head")
+    return out
+
+
+def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any = None, bare_assertion: bool = False,
+                     keyset_fingerprint_of: Any = None) -> List[str]:
     out: List[str] = []
     stages = {"alpha": alpha, "beta": beta, "delta": delta}
     for name, content in stages.items():
@@ -368,6 +587,10 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain_veri
         drift = _differing(core, embedded)
         if drift:
             out.append(f"the Decision delta recorded differs from beta's in: {', '.join(drift)}")
+        if not _is_sha256(embedded.get("content_fingerprint")):
+            out.append(LEGACY_DECISION.format(who="delta's embedded Decision"))
+    if not _is_sha256(beta.get("content_fingerprint")):
+        out.append(LEGACY_DECISION.format(who="beta's Decision"))
 
     # Identity and what the Decision cites.
     if run is not None:
@@ -417,6 +640,8 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain_veri
         unseen_new = sorted(set(newly) - set(zeta))
         if unseen_new:
             out.append(f"the Decision names newly triggered lock(s) zeta never evaluated: {', '.join(unseen_new)}")
+    if "origin" in alpha:
+        out += _origin_problems(alpha["origin"], beta.get("timestamp"))
     # Zeta's own record of the KeySet it evaluated, against the fingerprint alpha reports for the KeySet it produced.
     # A digest a binder names can be made to chain; this is a fact each component computed about its own object.
     fa = alpha.get("keyset_fingerprint")
@@ -430,15 +655,28 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain_veri
             elif fz != fa:
                 out.append(f"zeta lock {lock_id} was evaluated from a different KeySet than alpha produced "
                            "(its recorded KeySet fingerprint differs from alpha's)")
+        if keyset_fingerprint_of is not None:
+            # Zeta owns the fingerprint rule; the caller hands CNS a function built from it. CNS only compares. A copy of
+            # alpha is handed over so the function cannot alter what is judged, and a function that raises or answers
+            # anything but alpha's own fingerprint is the same problem.
+            try:
+                recomputed = keyset_fingerprint_of(_plain(alpha))
+            except Exception:  # noqa: BLE001 - a verifier that cannot recompute has not verified
+                recomputed = None
+            if type(recomputed) is not str or recomputed != fa:
+                out.append(FINGERPRINT_NOT_RECOMPUTED)
         fb = beta.get("keyset_fingerprint")
         if not _is_sha256(fb):
             out.append("beta carries no keyset_fingerprint, so its Decision cannot be matched to alpha's KeySet")
         elif fb != fa:
             out.append("beta's Decision was made from a different KeySet than alpha produced "
                        "(its recorded KeySet fingerprint differs from alpha's)")
-    if chain_verified is not True:
-        out.append("the ledger chain was not shown to verify (delta's verify_chain_integrity, with the recorded entry "
-                   "as a member of that chain), so the entry may not belong to the chain")
+    if bare_assertion:
+        out.append(BARE_ASSERTION)
+    receipt_issues = [] if chain is None else _receipt_problems(chain, delta, dd, run)
+    out += receipt_issues
+    if chain is None or receipt_issues:
+        out.append(CHAIN_NOT_SHOWN)
     stage_digests = [d for d in (da, db, dd) if d is not None]
     if len(set(stage_digests)) != len(stage_digests):
         out.append("two stages are bound to the same digest; each stage must be bound to its own output")
@@ -451,13 +689,20 @@ def strict_root(
     beta: Mapping[str, Any],
     delta: Mapping[str, Any],
     *,
-    chain_verified: bool = False,
+    chain: Optional[Mapping[str, Any]] = None,
+    chain_verified: Any = _UNSET,
+    keyset_fingerprint_of: Optional[Callable[[Mapping[str, Any]], str]] = None,
 ) -> str:
     """One digest over the whole run, from the contents. Raises ValueError if the stages do not hold together.
 
-    Without `chain_verified=True` (delta's chain shown to verify, see `strict_problems`) no root is issued."""
+    Without a valid `chain` (a delta verification receipt, see `strict_problems`) no root is issued. The deprecated
+    `chain_verified` never counts: it warns and is always a problem, so it never yields a root."""
+    if chain_verified is not _UNSET:
+        warnings.warn("chain_verified is deprecated and never counts as evidence; pass chain= a delta verification receipt",
+                      DeprecationWarning, stacklevel=2)
     (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
-    found = unread or _strict_problems(alpha, zeta, beta, delta, chain_verified=chain_verified)
+    found = unread or _strict_problems(alpha, zeta, beta, delta, chain=chain, bare_assertion=chain_verified is not _UNSET,
+                                       keyset_fingerprint_of=keyset_fingerprint_of)
     if found:
         raise ValueError("the spine run does not hold together: " + "; ".join(found))
     context = alpha["context"]

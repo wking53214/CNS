@@ -33,21 +33,63 @@ not a release.
   the stage before it, a Decision that cites only Keys alpha listed as present and Locks zeta evaluated, and a ledger
   entry recorded under the same run. A missing field is a problem, not a skip. `problems`, `root` and `SpineRecord`
   are unchanged. The `cns` package is untouched.
-- `chains/spine_run.py` gains thirty-five strict scenarios beside its seven lenient ones: the real objects through the
-  real attacks (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale replay, a
-  repeat, a truncated ledger, a missing context, a made-up run, a hash the ledger never wrote, a chain broken after
-  the run, an unbound append, a second Decision for a recorded event, a run spanning two events, an older Decision
-  after a newer one, a KeySet digest of another KeySet), each stating the problem the boundary that should refuse it
-  must name; one that holds the four connectors' own copies of the context check to `context_problems`; and three
-  marked GAP that record what the strict check does not catch (authorship; a narrative rewritten under a valid
-  five-field fingerprint; a cited lock that is closed) as facts that go red the day they close. A scenario that
-  crashes is reported as that scenario failing and the rest still run.
-- `strict_problems` and `strict_root` take `chain_verified`, the answer of delta's `verify_chain_integrity` and
-  `verify_against` for the ledger the entry came from; without it the entry is reported as not shown to belong to a
-  verified chain. They also recompute `decision_fingerprint`, and require the KeySet fingerprint to agree across
-  alpha, zeta, beta and delta. `blame` names alpha's run as the reference.
+- `chains/spine_run.py` gains 76 strict scenarios beside its seven lenient ones (83 in all, counted from the runner): six
+  checks that hold (a sick and a well patient, a run with an origin record, roots that differ by run and never equal a
+  lenient root, and the four connectors' own copies of the context check held to `context_problems`, with a str-subclass
+  case and a mapping that changes between reads); 63 real attacks each stating the problem or refusal the boundary that
+  should answer it must name (another subject, event or run, an altered stage, a stale result, a mislabelled lock, a stale
+  replay, a repeat, a truncated ledger, a missing context, a made-up run, content that does not match the receipt,
+  a chain broken after the run, an unbound append, a second Decision for a recorded event, a run spanning two events, an
+  older Decision after a newer one, a KeySet digest of another KeySet, a KeySet substituted under a copied fingerprint,
+  an origin observed after the Decision, a content fingerprint altered or stale, a forged `chain_verified`, an empty or
+  always-equal checkpoint, a replayed or backdated record, a failed append, another entity's lock results, a str-subclass
+  or changing context, an aliased list, a list that changes between reads, a legacy Decision with no `content_fingerprint`,
+  a replay with the fingerprint blanked, a lying entity id, a datetime subclass, a sink that appends, a checkpoint that
+  answers honestly once, a receipt for an entry the checkpoint does not cover, and the receipt itself altered in eight ways
+  from delta's real one: zeroed heads, an index beyond the ledger or the checkpoint, another entry's hashes, a lying
+  str-subclass digest or head, an extra or replaced key that only prints like a field name; a rolled-back ledger, an empty
+  checkpoint and a checkpoint from another ledger each have their own required cause); four of those attacks must come out
+  clean because the record must not change; and seven marked GAP that record what the strict check does not catch
+  (authorship, including a consistent forged receipt and recomputed fingerprints; a receipt written by hand over real
+  contents; a narrative forged by someone who recomputes the keyless `content_fingerprint`; a cited lock that is closed; a
+  legacy lock result with no entity id; a KeySet substituted under a copied fingerprint when no recomputation is
+  supplied; a sink whose own store keeps a write the ledger does not have) as facts that go red the day they close. Every scenario
+  declares an `Expect` (`chains/spine_oracle.py`): the problems it requires, the only extras it may add, texts it
+  forbids, and whether it is clean, a problem, a refusal or a gap. An unlisted extra problem, an unexpected success,
+  a crash that is not a declared refusal, or a refusal that changed the ledger it guarded fails the scenario (the
+  earlier oracle passed any scenario one of whose problems held the expected text). The oracle is tested in
+  `tests/test_spine_oracle.py`. Recorded limits (README, "The decision spine"): no authorship key, caller-settable
+  `LockResult` fields, no checkpoint custody or file durability (delta is in memory), a keyless `content_fingerprint`,
+  and an `origin` that is the producer's own claim.
+- `strict_problems` and `strict_root` take `chain=`, a delta verification receipt (`delta.cns_connector.verification_receipt`,
+  schema `ledger-receipt/1`: issued only after delta's chain check and a check against a checkpoint held outside the
+  ledger), and the keyword-only `keyset_fingerprint_of`. CNS checks the receipt against what it already holds: its
+  `entry_digest` must be the digest of the delta content given, its context the run's, its `index`, `ledger_length` and
+  `checkpoint_length` ints (not bools) with `0 <= index < ledger_length` and `1 <= checkpoint_length <= ledger_length`, and
+  its heads 64 lowercase hex digits; each failure is a named problem. Without a valid receipt the entry is reported as not
+  shown to belong to a verified chain and no root is issued. `chain_verified` is a deprecated alias: passing it warns
+  (`DeprecationWarning`) and is always the problem "chain_verified is a bare assertion and is not evidence", whatever
+  its value. The receipt is not signed, so a forger who writes a consistent one passes; that stays a recorded limit.
+  `keyset_fingerprint_of`, when a caller supplies it (the runner builds it from zeta's `KeySet`), recomputes alpha's
+  KeySet fingerprint from alpha's keys; a result that differs, or a function that raises, is the problem "alpha's KeySet
+  fingerprint does not match a recomputation from alpha's keys". CNS never implements the rule and imports nothing from
+  zeta; without the function, substituted alpha content that copies the original fingerprint string passes (a recorded
+  gap).
+  When alpha content carries an `origin` (alpha's optional `keyset_content(origin=...)`), the strict check requires exactly
+  its five fields (`source`, `producer`, `observed_at`, `collection_context`, `transformation`), each a non-empty exact
+  `str`, `observed_at` ISO 8601 text and not later than the Decision's timestamp; a malformed origin, a time zone mixed
+  with none, or an unreadable Decision time is a named problem, never a crash. It checks form and order only: the
+  origin is the producer's own claim, and CNS makes no authenticity, authorization or truthfulness claim about it.
+  Content with no origin is unchanged and every digest and root stays as it was.
+  The KeySet fingerprint must agree across alpha, zeta, beta and delta. `decision_fingerprint` and beta's
+  `content_fingerprint` are compared as beta's content and delta's embedded copy carry them, and never recomputed in
+  CNS. alpha's run is the reference the other stages are judged against.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.
+  It names the hardened tips (alpha `ac34eec`, zeta `10b5ba7`, beta `c9afa4e`, delta `e3a9d70`); `v2.3.0` and its
+  commit are unchanged. Delta's `pyproject.toml` at `e3a9d70` still pins zeta `10b5ba7` and beta `c9afa4e`. The manifest
+  check was verified on detached worktrees at exactly those commits and `chains/spine_run.py` ran 83 of 83 on them, with
+  every component imported from its worktree.
 
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
@@ -95,6 +137,41 @@ not a release.
   negotiated for one capability (`ingest`, say) opened a guard protecting any other action on the same document. A
   caller that built a guard without the keyword now gets a `TypeError`. `interop/act.py` takes `--capability` and
   `--capability-version`, and `chains/evidence_spine.py` and `interop/demo.py` pass them. UAI-1 section 7.
+- `cns_composition.spine_trace.context_problems` reads the mapping once (`dict(context)`) and judges that snapshot, and
+  requires every value to be exactly `str`: a str subclass is a named problem. The four connectors already did both; the
+  runner's `CONTEXT_CASES` drift guard now holds them to it with a str-subclass case, a mapping that changes between
+  reads, and a check that an accepted context comes back as the plain first-read snapshot.
+
+- The strict check refuses a legacy Decision. `strict_problems` names a problem when beta's content, or delta's embedded
+  copy of the Decision, carries no `content_fingerprint` (a full lowercase SHA-256): "carries no content_fingerprint
+  (a full lowercase SHA-256): strict verification refuses a legacy Decision, because a blanked fingerprint is a downgrade
+  that removes the integrity claim", and `strict_root` raises. A Decision whose fingerprint was blanked has lost the claim
+  that its fields were not edited, and delta's `DecisionLedger(require_context=True)` already refuses to record one. The
+  lenient `problems` and `root` are unchanged, so a legacy Decision is refused only in strict mode. The fingerprint is
+  still compared as carried and never recomputed in CNS.
+
+- The ledger receipt `chain=` accepts is now exactly ten fields (delta's `verification_receipt` added `entry_hash` and
+  `previous_hash`): `schema`, `entry_digest`, `index`, `entry_hash`, `previous_hash`, `ledger_length`, `ledger_head`,
+  `checkpoint_length`, `checkpoint_head`, `context`. A receipt of the earlier eight fields is refused with a named problem.
+  `strict_problems` and `strict_root` read the receipt once into a snapshot (an exact `Mapping` with exactly those ten plain
+  `str` keys; an extra, missing or non-`str` key is a named problem and never a `KeyError`), require every field to be of
+  its exact type (a `str` or `int` subclass is refused, including `entry_digest`, `schema` and the heads), and read the
+  receipt's context from that snapshot only. New cross-checks, each a named problem: `entry_hash` and `previous_hash` equal
+  the delta content's `immutable_hash` and `previous_hash`; `0 <= index < checkpoint_length <= ledger_length`; the ledger
+  head is the entry's own hash when the entry is the last; the checkpoint head is the ledger head when the checkpoint covers
+  the whole ledger. Before, a receipt with heads of `"0" * 64`, or an index of 4 in a ledger of 9, produced no problem and a
+  root, a `str` subclass for `entry_digest` let one run's receipt be relabelled with another's context, and a key that only
+  printed like `index` passed or raised. The receipt is still unsigned: a hand-built receipt whose fields fit one another
+  passes (a recorded GAP).
+- The strict signature is unchanged: `strict_problems(alpha, zeta, beta, delta, *, chain=None, chain_verified=<unset>,
+  keyset_fingerprint_of=None)` and the same for `strict_root`. What `chain=` accepts changed (above), and the strict check
+  now also refuses a Decision with no `content_fingerprint` (above).
+- `chains/spine_oracle.py` accepts an `Expect` and nothing else: the plain-string expectation is removed, `judge` raises
+  `TypeError` for one, and `check_table` refuses a scenario row that is not `(name, callable, Expect)` when the script
+  loads. The two "complete rewrite" scenarios now actually rewrite the ledger and the exports before presenting an empty or
+  always-equal checkpoint. The runner's own wrapper names why delta refused a checkpoint (delta's message is one sentence for
+  empty, mistyped, foreign, truncated and reordered), `ledger_state` compares length, head and a digest of every entry hash,
+  and the scenario that required the generic "not contained in this ledger" text requires its own cause.
 
 ### Fixed
 
@@ -104,6 +181,12 @@ not a release.
 - `cns_composition.spine_manifest` now ends `main` with `delivery.run`, as every command in the package must; on
   `main` (8bd1ca2) `test_every_command_in_the_package_ends_with_deliver` failed because it did not. The one existing
   test edit is the command's registration in that test's list (Step 8a).
+- `cns_composition.spine_manifest` accepted a SHA or tag followed by a newline (`$` matched before it), a manifest with a
+  repeated JSON key (the last one won), a pin owned by anyone (only the repository name was compared), and any
+  dependency that was not a `git+https://github.com/` URL (a plain requirement, or a URL on another host, was
+  invisible). It now matches with `fullmatch`, refuses a repeated key naming it, requires every pin to be owned by
+  `OWNER` (`wking53214`), and names any dependency in the runtime list or in any extra that `EXPECTED_RUNTIME` and
+  `ALLOWED_EXTRAS` do not list. The committed manifest and the four repositories' pyprojects at its commits still pass.
 - `FileLedger.spend` truncated the ledger file and rewrote it, so a write that failed partway (EFBIG, a full disk)
   lost earlier entries and a spent decision was accepted again. It now appends one line and fsyncs, and when it drops
   expired entries it writes a temp file, replaces the ledger with it atomically and fsyncs the directory.

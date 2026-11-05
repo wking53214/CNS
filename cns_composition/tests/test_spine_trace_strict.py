@@ -8,6 +8,7 @@ before it. Every property below was shown to fail on the lenient check before th
 """
 
 import copy
+from collections.abc import Mapping
 from typing import Any, Dict
 
 import pytest
@@ -17,6 +18,7 @@ from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, TRACE_SCHEMA, context_problems, strict_problems, strict_root)
 
 CTX = {"schema": CONTEXT_SCHEMA, "entity_id": "p1", "event_id": "ev-1", "run_id": "run-1"}
+CF = "d" * 64  # beta's content_fingerprint; strict verification refuses a Decision that carries none (Step 11)
 FP = "e" * 64  # the KeySet fingerprint zeta computes; alpha, every lock result and the Decision must carry the same one
 DECISION_ONLY = ("entity_id", "decision_id", "decision", "timestamp", "confidence", "triggered_by_locks",
                  "triggered_by_keys", "newly_triggered_locks", "decision_fingerprint", "reasoning",
@@ -40,19 +42,44 @@ def build(ctx=CTX, **over) -> Dict[str, Any]:
             "timestamp": "2026-01-01T12:00:00", "confidence": 0.9, "triggered_by_locks": ["sepsis_lock"],
             "triggered_by_keys": ["septic_shock"], "newly_triggered_locks": ["sepsis_lock"],
             "decision_fingerprint": "f" * 64, "reasoning": "r", "reversal_conditions": [], "instructions": "i",
-            "keyset_fingerprint": FP}
+            "keyset_fingerprint": FP, "content_fingerprint": CF}
     beta = {**core, "context": dict(ctx), "keyset_digest": da,
             "lock_result_digests": {k: subject_digest(v) for k, v in sorted(zeta.items())}}
     delta = {"audit_id": "a" * 16, "timestamp": "2026-01-01T12:00:00", "previous_hash": "p" * 64,
-             "immutable_hash": "h" * 64, "decision": dict(core), "run_id": ctx["run_id"], "event_id": ctx["event_id"],
+             "immutable_hash": "2" * 64, "decision": dict(core), "run_id": ctx["run_id"], "event_id": ctx["event_id"],
              "context": dict(ctx), "decision_digest": subject_digest(beta)}
     out = {"alpha": alpha, "zeta": zeta, "beta": beta, "delta": delta}
     out.update(over)
     return out
 
 
-def problems_of(parts, chain_verified=True) -> list:
-    return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=chain_verified)
+def receipt_for(parts, ctx=None, **over) -> Dict[str, Any]:
+    """The receipt delta.cns_connector.verification_receipt would issue for this delta content (shaped as it does it)."""
+    delta = parts["delta"]
+    entry_hash = delta.get("immutable_hash", "2" * 64) if isinstance(delta, Mapping) else "2" * 64
+    head = entry_hash
+    try:
+        digest = subject_digest(delta)
+    except (TypeError, ValueError):
+        digest = "0" * 64  # content that cannot be digested has no receipt; the content is what is named then
+    if ctx is None:
+        ctx = delta.get("context", CTX) if isinstance(delta, Mapping) else CTX
+    previous = delta.get("previous_hash", "p" * 64) if isinstance(delta, Mapping) else "p" * 64
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": digest, "index": 0, "entry_hash": entry_hash,
+               "previous_hash": previous, "ledger_length": 1, "ledger_head": head, "checkpoint_length": 1,
+               "checkpoint_head": head, "context": dict(ctx)}
+    receipt.update(over)
+    return receipt
+
+
+def problems_of(parts, chain="auto") -> list:
+    chain = receipt_for(parts) if chain == "auto" else chain
+    return strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=chain)
+
+
+def root_of(parts, chain="auto") -> str:
+    chain = receipt_for(parts) if chain == "auto" else chain
+    return strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=chain)
 
 
 def relink(parts, *, keep_decision_digest=False):
@@ -76,24 +103,23 @@ def has(found, text):
 def test_a_consistent_run_has_no_problems_and_a_root():
     parts = build()
     assert problems_of(parts) == []
-    assert len(strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=True)) == 64
+    assert len(root_of(parts)) == 64
 
 
 def test_the_root_is_stable_and_ignores_the_order_locks_were_listed_in():
     a = build()
     b = build()
     b["zeta"] = dict(reversed(list(b["zeta"].items())))
-    args = lambda p: (p["alpha"], p["zeta"], p["beta"], p["delta"])  # noqa: E731
-    assert strict_root(*args(a), chain_verified=True) == strict_root(*args(b), chain_verified=True) == strict_root(*args(build()), chain_verified=True)
+    assert root_of(a) == root_of(b) == root_of(build())
 
 
 def test_the_root_changes_when_any_stage_changes_and_is_not_a_lenient_root():
     base = build()
-    root = strict_root(base["alpha"], base["zeta"], base["beta"], base["delta"], chain_verified=True)
+    root = root_of(base)
     other = relink(build())
     other["alpha"]["keys"][0]["reason"] = "a different reading"
     relink(other)
-    assert strict_root(other["alpha"], other["zeta"], other["beta"], other["delta"], chain_verified=True) != root
+    assert root_of(other) != root
     assert TRACE_SCHEMA == "spine-trace/2"
 
 
@@ -110,7 +136,7 @@ def test_a_stage_bound_to_another_subject_event_or_run_is_named(stage, field, va
     blamed = "beta" if stage == "alpha" else stage
     has(problems_of(parts), f"{blamed} is bound to a different run")
     with pytest.raises(ValueError, match="does not hold together"):
-        strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain_verified=True)
+        root_of(parts)
 
 
 @pytest.mark.parametrize("field, value", [("entity_id", "p2"), ("event_id", "ev-2"), ("run_id", "run-2")])
@@ -137,7 +163,7 @@ def test_the_whole_run_replayed_under_another_run_id_is_a_different_run_not_a_va
     replay = build(ctx={**CTX, "run_id": "run-2"})
     assert problems_of(replay) == []  # internally consistent
     a, b = build(), replay
-    assert strict_root(a["alpha"], a["zeta"], a["beta"], a["delta"], chain_verified=True) != strict_root(b["alpha"], b["zeta"], b["beta"], b["delta"], chain_verified=True)
+    assert root_of(a) != root_of(b)
 
 
 def test_stages_taken_from_two_different_runs_are_refused_even_though_each_is_consistent():
@@ -262,6 +288,61 @@ def test_a_valid_context_has_no_problems():
     assert context_problems(CTX) == []
 
 
+class _Id(str):
+    """A str subclass: it can lie about its own equality, hash or text, so a context must not accept one."""
+
+
+class _Shifty(Mapping):
+    """A mapping that answers differently each time a key is read: the first read is `first`, later reads `later`."""
+
+    def __init__(self, first, later):
+        self._first, self._later, self._seen = dict(first), dict(later), set()
+
+    def __getitem__(self, key):
+        if key in self._seen:
+            return self._later[key]
+        self._seen.add(key)
+        return self._first[key]
+
+    def __iter__(self):
+        return iter(self._first)
+
+    def __len__(self):
+        return len(self._first)
+
+
+@pytest.mark.parametrize("field", ["entity_id", "event_id", "run_id"])
+def test_a_str_subclass_in_a_context_is_a_named_problem(field):
+    found = context_problems({**CTX, field: _Id(CTX[field])})
+    has(found, f"context field {field} must be a str")
+    has(found, "str subclass")
+    parts = build()
+    parts["alpha"]["context"] = {**CTX, field: _Id(CTX[field])}
+    has(problems_of(parts), "alpha context")
+
+
+def test_a_context_is_judged_on_one_read_of_the_mapping():
+    # valid on the first read, invalid on any later one: the snapshot is what is judged, and the snapshot is valid
+    assert context_problems(_Shifty(CTX, {**CTX, "run_id": ""})) == []
+    # invalid on the first read, valid later: a second read must not rescue it
+    has(context_problems(_Shifty({**CTX, "run_id": ""}, CTX)), "non-empty")
+    assert context_problems(_Shifty({**CTX, "run_id": 7}, CTX))
+
+
+def test_a_mapping_that_cannot_be_read_is_a_problem_not_an_exception():
+    class Broken(Mapping):
+        def __getitem__(self, key):
+            raise RuntimeError("boom")
+
+        def __iter__(self):
+            return iter(CTX)
+
+        def __len__(self):
+            return len(CTX)
+
+    has(context_problems(Broken()), "could not be read")
+
+
 def test_a_fabricated_run_with_no_consistent_lineage_is_refused():
     """What the lenient check accepted: four stages stating whatever agrees with itself, no real objects behind it."""
     d = lambda n: subject_digest({"fab": n})  # noqa: E731
@@ -277,7 +358,7 @@ def test_a_fabricated_run_with_no_consistent_lineage_is_refused():
     assert found
     has(found, "evaluated from a different KeySet")
     with pytest.raises(ValueError):
-        strict_root(fake["alpha"], fake["zeta"], fake["beta"], fake["delta"], chain_verified=True)
+        root_of(fake)
 
 
 @pytest.mark.parametrize("stage", ["alpha", "beta", "delta"])
@@ -381,12 +462,12 @@ def test_a_mapping_that_answers_differently_each_time_it_is_read_cannot_get_a_ro
     parts["delta"]["decision_digest"] = subject_digest(dict(parts["beta"]))
     args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
     try:
-        root = strict_root(*args, chain_verified=True)
+        root = strict_root(*args, chain=receipt_for(parts))
     except ValueError:
         return  # refused: fine
     # accepted: then the root must be over exactly what was checked, i.e. the first reading
     first = build()
-    assert root == strict_root(first["alpha"], first["zeta"], first["beta"], first["delta"], chain_verified=True)
+    assert root == root_of(first)
 
 
 def test_a_mapping_that_raises_when_read_is_named_not_raised():
@@ -456,15 +537,15 @@ def test_a_malformed_fingerprint_is_named(bad):
 
 
 def test_a_run_whose_ledger_chain_was_not_shown_to_verify_is_refused():
-    has(problems_of(build(), chain_verified=False), "the ledger chain was not shown to verify")
+    has(problems_of(build(), chain=None), "the ledger chain was not shown to verify")
     parts = build()
     with pytest.raises(ValueError, match="ledger chain was not shown to verify"):
         strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
 
 
-def test_chain_evidence_must_be_exactly_true():
+def test_chain_evidence_must_be_a_receipt_mapping():
     for not_true in (None, 1, "yes", [True]):
-        has(problems_of(build(), chain_verified=not_true), "the ledger chain was not shown to verify")
+        has(problems_of(build(), chain=not_true), "the ledger chain was not shown to verify")
 
 
 def test_when_one_stage_is_the_outlier_in_a_large_registry_the_outlier_is_blamed_not_the_honest_stages():
@@ -478,3 +559,589 @@ def test_when_one_stage_is_the_outlier_in_a_large_registry_the_outlier_is_blamed
     found = problems_of(parts)
     assert any("zeta lock extra_0 is bound to a different run than alpha's: run_id 'run-2' vs 'run-1'" in p for p in found)
     assert not any(p.startswith(("alpha is bound", "beta is bound", "delta is bound")) for p in found), found
+
+
+# --- the ledger receipt (chain=): what CNS accepts as evidence that delta's ledger verified --------------------------
+
+NOT_SHOWN = "the ledger chain was not shown to verify"
+
+
+def refused_with(parts, chain, text):
+    """The receipt is a named problem, the chain is not shown to verify, and no root is issued."""
+    found = problems_of(parts, chain=chain)
+    has(found, text)
+    has(found, NOT_SHOWN)
+    with pytest.raises(ValueError, match="does not hold together"):
+        root_of(parts, chain=chain)
+
+
+def test_a_valid_receipt_is_accepted_whatever_the_ledgers_size_when_it_fits_itself():
+    parts = build()
+    assert problems_of(parts, chain=receipt_for(parts, index=2, ledger_length=5, checkpoint_length=3,
+                                                ledger_head="a" * 64, checkpoint_head="b" * 64)) == []
+    assert problems_of(parts, chain=receipt_for(parts, index=0, ledger_length=1, checkpoint_length=1)) == []
+
+
+@pytest.mark.parametrize("bare", [True, 1, "yes", [True], 1.0, object()])
+def test_a_bare_assertion_in_place_of_a_receipt_is_not_evidence(bare):
+    refused_with(build(), bare, "the ledger receipt must be a mapping")
+
+
+def test_a_mapping_that_only_claims_success_is_not_a_receipt():
+    refused_with(build(), {"verified": True}, "the ledger receipt has schema None")
+
+
+def test_no_receipt_at_all_is_not_shown_and_issues_no_root():
+    parts = build()
+    has(problems_of(parts, chain=None), NOT_SHOWN)
+    with pytest.raises(ValueError, match=NOT_SHOWN):
+        root_of(parts, chain=None)
+
+
+@pytest.mark.parametrize("value", [True, False, 1, "yes", None, [True]])
+def test_chain_verified_is_a_deprecated_alias_that_is_never_evidence(value):
+    parts = build()
+    args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+    with pytest.warns(DeprecationWarning, match="chain_verified is deprecated"):
+        found = strict_problems(*args, chain_verified=value)
+    assert ("chain_verified is a bare assertion and is not evidence; pass chain= a delta verification receipt") in found
+    has(found, NOT_SHOWN)
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(ValueError, match="bare assertion"):
+            strict_root(*args, chain_verified=value)
+
+
+def test_a_valid_receipt_does_not_rescue_the_deprecated_alias():
+    parts = build()
+    args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+    with pytest.warns(DeprecationWarning):
+        found = strict_problems(*args, chain=receipt_for(parts), chain_verified=True)
+    assert found == ["chain_verified is a bare assertion and is not evidence; pass chain= a delta verification receipt"]
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(ValueError):
+            strict_root(*args, chain=receipt_for(parts), chain_verified=True)
+
+
+def test_leaving_the_alias_out_emits_no_warning():
+    import warnings
+    parts = build()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert problems_of(parts) == []
+        assert len(root_of(parts)) == 64
+
+
+def test_a_receipt_for_other_content_is_refused():
+    parts, other = build(), build()
+    other["delta"]["audit_id"] = "b" * 16
+    refused_with(parts, receipt_for(other), "the ledger receipt is for other content")
+    refused_with(parts, receipt_for(parts, entry_digest="0" * 64), "the ledger receipt is for other content")
+
+
+def test_a_receipt_for_another_run_is_refused():
+    parts = build()
+    for field, value in (("run_id", "run-2"), ("event_id", "ev-2"), ("entity_id", "p2")):
+        refused_with(parts, receipt_for(parts, context={**CTX, field: value}), "the ledger receipt is for another run")
+
+
+@pytest.mark.parametrize("bad", ["ledger-receipt/2", "", None, 1, "LEDGER-RECEIPT/1"])
+def test_a_receipt_of_another_schema_is_refused(bad):
+    refused_with(build(), receipt_for(build(), schema=bad), "the ledger receipt has schema")
+
+
+@pytest.mark.parametrize("field", ["index", "ledger_length", "checkpoint_length"])
+@pytest.mark.parametrize("bad", [True, False, 1.0, "1", None])
+def test_a_receipt_integer_that_is_a_bool_or_not_an_int_is_refused(field, bad):
+    parts = build()
+    refused_with(parts, receipt_for(parts, **{field: bad}), f"the ledger receipt's {field} must be an int")
+
+
+@pytest.mark.parametrize("over, text", [
+    ({"index": -1}, "is not within a ledger of 1 entries"),
+    ({"index": 1}, "is not within a ledger of 1 entries"),
+    ({"index": 9, "ledger_length": 4, "checkpoint_length": 2}, "is not within a ledger of 4 entries"),
+    ({"ledger_length": 0, "checkpoint_length": 0}, "is not within a ledger of 0 entries"),
+    ({"checkpoint_length": 0}, "an empty checkpoint carries no evidence"),
+    ({"checkpoint_length": -3}, "an empty checkpoint carries no evidence"),
+    ({"checkpoint_length": 2}, "is beyond its ledger_length 1"),
+    ({"ledger_length": 3, "index": 2, "checkpoint_length": 4}, "is beyond its ledger_length 3"),
+    ({"ledger_length": 3, "checkpoint_length": 3, "checkpoint_head": "d" * 64}, "its head is not the ledger's head"),
+])
+def test_a_receipt_whose_numbers_do_not_fit_is_refused(over, text):
+    parts = build()
+    refused_with(parts, receipt_for(parts, **over), text)
+
+
+@pytest.mark.parametrize("field", ["ledger_head", "checkpoint_head", "entry_digest"])
+@pytest.mark.parametrize("bad", ["z" * 64, "A" * 64, "c" * 63, "c" * 65, "c" * 64 + "\n", "", 5, None, b"c" * 64])
+def test_a_receipt_with_a_head_or_digest_that_is_not_lowercase_hex_is_refused(field, bad):
+    parts = build()
+    refused_with(parts, receipt_for(parts, **{field: bad}), field)
+
+
+def test_a_receipt_with_a_missing_or_extra_field_is_refused():
+    parts = build()
+    missing = receipt_for(parts)
+    del missing["checkpoint_head"]
+    refused_with(parts, missing, "checkpoint_head")
+    refused_with(parts, {**receipt_for(parts), "signed_by": "nobody"}, "signed_by")
+
+
+def test_a_receipt_whose_context_is_malformed_is_refused():
+    parts = build()
+    refused_with(parts, receipt_for(parts, context={**CTX, "run_id": _Id("run-1")}), "the ledger receipt's context")
+    refused_with(parts, receipt_for(parts, context="run-1"), "the ledger receipt's context")
+
+
+def test_a_receipt_mapping_that_cannot_be_read_is_named_not_raised():
+    class Broken(Mapping):
+        def __getitem__(self, key):
+            raise RuntimeError("boom")
+
+        def __iter__(self):
+            return iter(receipt_for(build()))
+
+        def __len__(self):
+            return 8
+
+    refused_with(build(), Broken(), "the ledger receipt could not be read")
+
+
+def test_the_receipt_binds_the_root_to_nothing_it_does_not_already_hold():
+    """The root is over the contents, so two valid receipts for one run give the same root."""
+    parts = build()
+    one = root_of(parts)
+    two = root_of(parts, chain=receipt_for(parts, ledger_length=7, index=1, checkpoint_length=2, ledger_head="a" * 64,
+                                           checkpoint_head="b" * 64))
+    assert one == two
+
+
+# --- the receipt is tied to the delta content and read once (Step 10) -------------------------------------------------
+
+class _LyingStr(str):
+    """Equal to everything: what a receipt field must not be allowed to be."""
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    __hash__ = str.__hash__
+
+
+class _LyingInt(int):
+    def __eq__(self, other):
+        return True
+
+    def __lt__(self, other):
+        return True
+
+    __hash__ = int.__hash__
+
+
+class _Key:
+    """A key that is not a str but prints as one."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return self.name
+
+
+def test_a_receipt_whose_heads_are_not_the_entrys_own_hash_is_named():
+    parts = build()
+    refused_with(parts, receipt_for(parts, ledger_head="0" * 64, checkpoint_head="0" * 64),
+                 "its ledger_head is not the entry's own hash")
+    refused_with(parts, receipt_for(parts, ledger_head="0" * 64), "its ledger_head is not the entry's own hash")
+
+
+def test_a_receipt_whose_entry_or_previous_hash_is_not_the_delta_contents_is_named():
+    parts = build()
+    refused_with(parts, receipt_for(parts, entry_hash="3" * 64), "entry_hash is not the delta content's immutable_hash")
+    refused_with(parts, receipt_for(parts, previous_hash="3" * 64), "previous_hash is not the delta content's previous_hash")
+
+
+def test_a_receipt_for_an_entry_the_checkpoint_does_not_cover_is_named():
+    parts = build()
+    refused_with(parts, receipt_for(parts, index=4, ledger_length=9, checkpoint_length=2, ledger_head="a" * 64,
+                                    checkpoint_head="b" * 64), "is not covered by its checkpoint_length 2")
+    refused_with(parts, receipt_for(parts, index=1, ledger_length=3, checkpoint_length=1, ledger_head="a" * 64,
+                                    checkpoint_head="b" * 64), "is not covered by its checkpoint_length 1")
+
+
+def test_an_index_outside_the_ledger_with_arbitrary_heads_is_named():
+    parts = build()
+    refused_with(parts, receipt_for(parts, index=4), "is not within a ledger of 1 entries")
+
+
+def test_a_checkpoint_that_covers_the_ledger_must_have_the_ledgers_head():
+    parts = build()
+    refused_with(parts, receipt_for(parts, ledger_length=3, index=0, checkpoint_length=3, ledger_head="a" * 64,
+                                    checkpoint_head="b" * 64), "its head is not the ledger's head")
+
+
+def test_a_non_last_entry_may_carry_any_ledger_head_and_is_still_clean_when_the_rest_fits():
+    parts = build()
+    assert problems_of(parts, chain=receipt_for(parts, index=0, ledger_length=3, checkpoint_length=2,
+                                                ledger_head="a" * 64, checkpoint_head="b" * 64)) == []
+
+
+@pytest.mark.parametrize("field", ["schema", "entry_digest", "entry_hash", "previous_hash", "ledger_head", "checkpoint_head"])
+def test_a_str_subclass_in_a_receipt_field_is_refused(field):
+    parts = build()
+    honest = receipt_for(parts)
+    refused_with(parts, receipt_for(parts, **{field: _LyingStr(honest[field])}), field if field != "schema" else "schema")
+
+
+@pytest.mark.parametrize("field", ["index", "ledger_length", "checkpoint_length"])
+def test_an_int_subclass_in_a_receipt_field_is_refused(field):
+    parts = build()
+    refused_with(parts, receipt_for(parts, **{field: _LyingInt(1)}), f"the ledger receipt's {field} must be an int")
+
+
+def test_one_runs_receipt_relabelled_with_another_runs_context_cannot_be_wrapped_to_compare_equal():
+    a, b = build(), build(ctx={**CTX, "run_id": "run-2", "event_id": "ev-2"})
+    stolen = receipt_for(a, entry_digest=_LyingStr(receipt_for(a)["entry_digest"]), context=b["delta"]["context"])
+    refused_with(b, stolen, "entry_digest")
+
+
+def test_an_extra_key_whose_text_is_a_field_name_is_a_named_problem_not_a_pass():
+    parts = build()
+    extra = dict(receipt_for(parts))
+    extra[_Key("index")] = 99
+    refused_with(parts, extra, "plain str keys")
+
+
+def test_a_real_key_replaced_by_one_that_only_prints_alike_is_a_named_problem_not_a_KeyError():
+    parts = build()
+    swapped = {(_Key(k) if k == "index" else k): v for k, v in receipt_for(parts).items()}
+    refused_with(parts, swapped, "plain str keys")
+
+
+def test_a_str_subclass_key_is_not_a_plain_key():
+    parts = build()
+    swapped = {(_LyingStr(k) if k == "context" else k): v for k, v in receipt_for(parts).items()}
+    refused_with(parts, swapped, "plain str keys")
+
+
+def test_a_receipt_with_eleven_keys_or_nine_is_refused():
+    parts = build()
+    refused_with(parts, {**receipt_for(parts), "extra": 1}, "extra")
+    short = receipt_for(parts)
+    del short["previous_hash"]
+    refused_with(parts, short, "previous_hash")
+
+
+class _ReadOnce(Mapping):
+    """A receipt that answers honestly the first time each key is read and with nonsense after."""
+
+    def __init__(self, honest):
+        self._honest, self._seen, self.reads = dict(honest), set(), 0
+
+    def __getitem__(self, key):
+        self.reads += 1
+        if key in self._seen:
+            return "garbage"
+        self._seen.add(key)
+        return self._honest[key]
+
+    def __iter__(self):
+        return iter(self._honest)
+
+    def __len__(self):
+        return len(self._honest)
+
+
+def test_the_receipt_is_read_once_so_a_later_different_answer_changes_nothing():
+    parts = build()
+    receipt = _ReadOnce(receipt_for(parts))
+    assert problems_of(parts, chain=receipt) == []
+    assert receipt.reads == len(receipt_for(parts))
+
+
+def test_the_receipts_context_is_read_once():
+    parts = build()
+    ctx = _Shifty(CTX, {**CTX, "run_id": "run-9"})
+    assert problems_of(parts, chain=receipt_for(parts, context=ctx)) == []
+
+
+# --- keyset_fingerprint_of: a recomputation of alpha's fingerprint, supplied by the caller from zeta ------------------
+
+MISMATCH = "alpha's KeySet fingerprint does not match a recomputation from alpha's keys"
+
+
+def _toy_fingerprint(alpha):
+    """Stands in for zeta's rule (CNS never implements it): a SHA-256 over what alpha's keys say."""
+    import hashlib
+    import json
+    body = json.dumps({"m": alpha["min_confidence"], "k": alpha["keys"]}, sort_keys=True)
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def _honest_with_toy_fingerprint():
+    """A run whose every KeySet fingerprint is the toy rule's answer for alpha's keys, relinked."""
+    parts = build()
+    fp = _toy_fingerprint(parts["alpha"])
+    parts["alpha"]["keyset_fingerprint"] = fp
+    for c in parts["zeta"].values():
+        c["keyset_fingerprint"] = fp
+    parts["beta"]["keyset_fingerprint"] = fp
+    parts["delta"]["decision"]["keyset_fingerprint"] = fp
+    return relink(parts)
+
+
+def test_a_recomputation_that_agrees_with_alpha_is_clean():
+    parts = _honest_with_toy_fingerprint()
+    assert strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                           keyset_fingerprint_of=_toy_fingerprint) == []
+
+
+def test_row_2b_content_substituted_under_the_original_fingerprint_string_is_refused_when_a_recomputation_is_supplied():
+    parts = _honest_with_toy_fingerprint()
+    original = parts["alpha"]["keyset_fingerprint"]
+    parts["alpha"]["keys"][0]["reason"] = "other readings than the ones zeta evaluated"
+    parts["alpha"]["keyset_fingerprint"] = original  # the original string is copied in
+    relink(parts)
+    args = (parts["alpha"], parts["zeta"], parts["beta"], parts["delta"])
+    found = strict_problems(*args, chain=receipt_for(parts), keyset_fingerprint_of=_toy_fingerprint)
+    assert found == [MISMATCH]
+    with pytest.raises(ValueError, match="does not match a recomputation"):
+        strict_root(*args, chain=receipt_for(parts), keyset_fingerprint_of=_toy_fingerprint)
+
+
+def test_row_2b_passes_when_no_recomputation_is_supplied_which_is_a_recorded_gap():
+    parts = _honest_with_toy_fingerprint()
+    original = parts["alpha"]["keyset_fingerprint"]
+    parts["alpha"]["keys"][0]["reason"] = "other readings than the ones zeta evaluated"
+    parts["alpha"]["keyset_fingerprint"] = original
+    relink(parts)
+    assert problems_of(parts) == []  # the gap: fingerprint strings agree, nothing recomputed them
+
+
+@pytest.mark.parametrize("verifier", [
+    lambda alpha: "f" * 64,                      # another fingerprint
+    lambda alpha: None,                          # no answer
+    lambda alpha: 5,                             # not a str
+    lambda alpha: (_ for _ in ()).throw(RuntimeError("zeta is unavailable")),   # raises
+    lambda alpha: _toy_fingerprint(alpha).upper(),
+], ids=["other", "none", "not-str", "raises", "upper"])
+def test_a_recomputation_that_raises_or_does_not_match_is_the_same_named_problem(verifier):
+    parts = _honest_with_toy_fingerprint()
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                            keyset_fingerprint_of=verifier)
+    assert found == [MISMATCH]
+
+
+def test_a_recomputation_that_answers_with_an_always_equal_object_is_refused():
+    class Yes(str):
+        def __eq__(self, other):
+            return True
+
+        __hash__ = str.__hash__
+
+    parts = _honest_with_toy_fingerprint()
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                            keyset_fingerprint_of=lambda alpha: Yes("whatever"))
+    assert found == [MISMATCH]
+
+
+def test_the_recomputation_is_given_a_copy_and_cannot_change_what_is_judged():
+    parts = _honest_with_toy_fingerprint()
+    seen = []
+
+    def meddling(alpha):
+        seen.append(alpha)
+        alpha["keys"].clear()
+        alpha["present_names"].append("invented")
+        return _toy_fingerprint(parts["alpha"])
+
+    before = copy.deepcopy(parts["alpha"])
+    assert strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                           keyset_fingerprint_of=meddling) == []
+    assert seen and parts["alpha"] == before
+
+
+def test_the_recomputation_is_not_called_when_none_is_given_and_alpha_without_a_fingerprint_is_named_once():
+    parts = build()
+    del parts["alpha"]["keyset_fingerprint"]
+    calls = []
+    found = strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
+                            keyset_fingerprint_of=lambda alpha: calls.append(1) or "x")
+    has(found, "alpha carries no keyset_fingerprint")
+    assert MISMATCH not in found and calls == []
+
+
+# --- origin: the producer's own record of where a KeySet came from. Well-formedness and order only. -------------------
+
+ORIGIN = {"source": "ward monitor 4", "producer": "vitals-ingest 2.1", "observed_at": "2026-01-01T11:59:30",
+          "collection_context": "bedside, continuous", "transformation": "none"}
+# the root of build() with no origin, as it was before the origin check existed: pinned so that the check can never
+# move the digest of a run that carries none
+BUILD_ROOT = "fe35e91ff42b1a3a434f8fd76ab684fe0196deb1216d01c0a563d7eed0a526d7"
+
+
+def with_origin(origin, **over):
+    parts = build(**over)
+    parts["alpha"]["origin"] = origin
+    return relink(parts)
+
+
+def test_alpha_content_without_an_origin_is_unchanged_and_clean():
+    parts = build()
+    assert "origin" not in parts["alpha"]
+    assert problems_of(parts) == []
+    assert root_of(parts) == BUILD_ROOT
+
+
+def test_a_well_formed_origin_observed_before_the_decision_is_clean():
+    parts = with_origin(dict(ORIGIN))
+    assert problems_of(parts) == []
+    assert root_of(parts) != root_of(build())  # the origin is bound into alpha's digest, so into the root
+
+
+def test_an_origin_observed_at_the_instant_of_the_decision_is_clean():
+    assert problems_of(with_origin({**ORIGIN, "observed_at": "2026-01-01T12:00:00"})) == []
+
+
+@pytest.mark.parametrize("origin, text", [
+    ("ward monitor", "alpha origin must be a mapping"),
+    (None, "alpha origin must be a mapping"),
+    ([], "alpha origin must be a mapping"),
+    ({k: v for k, v in ORIGIN.items() if k != "producer"}, "alpha origin has exactly the fields"),
+    ({**ORIGIN, "signed_by": "nobody"}, "alpha origin has exactly the fields"),
+    ({}, "alpha origin has exactly the fields"),
+    ({**ORIGIN, "source": ""}, "alpha origin source must be non-empty"),
+    ({**ORIGIN, "producer": 7}, "alpha origin producer must be a str"),
+    ({**ORIGIN, "transformation": None}, "alpha origin transformation must be a str"),
+    ({**ORIGIN, "collection_context": _Id("bedside")}, "alpha origin collection_context must be a str"),
+    ({**ORIGIN, "observed_at": "yesterday evening"}, "not ISO 8601 text"),
+    ({**ORIGIN, "observed_at": "2026-13-45T99:00:00"}, "not ISO 8601 text"),
+    ({**ORIGIN, "observed_at": 1767268800}, "alpha origin observed_at must be a str"),
+])
+def test_a_malformed_origin_is_a_named_problem(origin, text):
+    parts = with_origin(origin)
+    has(problems_of(parts), text)
+    with pytest.raises(ValueError, match="does not hold together"):
+        root_of(parts)
+
+
+def test_an_origin_observed_after_the_decision_is_a_named_problem():
+    found = problems_of(with_origin({**ORIGIN, "observed_at": "2026-01-01T12:00:01"}))
+    assert any("is later than the Decision's timestamp" in p for p in found), found
+
+
+def test_an_origin_in_the_future_by_a_day_is_refused_even_with_a_time_zone():
+    parts = build()
+    parts["beta"]["timestamp"] = parts["delta"]["decision"]["timestamp"] = "2026-01-01T12:00:00+00:00"
+    parts["alpha"]["origin"] = {**ORIGIN, "observed_at": "2026-01-02T12:00:00+00:00"}
+    found = problems_of(relink(parts))
+    assert any("is later than the Decision's timestamp" in p for p in found), found
+
+
+def test_time_zones_are_compared_as_instants_not_as_clock_text():
+    parts = build()
+    parts["beta"]["timestamp"] = parts["delta"]["decision"]["timestamp"] = "2026-01-01T12:00:00+00:00"
+    # 13:30 in UTC+2 is 11:30 UTC, before the Decision; 11:30 in UTC-2 is 13:30 UTC, after it
+    parts["alpha"]["origin"] = {**ORIGIN, "observed_at": "2026-01-01T13:30:00+02:00"}
+    assert problems_of(relink(parts)) == []
+    parts["alpha"]["origin"] = {**ORIGIN, "observed_at": "2026-01-01T11:30:00-02:00"}
+    assert any("is later than" in p for p in problems_of(relink(parts)))
+
+
+@pytest.mark.parametrize("observed, decided", [("2026-01-01T11:00:00+00:00", "2026-01-01T12:00:00"),
+                                               ("2026-01-01T11:00:00", "2026-01-01T12:00:00+00:00")])
+def test_a_naive_and_an_aware_timestamp_cannot_be_ordered_and_that_is_a_named_problem_not_a_crash(observed, decided):
+    parts = build()
+    parts["beta"]["timestamp"] = parts["delta"]["decision"]["timestamp"] = decided
+    parts["alpha"]["origin"] = {**ORIGIN, "observed_at": observed}
+    found = problems_of(relink(parts))
+    assert any("cannot be ordered: one carries a time zone and the other does not" in p for p in found), found
+
+
+@pytest.mark.parametrize("bad", [None, 5, "", "noon", ["2026-01-01T12:00:00"]])
+def test_a_decision_timestamp_that_cannot_be_read_is_a_named_problem_not_a_crash(bad):
+    parts = build()
+    parts["beta"]["timestamp"] = parts["delta"]["decision"]["timestamp"] = bad
+    parts["alpha"]["origin"] = dict(ORIGIN)
+    found = problems_of(relink(parts))
+    assert any("cannot be ordered against the Decision" in p for p in found), found
+
+
+def test_the_origin_check_claims_nothing_about_who_made_the_origin():
+    """A producer that writes whatever it likes, consistently, passes: no authorship, authorization or truth is checked."""
+    parts = with_origin({"source": "nowhere", "producer": "anyone", "observed_at": "1970-01-01T00:00:00",
+                         "collection_context": "invented", "transformation": "invented"})
+    assert problems_of(parts) == []
+
+
+# --- content_fingerprint: compared as carried, never recomputed in CNS ----------------------------------------------
+
+def with_content_fingerprint(beta_value=None, delta_value=None):
+    parts = build()
+    if beta_value is not None:
+        parts["beta"]["content_fingerprint"] = beta_value
+    if delta_value is not None:
+        parts["delta"]["decision"]["content_fingerprint"] = delta_value
+    parts["delta"]["decision_digest"] = subject_digest(parts["beta"])
+    return parts
+
+
+def test_a_content_fingerprint_both_stages_carry_alike_is_accepted_and_not_recomputed():
+    # an arbitrary value: CNS has no rule to recompute it with, so equal copies are all it asks for
+    assert problems_of(with_content_fingerprint("a" * 64, "a" * 64)) == []
+
+
+@pytest.mark.parametrize("beta_value, delta_value", [("a" * 64, "b" * 64), ("a" * 64, None), (None, "a" * 64)])
+def test_a_content_fingerprint_that_beta_and_delta_do_not_carry_alike_is_named(beta_value, delta_value):
+    has(problems_of(with_content_fingerprint(beta_value, delta_value)), "differs from beta's in: content_fingerprint")
+
+
+def legacy(beta=True, delta=True, value=None):
+    """A run whose Decision carries no content_fingerprint in beta's content, in delta's embedded copy, or both."""
+    parts = build()
+    for present, holder in ((beta, parts["beta"]), (delta, parts["delta"]["decision"])):
+        if present:
+            if value is None:
+                holder.pop("content_fingerprint")
+            else:
+                holder["content_fingerprint"] = value
+    parts["delta"]["decision_digest"] = subject_digest(parts["beta"])
+    return parts
+
+
+def test_a_legacy_decision_with_no_content_fingerprint_in_either_stage_is_refused_by_the_strict_check():
+    parts = legacy()
+    assert "content_fingerprint" not in parts["beta"]
+    found = problems_of(parts)
+    has(found, "beta's Decision carries no content_fingerprint")
+    has(found, "delta's embedded Decision carries no content_fingerprint")
+    with pytest.raises(ValueError, match="carries no content_fingerprint"):
+        root_of(parts)
+
+
+def test_a_decision_missing_its_content_fingerprint_in_only_one_stage_is_named_in_that_stage():
+    has(problems_of(legacy(beta=True, delta=False)), "beta's Decision carries no content_fingerprint")
+    has(problems_of(legacy(beta=False, delta=True)), "delta's embedded Decision carries no content_fingerprint")
+
+
+@pytest.mark.parametrize("bad", ["", "z" * 64, "D" * 64, "d" * 63, None, 0, ["d" * 64]])
+def test_a_blank_or_malformed_content_fingerprint_is_the_same_downgrade(bad):
+    parts = build()
+    parts["beta"]["content_fingerprint"] = bad
+    parts["delta"]["decision"]["content_fingerprint"] = bad
+    parts["delta"]["decision_digest"] = subject_digest(parts["beta"])
+    found = problems_of(parts)
+    has(found, "beta's Decision carries no content_fingerprint")
+    has(found, "delta's embedded Decision carries no content_fingerprint")
+
+
+def test_the_lenient_check_is_unchanged_for_a_legacy_decision():
+    from cns_composition.spine_trace import SpineRecord, problems, root
+    d = "a" * 64
+    record = SpineRecord(
+        entity_id="p1", keyset_digest="1" * 64, keys_present=("k",), lock_result_digests={"l": "2" * 64},
+        open_locks=("l",), decision_entity_id="p1", decision_keys=("k",), decision_locks=("l",), decision_digest=d,
+        ledger_decision_digest=d, entry_digest="3" * 64)
+    assert problems(record) == [] and len(root(record)) == 64

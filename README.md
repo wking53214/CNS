@@ -187,23 +187,67 @@ in two modes.
   a skip. The strict root is domain-separated (`spine-trace/2`) and is never a native digest of any stage.
 
 CNS applies no decision policy here: it does not say which Key should be present, which Lock should open or whether
-the Decision is right, and `present_names` is stated by alpha so CNS never re-implements zeta's confidence rule. Two
-limits stay. A native stage can still compute a result from a foreign input in memory (zeta's KeySet and LockResult
-carry no identity), so the result is refused when it is bound, recorded or verified, not when it is computed. And
-delta's ledger is an in-memory reference ledger: a checkpoint held outside it is what detects truncation or a
-rewrite, and nothing survives a restart. The strict check also asks delta's own ledger whether the chain verifies (and
-whether a checkpoint held outside it still holds) rather than taking a caller's word, and it compares the KeySet
-fingerprint zeta records on every lock result, alpha reports and beta's Decision carries, so a result evaluated from
-one KeySet and bound to another's digest is refused. Three limits are recorded as facts, not hidden, and go red the
-day they close: the strict check verifies that contents agree and chain by digest, not who made them (there is no
-key, so contents made up by someone who recomputes the digests, and reports the chain as verified, pass); beta's
-`decision_fingerprint` is keyless and covers five of a Decision's thirteen fields, so a rewritten narrative
-(instructions, confidence, reasoning) passes; and a Decision records the union of the locks its rule cited, not which
-the rule required open and which closed, so a Decision citing a closed lock passes. The `chains` workflow runs the
-scenarios (seven lenient, thirty-five strict: five checks that hold, twenty-seven attacks each stating the problem that
-should refuse it, and the three gaps above). A second job, `spine-pinned`, runs the same scenarios on exactly the four
-commits `contracts/spine-manifest.json` names, after `cns_composition.spine_manifest` has held every pin and checkout
-to that file.
+the Decision is right, and `present_names` is stated by alpha so CNS never re-implements zeta's confidence rule. What
+the strict check takes, and what each part is worth:
+
+- **A delta verification receipt** (`chain=`; the `chain_verified` boolean is a deprecated alias that warns and is never
+  evidence). Delta issues the receipt (`delta.cns_connector.verification_receipt`) only when its own chain verifies and a
+  checkpoint held outside the ledger is still contained in it; an empty, mistyped or foreign checkpoint gets none. CNS
+  reads the receipt once and checks it against the contents it already holds: exactly ten plain-str keys (`schema`,
+  `entry_digest`, `index`, `entry_hash`, `previous_hash`, `ledger_length`, `ledger_head`, `checkpoint_length`,
+  `checkpoint_head`, `context`), each value of its exact type (a str or int subclass is refused), the entry digest is the
+  digest of the delta content given, `entry_hash` and `previous_hash` are the delta content's own, the context is the
+  run's, `0 <= index < checkpoint_length <= ledger_length`, the heads are 64 lowercase hex digits, the ledger head is the
+  entry's hash when the entry is the last, and the checkpoint head is the ledger head when the checkpoint covers the whole
+  ledger. The receipt is not signed: a hand-built consistent one passes.
+- **An optional recomputation of alpha's KeySet fingerprint** (`keyset_fingerprint_of`, built by the caller from zeta, which
+  owns the rule; CNS imports nothing from zeta). The runner supplies it. Without it only the fingerprint strings alpha,
+  zeta and beta carry are compared, and substituted alpha content that copies the original string passes.
+- **A KeySet fingerprint and a content fingerprint compared as carried.** Zeta records the fingerprint of the KeySet it
+  evaluated; beta's `content_fingerprint` (13 of a Decision's 15 fields; `decision_fingerprint` covers five and is
+  unchanged) is compared between beta's content and delta's embedded copy and never recomputed in CNS.
+- **A `content_fingerprint` on every Decision.** Strict verification refuses beta's content, or delta's embedded copy,
+  that carries none: a legacy Decision, or one whose fingerprint was blanked, has lost the claim that its fields were not
+  edited. This is strict mode only; the lenient `problems` and `root` are unchanged.
+- **An optional alpha `origin`** (source, producer, observed_at, collection_context, transformation), checked for form and
+  for `observed_at` not being later than the Decision. It is the producer's own claim.
+
+Recorded limits, none of them hidden, each one a scenario marked GAP or stated here:
+
+1. There is no authorship key. Contents made up by someone who recomputes every digest and fingerprint (all public and
+   keyless) and writes a consistent receipt pass, so a receipt detects mistakes and partial forgeries, not an author.
+2. `LockResult` fields (`keyset_fingerprint`, `stale`, `entity_id`) are caller-settable, and an empty `entity_id` is
+   accepted as legacy: a lock result for another entity with the id stripped is decided. Beta refuses one that names
+   another entity.
+3. Checkpoint custody and file durability are not implemented. Delta's ledger is in memory, nothing survives a restart,
+   and a checkpoint is only as trustworthy as the place its holder keeps it. A ledger with no context does not check
+   fingerprints at append; its entries cannot be bound to a run.
+4. `content_fingerprint` is keyless: a forger who rewrites a narrative and recomputes it (its function is public) passes.
+5. `origin` is the producer's own claim; CNS checks its form and order only.
+6. A Decision records the union of the locks its rule cited, not which the rule required open and which closed, so a
+   Decision citing a closed lock passes. And a native stage can still compute a result from a foreign input in memory;
+   the result is refused when it is bound, recorded or verified, not when it is computed.
+7. A ledger's sink runs before the ledger changes, so a sink that writes to its own store and then fails leaves a write the
+   ledger does not have (a scenario shows it). Delta's contract: the sink must be idempotent, keyed by the entry's hash, and
+   the caller reconciles; a retry hands it the same entry. And a receipt written by hand with fields that fit each other
+   (limit 1) passes: only where the checkpoint is kept tells it from delta's.
+
+The `chains` workflow runs 83 scenarios: seven lenient, and 76 strict. The strict ones are six checks that hold, 63 attacks
+each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
+only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
+that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
+change), and the seven gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
+fingerprint, a cited closed lock, a legacy lock result, a KeySet swapped when no recomputation is supplied, and the sink's
+own store, limit 7). The scenarios attack the receipt itself
+from delta's real one, and delta's refusal of a checkpoint (one sentence for five causes) is explained by the runner's own
+wrapper so each scenario requires its own cause. A scenario table row must be an `Expect`; a plain string is a `TypeError`
+when the script loads.
+Each scenario declares an `Expect` (`chains/spine_oracle.py`): the problems it requires, the only extras it may add, texts it
+forbids, and whether it is clean, a problem, a refusal or a gap. A missing required problem, an unlisted extra problem, an
+unexpected success, an undeclared crash, or a refusal that changed the ledger it guarded fails the scenario; the oracle has
+its own tests in `tests/test_spine_oracle.py`. The scenario run on the manifest's commits is `spine-pinned`: a second job runs
+the same scenarios on exactly the four commits `contracts/spine-manifest.json` names, after `cns_composition.spine_manifest`
+has held every pin and checkout to that file.
 
 ## The rule
 
