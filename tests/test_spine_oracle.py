@@ -54,7 +54,6 @@ def test_a_scenario_that_crashes_fails():
         raise KeyError("boom")
     assert verdict(Expect("problems", required=(ATTACK,)), crash)[1]
     assert verdict(Expect("clean"), crash)[1]
-    assert verdict(ATTACK, crash)[1]
 
 
 def test_a_crash_is_accepted_only_when_declared_refused_with_that_exception_class():
@@ -68,7 +67,6 @@ def test_a_crash_is_accepted_only_when_declared_refused_with_that_exception_clas
 def test_a_scenario_that_unexpectedly_succeeds_fails():
     assert verdict(Expect("problems", required=(ATTACK,)), lambda: [])[1]
     assert verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lambda: refused(lambda: None))[1]
-    assert verdict(ATTACK, lambda: [])[1]
 
 
 def test_a_scenario_that_fails_at_the_wrong_boundary_fails():
@@ -122,11 +120,26 @@ def test_refused_catches_overflow_error_as_a_refusal():
     assert refused(overflow)[0].startswith("OverflowError:")
 
 
-def test_a_plain_string_keeps_its_old_meaning():
-    assert verdict("", lambda: [])[1] == []
-    assert verdict("", lambda: [ATTACK])[1]
-    assert verdict(ATTACK, lambda: [UNRELATED, ATTACK])[1] == []
-    assert verdict(ATTACK, lambda: [UNRELATED])[1]
+def test_a_plain_string_expectation_is_no_longer_accepted():
+    with pytest.raises(TypeError):
+        judge(ATTACK, lambda: [ATTACK])  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        judge("", lambda: [])  # type: ignore[arg-type]
+
+
+def test_a_table_with_a_plain_string_expectation_is_refused_when_loaded():
+    good = ("a scenario", lambda: [], Expect("clean"))
+    oracle.check_table([good])
+    with pytest.raises(TypeError, match="plain string expectation"):
+        oracle.check_table([good, ("a loose one", lambda: [], ATTACK)])
+    with pytest.raises(TypeError):
+        oracle.check_table([("a loose one", lambda: [], "")])
+    with pytest.raises(TypeError):
+        oracle.check_table([("not callable", None, Expect("clean"))])
+    with pytest.raises(TypeError):
+        oracle.check_table([("two fields", lambda: [])])
+    with pytest.raises(ValueError, match="twice"):
+        oracle.check_table([good, good])
 
 
 def test_an_expect_that_names_nothing_is_refused_when_built():

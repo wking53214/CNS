@@ -30,13 +30,14 @@ are then updated on purpose.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import sys
 import warnings
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
 
-from spine_oracle import Expect, Expectation, judge
+from spine_oracle import Expect, check_table, judge
 from spine_oracle import refused as _refused
 
 import alpha.cns_connector as alpha_cns
@@ -175,21 +176,56 @@ def zeta_keyset_fingerprint(alpha_content) -> str:
     return KeySet(keys, min_confidence=alpha_content["min_confidence"]).fingerprint()
 
 
+DELTA_GENERIC_REFUSAL = "the checkpoint is empty, foreign, mistyped or not contained in this ledger"
+
+
+def refusal_cause(ledger: DecisionLedger, held: Any) -> str:
+    """Why delta refused a checkpoint, from what the runner can see of the ledger and the checkpoint (delta's own text is one
+    sentence for five causes, and the runner does not change delta). Each cause has its own text, so a scenario can require
+    the one it is about. The checkpoint is read once."""
+    length, head = held.length, held.head
+    held_hash = (len(head) == 64 and all(c in "0123456789abcdef" for c in head)) if type(head) is str else False
+    entries = list(ledger.entries)
+    if type(length) is not int or not held_hash:
+        return "mistyped checkpoint: its length is not an exact int or its head is not an exact 64 hex str"
+    if length < 1:
+        return f"empty checkpoint: length {length} names no entry, so it is the same for every ledger"
+    if length > len(entries):
+        return (f"ledger shorter than the checkpoint: it holds {len(entries)} entries and the checkpoint covers {length} "
+                "(truncated, with its own chain still verifying)")
+    if any(e.immutable_hash == head for e in entries):
+        return "checkpoint head is another entry of this ledger: its history was reordered or rewritten after the checkpoint"
+    return "wrong-ledger checkpoint: its head names no entry of this ledger"
+
+
+def ask_delta(ledger: DecisionLedger, held: Any, *, context: Any, decision_digest: Any) -> Dict[str, Any]:
+    """Delta's `verification_receipt`, with a refusal about the checkpoint explained by `refusal_cause`. Delta's own message
+    is kept first; a broken chain is already its own message and is only labelled."""
+    try:
+        return delta_cns.verification_receipt(ledger, held, context=context, decision_digest=decision_digest)
+    except ValueError as exc:
+        if DELTA_GENERIC_REFUSAL in str(exc):
+            raise ValueError(f"{exc} [cause: {refusal_cause(ledger, held)}]") from exc
+        if "chain does not verify" in str(exc):
+            raise ValueError(f"{exc} [cause: ledger's own chain check fails, so it was altered, or its head not reset after "
+                             "entries were removed]") from exc
+        raise
+
+
 def chain_receipt(parts) -> Tuple[Any, str]:
     """Ask delta itself for a verification receipt about the ledger's last entry, against the checkpoint the scenario holds.
 
     The checkpoint was taken before any attack and is held in `parts`, outside the ledger object. Delta refuses unless its
     chain verifies and the ledger still contains the history the checkpoint recorded (an empty or foreign checkpoint is
-    refused too), and the receipt carries the digest of the entry as exported under the content's own context and
-    decision digest, so content that describes another Decision, run or time than the entry cannot match it. No checkpoint,
-    or a refusal, is (None, why): CNS is then given no receipt."""
+    refused too, and the refusal says which cause it was, see `ask_delta`), and the receipt carries the digest of the entry
+    as exported under the content's own context and decision digest, so content that describes another Decision, run or
+    time than the entry cannot match it. No checkpoint, or a refusal, is (None, why): CNS is then given no receipt."""
     try:
         held = parts.get("checkpoint")
         if held is None:
             return None, "this scenario holds no checkpoint taken before the attack, so no receipt can be asked for"
         content = parts["delta"]
-        return delta_cns.verification_receipt(
-            parts["ledger"], held, context=content.get("context"), decision_digest=content.get("decision_digest")), ""
+        return ask_delta(parts["ledger"], held, context=content.get("context"), decision_digest=content.get("decision_digest")), ""
     except Exception as exc:  # noqa: BLE001 - delta refused, or there was nothing to ask: no receipt, not an exception
         return None, f"{type(exc).__name__}: {exc}"
 
@@ -211,7 +247,13 @@ def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None, ca
 
 
 def ledger_state(ledger: DecisionLedger) -> Callable[[], Any]:
-    return lambda: (len(ledger.entries), ledger.chain_head)
+    """What a refusal must leave alone: the length, the head AND a digest of every entry's hash in order, so a refusal that
+    swapped one entry for another of the same count and head still shows."""
+    def state() -> Any:
+        entries = list(ledger.entries)
+        return (len(entries), ledger.chain_head,
+                hashlib.sha256("\n".join(e.immutable_hash for e in entries).encode("ascii")).hexdigest())
+    return state
 
 
 def strict_clean(vitals) -> List[str]:
@@ -339,10 +381,8 @@ def a_run_fabricated_with_digests_that_do_not_chain() -> List[str]:
     return check(fake)
 
 
-def a_ledger_truncated_with_its_head_reset() -> List[str]:
-    """Three real Decisions, each a minute later (an identical Decision is a replay, which delta refuses). A checkpoint is
-    held outside the ledger; then the ledger is cut back and its head reset, which its own chain check accepts. Delta
-    refuses to issue a receipt against the held checkpoint, so CNS is never given one."""
+def three_decisions_in_a_ledger() -> DecisionLedger:
+    """Three real Decisions, each a minute later (an identical Decision is a replay, which delta refuses)."""
     ledger = DecisionLedger()
     for i, vitals in enumerate((SICK, WELL, SICK)):
         engine = build()[1]
@@ -350,13 +390,48 @@ def a_ledger_truncated_with_its_head_reset() -> List[str]:
         at = T0 + timedelta(minutes=i)
         results = LockEvaluator(build()[0]).evaluate_all("patient_1", keys, at)
         ledger.append(engine.decide("patient_1", keys, results, at), context={**CTX, "run_id": f"run_{i}", "event_id": f"event_{i}"})
+    return ledger
+
+
+MIDDLE_CTX = {**CTX, "run_id": "run_1", "event_id": "event_1"}
+
+
+def a_ledger_truncated_with_its_head_reset() -> List[str]:
+    """A checkpoint is held outside a three-entry ledger; then the ledger is cut back by one entry and its head reset, which
+    its own chain check accepts. Delta refuses to issue a receipt against the held checkpoint, so CNS is never given one."""
+    ledger = three_decisions_in_a_ledger()
     held = ledger.checkpoint()
     ledger.entries.pop()
     ledger.chain_head = ledger.entries[-1].immutable_hash
     assert ledger.verify_chain_integrity(), "the chain alone is expected to accept this: that is the gap"
-    context = {**CTX, "run_id": "run_1", "event_id": "event_1"}
-    return refused(lambda: delta_cns.verification_receipt(ledger, held, context=context, decision_digest=subject_digest({})),
-                   ledger_state(ledger))
+    return refused(lambda: ask_delta(ledger, held, context=MIDDLE_CTX, decision_digest=subject_digest({})), ledger_state(ledger))
+
+
+def a_ledger_rolled_back_without_resetting_its_head() -> List[str]:
+    """The last entry is removed and the head is left where it was, so the ledger's own chain check fails and delta refuses
+    before it looks at the checkpoint."""
+    ledger = three_decisions_in_a_ledger()
+    held = ledger.checkpoint()
+    ledger.entries.pop()
+    assert not ledger.verify_chain_integrity(), "removing the last entry without moving the head is expected to break the chain"
+    return refused(lambda: ask_delta(ledger, held, context=MIDDLE_CTX, decision_digest=subject_digest({})), ledger_state(ledger))
+
+
+def an_empty_checkpoint_against_an_honest_ledger() -> List[str]:
+    ledger = three_decisions_in_a_ledger()
+    empty = LedgerCheckpoint(0, DecisionLedger().chain_head)
+    return refused(lambda: ask_delta(ledger, empty, context=MIDDLE_CTX, decision_digest=subject_digest({})), ledger_state(ledger))
+
+
+def a_checkpoint_taken_from_another_ledger() -> List[str]:
+    """An honest ledger and an honest checkpoint of a different ledger (other Decisions, a length the first one reaches)."""
+    ledger = three_decisions_in_a_ledger()
+    other = DecisionLedger()
+    engine, keys = build()[1], observe(WELL)
+    other.append(engine.decide("patient_9", keys, LockEvaluator(build()[0]).evaluate_all("patient_9", keys, T0), T0),
+                 context={**CTX, "entity_id": "patient_9"})
+    foreign = other.checkpoint()
+    return refused(lambda: ask_delta(ledger, foreign, context=MIDDLE_CTX, decision_digest=subject_digest({})), ledger_state(ledger))
 
 
 def a_stale_lock_result_is_rested_on() -> List[str]:
@@ -761,17 +836,39 @@ class AlwaysEqual:
     __hash__ = None  # type: ignore[assignment]
 
 
-def a_complete_rewrite_against_an_empty_checkpoint() -> List[str]:
-    """Row 11b. A different run is rewritten completely (the WELL run: every content, the ledger itself) and verified against
-    a checkpoint of length 0, which fits every self-consistent ledger. Delta refuses to issue a receipt against it."""
+def rewrite_the_run_completely(honest_checkpoint_is_stale: bool = True) -> Dict[str, Any]:
+    """Row 11. A real rewrite: the run was SICK and its ledger entry and four exports are replaced, in place, by another
+    history's (the WELL run under the same context): the same ledger object now holds different entries and head, and every
+    export describes the new history and chains. The ledger's own chain still verifies, so only a checkpoint held outside
+    can tell. The checkpoint the original run left is checked to be refused for the rewrite (it is stale), so the rewrite is
+    shown to be a rewrite and not a second honest run."""
+    p = stages(SICK)
+    original = p["checkpoint"]
     q = stages(WELL)
+    p["ledger"].entries[:] = list(q["ledger"].entries)
+    p["ledger"].chain_head = q["ledger"].chain_head
+    p.update(alpha=q["alpha"], zeta=q["zeta"], beta=q["beta"], delta=q["delta"])
+    if not p["ledger"].verify_chain_integrity():
+        raise AssertionError("the rewritten ledger is expected to verify on its own chain: that is what a rewrite does")
+    receipt, why = chain_receipt({**p, "checkpoint": original})
+    if receipt is not None:
+        raise AssertionError("delta accepted the checkpoint of the original history for the rewritten ledger")
+    if "wrong-ledger checkpoint" not in why:
+        raise AssertionError(f"the original checkpoint was refused, but not as one naming no entry of the rewrite: {why}")
+    return p
+
+
+def a_complete_rewrite_against_an_empty_checkpoint() -> List[str]:
+    """Row 11b. The run is rewritten completely (ledger and exports) and verified against a checkpoint of length 0, which
+    fits every self-consistent ledger. Delta refuses to issue a receipt against it."""
+    q = rewrite_the_run_completely()
     q["checkpoint"] = LedgerCheckpoint(0, DecisionLedger().chain_head)
     return check(q)
 
 
 def a_complete_rewrite_against_a_checkpoint_head_that_equals_everything() -> List[str]:
     """Row 11c. The same rewrite verified against a checkpoint whose head is an object whose __eq__ is always true."""
-    q = stages(WELL)
+    q = rewrite_the_run_completely()
     q["checkpoint"] = LedgerCheckpoint(1, AlwaysEqual())  # type: ignore[arg-type]
     return check(q)
 
@@ -952,8 +1049,8 @@ def connectors_agree_with_cns_on_what_a_context_is() -> List[str]:
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
-#: Per scenario: (name, how to run it, what it must produce). A plain string is the older, looser form (see spine_oracle).
-SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
+#: Per scenario: (name, how to run it, what it must produce: an Expect). Anything else fails when the table loads.
+SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("a sick patient, end to end", lambda: clean(SICK), CLEAN),
     ("a well patient, end to end", lambda: clean(WELL), CLEAN),
     ("different runs have different roots", two_runs_have_different_roots, CLEAN),
@@ -1049,7 +1146,15 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
                            # there is no ledger and no checkpoint behind an invented run, so no receipt can be asked for
                            "delta issued no verification receipt: this scenario holds no checkpoint"))),
     ("strict: a ledger truncated with its head reset", a_ledger_truncated_with_its_head_reset,
-     Expect("refused", required=("not contained in this ledger, so no receipt is issued",), raises=("ValueError",))),
+     Expect("refused", required=("cause: ledger shorter than the checkpoint: it holds 2 entries and the checkpoint covers 3",),
+            raises=("ValueError",))),
+    ("strict: a ledger rolled back without resetting its head", a_ledger_rolled_back_without_resetting_its_head,
+     Expect("refused", required=("the ledger's chain does not verify, so no receipt is issued", "cause: ledger's own chain check fails"),
+            raises=("ValueError",))),
+    ("strict: an empty checkpoint against an honest ledger", an_empty_checkpoint_against_an_honest_ledger,
+     Expect("refused", required=("cause: empty checkpoint: length 0",), raises=("ValueError",))),
+    ("strict: a checkpoint taken from another ledger", a_checkpoint_taken_from_another_ledger,
+     Expect("refused", required=("cause: wrong-ledger checkpoint: its head names no entry of this ledger",), raises=("ValueError",))),
     ("strict: a lock result zeta refused as stale is rested on", a_stale_lock_result_is_rested_on,
      Expect("problems", required=("zeta lock sepsis_lock was refused as stale", "zeta lock abnormal_vitals_lock was refused as stale"))),
     ("strict: a lock result is filed under another lock's id", a_lock_result_filed_under_another_locks_id,
@@ -1132,11 +1237,13 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
      Expect("problems", required=("chain_verified is a bare assertion and is not evidence; pass chain= a delta verification receipt",),
             allowed_extra=(CHAIN_NOT_SHOWN,))),
     ("strict: a complete rewrite against an empty checkpoint", a_complete_rewrite_against_an_empty_checkpoint,
-     Expect("problems", required=("delta issued no verification receipt: ValueError: the checkpoint is empty, foreign, mistyped or not contained",),
+     Expect("problems", required=("delta issued no verification receipt: ValueError: the checkpoint is empty, foreign, mistyped or not contained",
+                                  "cause: empty checkpoint: length 0"),
             allowed_extra=(CHAIN_NOT_SHOWN,))),
     ("strict: a complete rewrite against a checkpoint head that equals everything",
      a_complete_rewrite_against_a_checkpoint_head_that_equals_everything,
-     Expect("problems", required=("delta issued no verification receipt: ValueError: the checkpoint is empty, foreign, mistyped or not contained",),
+     Expect("problems", required=("delta issued no verification receipt: ValueError: the checkpoint is empty, foreign, mistyped or not contained",
+                                  "cause: mistyped checkpoint"),
             allowed_extra=(CHAIN_NOT_SHOWN,))),
     ("strict: the identical Decision replayed under a fresh event and run", the_identical_decision_replayed_under_a_fresh_event_and_run,
      Expect("refused", required=("replay: this Decision is already recorded",), raises=("DuplicateRecordError",))),
@@ -1163,6 +1270,9 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expectation]] = [
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
 ]
+
+
+check_table(SCENARIOS)  # a row that is not (name, scenario, Expect), or a repeated name, stops the script before it runs
 
 
 def main() -> int:

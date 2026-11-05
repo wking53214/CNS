@@ -1,8 +1,9 @@
 """The oracle behind `spine_run.py`: what a scenario must produce, and how a result is judged against it.
 
 This module imports no component repository, so its own tests can run in the CNS suite. `spine_run.py` imports it
-(`Expect`, `refused`, `judge`); a scenario's third element is an `Expect`, or a plain `str` (the older, looser form:
-"" means no problems, otherwise some problem contains the text).
+(`Expect`, `refused`, `judge`, `check_table`); a scenario's third element is an `Expect` and nothing else. The older
+plain-string form ("" meant no problems, otherwise some problem contained the text) is gone: it passed a scenario for any
+unrelated problem that happened to contain the text, so a `str` is a TypeError when the table is loaded.
 
 An `Expect` says which of four things the scenario must do:
   clean     it returns no problems (a check that holds).
@@ -18,7 +19,7 @@ An `Expect` says which of four things the scenario must do:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 OUTCOMES = ("clean", "problems", "refused", "gap")
 STATE_CHANGED = "state changed after refusal"
@@ -47,7 +48,7 @@ class Expect:
             raise ValueError("only a refused Expect may name the exceptions it accepts")
 
 
-Expectation = Union[str, Expect]
+Expectation = Expect
 CAUGHT = (ValueError, TypeError, OverflowError)
 
 
@@ -69,18 +70,34 @@ def refused(thunk: Callable[[], Any], *, catch: Tuple[type, ...] = (), state: Op
     return []
 
 
-def judge(expect: Expectation, scenario: Callable[[], List[str]]) -> Tuple[List[str], List[str]]:
+def check_table(table: Sequence[Tuple[Any, ...]]) -> None:
+    """Refuse a scenario table that is not (name, callable, Expect) rows, with unique names. Called when the table loads."""
+    seen = set()
+    for row in table:
+        if not isinstance(row, tuple) or len(row) != 3:
+            raise TypeError(f"a scenario is (name, scenario, Expect); got {row!r}")
+        name, scenario, expect = row
+        if not isinstance(name, str) or not name:
+            raise TypeError(f"a scenario name must be a non-empty str; got {name!r}")
+        if not callable(scenario):
+            raise TypeError(f"scenario {name!r} must be callable")
+        if not isinstance(expect, Expect):
+            raise TypeError(f"scenario {name!r} must declare an Expect, not {type(expect).__name__}: a plain string "
+                            "expectation is no longer accepted")
+        if name in seen:
+            raise ValueError(f"scenario name {name!r} appears twice")
+        seen.add(name)
+
+
+def judge(expect: Expect, scenario: Callable[[], List[str]]) -> Tuple[List[str], List[str]]:
     """Run a scenario and return (problems it produced, reasons it failed). No reasons means it passed."""
+    if not isinstance(expect, Expect):
+        raise TypeError(f"a scenario must declare an Expect, not {type(expect).__name__}")
     raised: Optional[BaseException] = None
     try:
         found = list(scenario())
     except Exception as exc:  # noqa: BLE001 - a scenario that crashes is judged, not propagated
         raised, found = exc, [f"{type(exc).__name__}: {exc}"]
-    if isinstance(expect, str):
-        if raised is not None:
-            return found, [f"the scenario raised {found[0]}"]
-        ok = (not found) if not expect else any(expect in p for p in found)
-        return found, [] if ok else [f"wanted {'no problems' if not expect else expect!r}"]
     why: List[str] = []
     if raised is not None:
         if expect.outcome != "refused" or type(raised).__name__ not in expect.raises:
