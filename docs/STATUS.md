@@ -3,6 +3,11 @@
 As of 2026-11-06, CNS `main` is at 032ed5a and the `v2.3.0` tag (2026-10-30) is newer than this page's last refresh. The
 pins, CI runs and versions below describe the state on 2026-10-30 (CNS `v2.2.0`) and were not re-measured against `v2.3.0`.
 
+Several files named in the Stage sections and the defects list are not in this repository: `STACK.md`, `setup.py`,
+`judge/cns_connector.py`, and the `tests/` files `test_pins.py`, `test_warden_e2e.py`, `test_docs.py`,
+`test_owner_rulings.py`, `test_claimed_removal.py`, `test_ghost_baseline.py` and `test_readme_ledger.py`. They belong to
+the sibling repositories in the Heads table. Their changes are recorded here, and the sibling repositories hold the files.
+
 Written 2026-10-23 (when the circuit was eight repositories), corrected 2026-10-24 after the round-6 audit, heads and summary refreshed 2026-10-30 (four times: the pin move to `v2.2.0`, the Warden 0.16.2 fix, the Stage 4 fix wave after the round-7 audit, then the Stage 5 fix wave after the round-8 audit). Every number here comes from a named run, test or CI
 job. Where something was not measured, it says so. The round-6 audit's scores are not recorded here; what it reproduced is
 under "Known open defects". The round-8 scores are in the "Round 8" section.
