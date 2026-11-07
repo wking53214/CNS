@@ -1,5 +1,13 @@
 # Status of the five-repository circuit, and the three repositories released from it
 
+As of 2026-11-06, CNS `main` is at 032ed5a and the `v2.3.0` tag (2026-10-30) is newer than this page's last refresh. The
+pins, CI runs and versions below describe the state on 2026-10-30 (CNS `v2.2.0`) and were not re-measured against `v2.3.0`.
+
+Several files named in the Stage sections and the defects list are not in this repository: `STACK.md`, `setup.py`,
+`judge/cns_connector.py`, and the `tests/` files `test_pins.py`, `test_warden_e2e.py`, `test_docs.py`,
+`test_owner_rulings.py`, `test_claimed_removal.py`, `test_ghost_baseline.py` and `test_readme_ledger.py`. They belong to
+the sibling repositories in the Heads table. Their changes are recorded here, and the sibling repositories hold the files.
+
 Written 2026-10-23 (when the circuit was eight repositories), corrected 2026-10-24 after the round-6 audit, heads and summary refreshed 2026-10-30 (four times: the pin move to `v2.2.0`, the Warden 0.16.2 fix, the Stage 4 fix wave after the round-7 audit, then the Stage 5 fix wave after the round-8 audit). Every number here comes from a named run, test or CI
 job. Where something was not measured, it says so. The round-6 audit's scores are not recorded here; what it reproduced is
 under "Known open defects". The round-8 scores are in the "Round 8" section.
@@ -57,7 +65,7 @@ not in the audited commit b57b81e; the `.git/info/exclude` case is a known open 
 | The five circuit repositories install together, pip is satisfied, exactly one `cns` is installed, every shared pin agrees (the three released repositories' pins too) | CNS `stack` job (run 41052312277) at CNS commit c7159ef, plus `seat_pins --consumers`, `cns_versions --consumers --spelling tag`, `install_stack --check`, `repin --check`, same job |
 | The whole circuit ends ACCEPT on a throwaway target, through the claim seat, with no Drafter and no Burnish | `circuit_canary`, same `stack` job |
 | The circuit refuses a dirty member, an omitted seat, a short, uppercase or wrong pin, hidden git changes, a red suite, a seat the manifest names that the folder lacks, and a Burnish or a Drafter checkout the manifest does not name | `circuit_refusals`, 16 of 16 refused at Warden 0.16.4 (17 of 17 at 0.16.5: Stage 6 adds `omitted_warden`), same `stack` job (Stage 4 added three cases that supply the seat through `--claim-diff`, `--drafter` and `--finisher`, and every roster case requires the reason to name the seat; Stage 5 numbers the throwaway folders so a case name cannot reach a reason, and a seat counts as named only outside a path) |
-| CNS's own suite | 1176 passed, 0 skipped at c7159ef's tree, a local run on Python 3.12; CNS `ci` run 41052312299 (Python 3.10 to 3.13, packaging) |
+| CNS's own suite | 1176 passed, 0 skipped at c7159ef's tree, a local run on Python 3.12; CNS `ci` run 41052312299 (Python 3.10 to 3.13, packaging). On `main` at 032ed5a (local run 2026-11-06, Python 3.13): 2907 passed, 1 skipped. The skip is the optional `anthropic` extra, which that local environment does not install |
 | Each repository's own suite and lint | the CI runs in the table below, all jobs green |
 
 ## Heads and their CI (all on branch `claude/horsemen-production-status-5wsndb`)
