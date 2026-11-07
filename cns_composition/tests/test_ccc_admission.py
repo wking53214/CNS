@@ -140,3 +140,18 @@ def test_nothing_is_cached_between_questions():
     lookup.answer = "erased"
     assert gate.check(ITEM).outcome is GateOutcome.TERMINAL_BREACH
     assert len(lookup.asked) == 2
+
+
+@pytest.mark.parametrize("answer, says", [
+    ("rejected", "rejected"),
+    ("superseded", "newer version"),
+    ("unattested", "stamp"),
+])
+def test_ccc_answers_added_after_this_gate_are_breaches_that_say_why(answer, says):
+    """CCC added these answers later (CCC-001, CCC-002). They were already breaches as unrecognised answers; each
+    now says what happened instead."""
+    result = CccRecordGate(Lookup(answer)).check(ITEM)
+    assert result.outcome is GateOutcome.TERMINAL_BREACH
+    assert says in result.reason and "unrecognised" not in result.reason
+    with pytest.raises(UnrecordedTriadOutput):
+        admit(ITEM, Lookup(answer))

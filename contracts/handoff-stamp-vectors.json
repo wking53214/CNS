@@ -1,0 +1,27 @@
+{
+  "schema": "cns-handoff-stamp-vectors/1",
+  "about": "The stamp a machine handoff writes into a CCC record (ccc.record_status.attest) and CNS checks (cns_composition.ccc_admission.handoff_stamp): HMAC-SHA256, untruncated, keyed by the caller's key, over the JSON array [\"ccc.handoff.v1\", source, candidate_id, text_digest] with no spaces. Generated with CCC's attest; both repositories test against these rows, so neither can drift alone.",
+  "vectors": [
+    {
+      "key_hex": "6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b",
+      "source": "triad42",
+      "candidate_id": "c1",
+      "text_digest": "62ca455b11af102cd3fde6a6cd53bddcaca778f1921b3fb976c54231789900eb",
+      "stamp": "cbf2bc4f43f68e488110a7a4a188c3ad68f386d26717179f4a32d320bdbd3c69"
+    },
+    {
+      "key_hex": "000102030405060708090a0b0c0d0e0f",
+      "source": "triad42",
+      "candidate_id": "pass-3:finding-12",
+      "text_digest": "2c734dcb72d632f6f8b22951ddf376ded8aec5f3ff1dafeb0caadf2a97f3cb53",
+      "stamp": "5eef6a26cccffa78d4f63c2df4928cd058754d7496e5821d1d97b002a2adc03b"
+    },
+    {
+      "key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "source": "other-model",
+      "candidate_id": "id with spaces and \"quotes\"",
+      "text_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stamp": "5dfc8a0b363caa2413f3c682afeadc911c13ed3b477512ea87150b2e5a14f27b"
+    }
+  ]
+}

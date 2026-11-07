@@ -1,0 +1,39 @@
+diff --git a/README.md b/README.md
+index 17bf040..6e834be 100644
+--- a/README.md
++++ b/README.md
+@@ -220,3 +220,34 @@ observe-perceive / sentinel_os  ✗ not imported
+ ```
+ 
+ Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 William N. King. See `docs/WIZZLE_INTEGRATION.md`, `docs/CONTINUOUS_IMPROVEMENT.md`.
++
++<!-- burnish:begin claims-vs-reality -->
++## Measured facts (generated)
++
++- Warden ran the target's suite at the end of the loop: green; nothing failed or errored; some tests were skipped or expected to fail.
++- README claim (pin): The README says something is pinned, but pyproject.toml pins no git dependency. [disagrees]
++- README claim (dependencies): The README says there are no dependencies beyond the ones it names, but the tree also has: ghost-buster (imported in the code, not declared), libcst (imported in the code, not declared), pydantic (imported in the code, not declared), warden (imported in the code, not declared). [disagrees]
++- README claim (dependencies): The README says there are no dependencies beyond the ones it names, but the tree also has: ghost-buster (imported in the code, not declared), libcst (imported in the code, not declared), pydantic (imported in the code, not declared), warden (imported in the code, not declared). [disagrees]
++- `CNS is referenced`: A CNS mention is not proof of a correct seam. Subject binding is UNKNOWN until inspected. [implemented]
++- No test-count claims found in the README.
++
++Critic: **This isn't good enough yet.**
++
++- Ghost Tools still reports findings of these kinds: assertless_test, boundary, dead_code, dead_end_call, doc_test_count_drift, intra_function_duplicate_block, long_function, loop_invariant_call, name_disagreement, near_duplicate_function, swallowed_exception, unmerged_branch, unreachable_declared_state. Converged means no fixes were left to propose, not that Ghost is silent.
++- Unsupported: The README says something is pinned, but pyproject.toml pins no git dependency.
++- Unsupported: The README says there are no dependencies beyond the ones it names, but the tree also has: ghost-buster (imported in the code, not declared), libcst (imported in the code, not declared), pydantic (imported in the code, not declared), warden (imported in the code, not declared).
++- Unsupported: The README says there are no dependencies beyond the ones it names, but the tree also has: ghost-buster (imported in the code, not declared), libcst (imported in the code, not declared), pydantic (imported in the code, not declared), warden (imported in the code, not declared).
++- Unknown: Finished means the loop had no proposals left, not that Ghost is silent.
++- Unknown: Whether any CNS digest here is the CNS canonical digest.
++
++README critic, on the README as it stood going into the finish:
++
++- \[RM-ONELINER\] It never says what the project is in one plain sentence. (there is no sentence under the title)
++- \[RM-USAGE\] A reader cannot tell how to use it. (no section matching /usage\|quick ?start\|example\|getting started/)
++- \[RM-LICENSE\] A reader cannot tell whether they may use it. (no License section)
++- \[RM-CONTRIB\] Nobody can tell if help is wanted. (no Contributing section)
++- \[RM-SUPPORT\] A stuck reader has nowhere to go. (no place to ask for help)
++- \[RM-TOC\] It is long and offers no way through.
++- \[RM-FENCES\] Code is shown unhighlighted.
++- \[RM-EXAMPLES\] No example a reader can run. (no runnable examples are linked)
++<!-- burnish:end -->

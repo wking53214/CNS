@@ -1,0 +1,3538 @@
+{
+  "baseline": {
+    "path": null,
+    "suppressed": 0
+  },
+  "error": null,
+  "exit_code": 1,
+  "findings": [
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/quorum_state_governance_source.py",
+        "file": "specimens/pairs/quorum_state_governance_source.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.203732+00:00",
+      "id": "ghost-a64142279a98",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/pairs/quorum_state_governance_source.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_source.py",
+        "file": "specimens/pairs/solvar_stability_governance_source.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.204151+00:00",
+      "id": "ghost-0ca3edc8a558",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/pairs/solvar_stability_governance_source.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/sre-system-resilience-evaluator-flattened.py",
+        "file": "specimens/pairs/sre-system-resilience-evaluator-flattened.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.204444+00:00",
+      "id": "ghost-c02fe50db7bb",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/pairs/sre-system-resilience-evaluator-flattened.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/vanguard-behavioral-simulation-flattened.py",
+        "file": "specimens/pairs/vanguard-behavioral-simulation-flattened.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.204691+00:00",
+      "id": "ghost-932bc27ab765",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/pairs/vanguard-behavioral-simulation-flattened.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/progressions/uztc/uztc-construct-v1.0-flattened.py",
+        "file": "specimens/progressions/uztc/uztc-construct-v1.0-flattened.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.204935+00:00",
+      "id": "ghost-ec3ef8519c89",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/progressions/uztc/uztc-construct-v1.0-flattened.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_1.py",
+        "file": "specimens/reference/secure/artifact_1.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.205272+00:00",
+      "id": "ghost-b7345901fc25",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/reference/secure/artifact_1.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/wrapper/artifact_1.py",
+        "file": "specimens/reference/wrapper/artifact_1.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.205577+00:00",
+      "id": "ghost-89415225ce45",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/reference/wrapper/artifact_1.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/wrapper/artifact_2.py",
+        "file": "specimens/reference/wrapper/artifact_2.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.205825+00:00",
+      "id": "ghost-6f7e6137cf44",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/reference/wrapper/artifact_2.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/superseded/citadel-processor-router-flattened.py",
+        "file": "specimens/superseded/citadel-processor-router-flattened.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.206098+00:00",
+      "id": "ghost-9e21d77411ff",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/superseded/citadel-processor-router-flattened.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "This is an ABSTENTION, not a clean result. The file was counted in the scan total and contributed nothing to it: dead code, duplication, long functions and every other AST check silently passed over it, and without this finding the output would be identical to a file that was checked and found fine.\n\nUsual causes, in order: the file is genuinely broken right now (a syntax error, or conflict markers that also break parsing); it targets a different Python version than the interpreter running the scan; or it is a template with placeholders rather than real source. The first is urgent. The third is worth excluding by name so the abstention stops being reported.",
+      "detector": "unassessable_file",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/superseded/ure-universal-resilience-engine-flattened.py",
+        "file": "specimens/superseded/ure-universal-resilience-engine-flattened.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.206503+00:00",
+      "id": "ghost-b1938ef7a19a",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/superseded/ure-universal-resilience-engine-flattened.py could not be parsed, so every structural detector skipped it (SyntaxError at line 1: invalid syntax)"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "function",
+        "line_end": "1058",
+        "line_start": "1055",
+        "name": "_text",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": 1058,
+        "line_start": 1055,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.929847+00:00",
+      "id": "ghost-fd11296145f7",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'_text' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "no",
+        "kind": "function",
+        "line_end": "38",
+        "line_start": "35",
+        "name": "execute"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/eddp-pipeline-core-simple.recovered.py",
+        "file": "recovered-originals/eddp-pipeline-core-simple.recovered.py",
+        "line_end": 38,
+        "line_start": 35,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.930155+00:00",
+      "id": "ghost-f1321cfbf764",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'execute' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "no",
+        "kind": "function",
+        "line_end": "375",
+        "line_start": "362",
+        "name": "execute_simulation"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/quorum_state_governance_source.recovered.py",
+        "file": "recovered-originals/quorum_state_governance_source.recovered.py",
+        "line_end": 375,
+        "line_start": 362,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.930473+00:00",
+      "id": "ghost-8157e77bf977",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'execute_simulation' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "373",
+        "line_start": "350",
+        "name": "LedgerRebuildBuilder",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 373,
+        "line_start": 350,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.930687+00:00",
+      "id": "ghost-1e465e0aba4f",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'LedgerRebuildBuilder' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "382",
+        "line_start": "358",
+        "name": "LedgerRebuildBuilder",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_cleanup.py",
+        "file": "specimens/pairs/solvar_stability_governance_cleanup.py",
+        "line_end": 382,
+        "line_start": 358,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.930868+00:00",
+      "id": "ghost-4f999a7a2b9d",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'LedgerRebuildBuilder' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "514",
+        "line_start": "430",
+        "name": "BasePredictiveBehaviorModel",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 514,
+        "line_start": 430,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.931080+00:00",
+      "id": "ghost-dd7a96189dda",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'BasePredictiveBehaviorModel' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "575",
+        "line_start": "448",
+        "name": "BasePredictiveBehaviorModel",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_cleanup.py",
+        "file": "specimens/pairs/solvar_stability_governance_cleanup.py",
+        "line_end": 575,
+        "line_start": 448,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.931255+00:00",
+      "id": "ghost-1d9b8241130d",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'BasePredictiveBehaviorModel' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "765",
+        "line_start": "649",
+        "name": "SOLVARSystemKernel",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 765,
+        "line_start": 649,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.931481+00:00",
+      "id": "ghost-640c26c6e75e",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'SOLVARSystemKernel' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "879",
+        "line_start": "738",
+        "name": "SOLVARSystemKernel",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_cleanup.py",
+        "file": "specimens/pairs/solvar_stability_governance_cleanup.py",
+        "line_end": 879,
+        "line_start": 738,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.931656+00:00",
+      "id": "ghost-9465acd6ca6d",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'SOLVARSystemKernel' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "798",
+        "line_start": "772",
+        "name": "TelemetryDashboardVisualizer",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 798,
+        "line_start": 772,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.931843+00:00",
+      "id": "ghost-4e5d221f625d",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'TelemetryDashboardVisualizer' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "917",
+        "line_start": "886",
+        "name": "TelemetryDashboardVisualizer",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_cleanup.py",
+        "file": "specimens/pairs/solvar_stability_governance_cleanup.py",
+        "line_end": 917,
+        "line_start": 886,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.932015+00:00",
+      "id": "ghost-eaa22f58c5cd",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'TelemetryDashboardVisualizer' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "836",
+        "line_start": "805",
+        "name": "HorizonForecastingEngine",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 836,
+        "line_start": 805,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.932218+00:00",
+      "id": "ghost-c5d9a3ac5e36",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'HorizonForecastingEngine' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "961",
+        "line_start": "924",
+        "name": "HorizonForecastingEngine",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_cleanup.py",
+        "file": "specimens/pairs/solvar_stability_governance_cleanup.py",
+        "line_end": 961,
+        "line_start": 924,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.932425+00:00",
+      "id": "ghost-d99da5a8c4dc",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'HorizonForecastingEngine' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "856",
+        "line_start": "843",
+        "name": "SystemPerformanceBenchmark",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 856,
+        "line_start": 843,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.932640+00:00",
+      "id": "ghost-187b0a18b4d7",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'SystemPerformanceBenchmark' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "990",
+        "line_start": "968",
+        "name": "SystemPerformanceBenchmark",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_cleanup.py",
+        "file": "specimens/pairs/solvar_stability_governance_cleanup.py",
+        "line_end": 990,
+        "line_start": 968,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.932820+00:00",
+      "id": "ghost-43b59d666bc9",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'SystemPerformanceBenchmark' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "198",
+        "line_start": "163",
+        "name": "OperationalLoadPipeline",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/sre_system_resilience_evaluator_adapter.py",
+        "file": "specimens/pairs/sre_system_resilience_evaluator_adapter.py",
+        "line_end": 198,
+        "line_start": 163,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.933053+00:00",
+      "id": "ghost-81412911aaa7",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'OperationalLoadPipeline' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "24",
+        "line_start": "1",
+        "name": "Universal_Zero_Trust_Construct",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/progressions/uztc/uztc-construct-v1.1-purged.py",
+        "file": "specimens/progressions/uztc/uztc-construct-v1.1-purged.py",
+        "line_end": 24,
+        "line_start": 1,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.933244+00:00",
+      "id": "ghost-079f6b561e10",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'Universal_Zero_Trust_Construct' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "21",
+        "line_start": "1",
+        "name": "Universal_Zero_Trust_Construct",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/progressions/uztc/uztc-construct-v1.2-validated.py",
+        "file": "specimens/progressions/uztc/uztc-construct-v1.2-validated.py",
+        "line_end": 21,
+        "line_start": 1,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.933492+00:00",
+      "id": "ghost-8c67084a85cf",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'Universal_Zero_Trust_Construct' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "function",
+        "line_end": "58",
+        "line_start": "50",
+        "name": "initialize_full_agent_array",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/agent-factory-tactical-agents.py",
+        "file": "specimens/reference/agent-factory-tactical-agents.py",
+        "line_end": 58,
+        "line_start": 50,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.933703+00:00",
+      "id": "ghost-2c5703392923",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'initialize_full_agent_array' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "103",
+        "line_start": "60",
+        "name": "SystemicTrajectoryRegistry",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/code-repo-governance-and-gsa-core.py",
+        "file": "specimens/reference/code-repo-governance-and-gsa-core.py",
+        "line_end": 103,
+        "line_start": 60,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.933891+00:00",
+      "id": "ghost-d151b75b815f",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'SystemicTrajectoryRegistry' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "158",
+        "line_start": "118",
+        "name": "EvolutionaryRecursionEngine",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/code-repo-governance-and-gsa-core.py",
+        "file": "specimens/reference/code-repo-governance-and-gsa-core.py",
+        "line_end": 158,
+        "line_start": 118,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.934087+00:00",
+      "id": "ghost-bb8818eea29d",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'EvolutionaryRecursionEngine' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {
+        "dynamic_lookup_count": "12",
+        "dynamic_lookup_possible": "yes",
+        "framework_hook": "yes",
+        "kind": "class",
+        "line_end": "199",
+        "line_start": "160",
+        "name": "ConstitutionalGovernorLayer",
+        "referenced_by": "named as a string in .ghost_baseline.json"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "No ast.Name, ast.Attribute, or string-subscript-key node anywhere in the scanned files resolves to this identifier. Scope limit: getattr-by-string and decorator-based registration are still not traced, so this can false-positive on names only reached that way -- confirm before deleting.",
+      "detector": "dead_code",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/code-repo-governance-and-gsa-core.py",
+        "file": "specimens/reference/code-repo-governance-and-gsa-core.py",
+        "line_end": 199,
+        "line_start": 160,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.934271+00:00",
+      "id": "ghost-2c3717dec8ea",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'ConstitutionalGovernorLayer' is defined but never referenced anywhere in the scanned set"
+    },
+    {
+      "attributes": {},
+      "category": "complexity",
+      "confidence": null,
+      "detail": "Line-count proxy for the 'Long Method' smell, not true cyclomatic complexity -- a long function that's mostly a flat sequence of simple statements is a weaker signal than a short function with deep branching. Treat as a prompt to look, not a verdict.",
+      "detector": "long_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": 1016,
+        "line_start": 880,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.941379+00:00",
+      "id": "ghost-c4489a06f4ba",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'_run' spans 136 lines (threshold 80)"
+    },
+    {
+      "attributes": {},
+      "category": "complexity",
+      "confidence": null,
+      "detail": "Line-count proxy for the 'Long Method' smell, not true cyclomatic complexity -- a long function that's mostly a flat sequence of simple statements is a weaker signal than a short function with deep branching. Treat as a prompt to look, not a verdict.",
+      "detector": "long_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": 556,
+        "line_start": 442,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.946726+00:00",
+      "id": "ghost-e836412ebfe5",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'failure_modes_phase' spans 114 lines (threshold 80)"
+    },
+    {
+      "attributes": {},
+      "category": "complexity",
+      "confidence": null,
+      "detail": "Line-count proxy for the 'Long Method' smell, not true cyclomatic complexity -- a long function that's mostly a flat sequence of simple statements is a weaker signal than a short function with deep branching. Treat as a prompt to look, not a verdict.",
+      "detector": "long_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": 946,
+        "line_start": 862,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:10.946999+00:00",
+      "id": "ghost-646bbc0746aa",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'registry_checks' spans 84 lines (threshold 80)"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 200,
+        "line_start": 183,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.123567+00:00",
+      "id": "ghost-7edd13b15000",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:183:project_trajectory, solvar_stability_governance_cleanup.py:185:project_trajectory"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 294,
+        "line_start": 258,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.124040+00:00",
+      "id": "ghost-cb330a2383f1",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:258:summarize_population, solvar_stability_governance_cleanup.py:263:summarize_population"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 413,
+        "line_start": 382,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.124270+00:00",
+      "id": "ghost-53e9c855acff",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:382:apply_modifications, solvar_stability_governance_cleanup.py:392:apply_modifications"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 471,
+        "line_start": 432,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.124547+00:00",
+      "id": "ghost-736b97a9169c",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:432:project_metrics_degradation, solvar_stability_governance_cleanup.py:451:project_metrics_degradation"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 558,
+        "line_start": 532,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.124752+00:00",
+      "id": "ghost-e9a125ed4b09",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:532:calculate_system_energy, solvar_stability_governance_cleanup.py:594:calculate_system_energy"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 625,
+        "line_start": 609,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.124982+00:00",
+      "id": "ghost-67169c78c475",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:609:evaluate_policy_constraints, solvar_stability_governance_cleanup.py:690:evaluate_policy_constraints"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 692,
+        "line_start": 681,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.125238+00:00",
+      "id": "ghost-068b7fdf8ec7",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:681:execute_simulation, solvar_stability_governance_cleanup.py:769:execute_simulation"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 752,
+        "line_start": 715,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.126765+00:00",
+      "id": "ghost-d4523deadc3f",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:715:evaluate_operational_state, solvar_stability_governance_cleanup.py:817:evaluate_operational_state"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 765,
+        "line_start": 754,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.127082+00:00",
+      "id": "ghost-b5441feb0a7c",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:754:generate_system_advisory, solvar_stability_governance_cleanup.py:868:generate_system_advisory"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 798,
+        "line_start": 786,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.127339+00:00",
+      "id": "ghost-5adfdc48ec42",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:786:output_classification_plot, solvar_stability_governance_cleanup.py:903:output_classification_plot"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": 836,
+        "line_start": 810,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.127587+00:00",
+      "id": "ghost-cb4db853846f",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): solvar_stability_governance_source.recovered.py:810:generate_horizon_forecast, solvar_stability_governance_cleanup.py:932:generate_horizon_forecast"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/governance_os_security_adapter.py",
+        "file": "specimens/pairs/governance_os_security_adapter.py",
+        "line_end": 88,
+        "line_start": 74,
+        "related_files": [
+          "specimens/pairs/governance_os_security_adapter.py",
+          "specimens/pairs/governance_os_security_adapter.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.127802+00:00",
+      "id": "ghost-6b83221c6b7e",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "3 functions share identical AST structure (names/literals differ, control flow and shape don't): governance_os_security_adapter.py:74:process, governance_os_security_adapter.py:95:process, governance_os_security_adapter.py:116:process"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/code-repo-governance-and-gsa-core.py",
+        "file": "specimens/reference/code-repo-governance-and-gsa-core.py",
+        "line_end": 248,
+        "line_start": 232,
+        "related_files": [
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.128075+00:00",
+      "id": "ghost-e1f6322f28b4",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): code-repo-governance-and-gsa-core.py:232:compute_state_signature, artifact_3.py:398:compute_state_signature"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py",
+        "file": "specimens/reference/secure/artifact_2.py",
+        "line_end": 223,
+        "line_start": 208,
+        "related_files": [
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.129106+00:00",
+      "id": "ghost-aeefd178744a",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): artifact_2.py:208:_execute_with_retry, artifact_3.py:234:_execute_with_retry"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py",
+        "file": "specimens/reference/secure/artifact_2.py",
+        "line_end": 273,
+        "line_start": 225,
+        "related_files": [
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.129529+00:00",
+      "id": "ghost-b0c3169d7dbc",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): artifact_2.py:225:run, artifact_3.py:251:run"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py",
+        "file": "specimens/reference/secure/artifact_2.py",
+        "line_end": 376,
+        "line_start": 348,
+        "related_files": [
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.129790+00:00",
+      "id": "ghost-604f9980d43d",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): artifact_2.py:348:process_payload, artifact_3.py:454:process_payload"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match, not textual diff -- this is the 'copy-pasted then renamed' shape specifically. Confirm these are actually solving the same problem before merging; some structural matches are coincidental (e.g. two unrelated simple validators).",
+      "detector": "near_duplicate_function",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py",
+        "file": "specimens/reference/secure/artifact_2.py",
+        "line_end": 398,
+        "line_start": 383,
+        "related_files": [
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.130043+00:00",
+      "id": "ghost-b0bfdd64170b",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "2 functions share identical AST structure (names/literals differ, control flow and shape don't): artifact_2.py:383:execute_interlock, artifact_3.py:489:execute_interlock"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+      "detector": "intra_function_duplicate_block",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py",
+        "file": "assay_production/manifest_registry.py",
+        "line_end": 541,
+        "line_start": 538,
+        "related_files": [
+          "assay_production/manifest_registry.py:544-547"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.152577+00:00",
+      "id": "ghost-d249087ef807",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'main' repeats the same 3-statement block 2 times (lines 538-541, 544-547): same shape, names/literals differ"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+      "detector": "intra_function_duplicate_block",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": 430,
+        "line_start": 430,
+        "related_files": [
+          "assay_production/sandbox.py:432-432"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.177027+00:00",
+      "id": "ghost-68a063cd41a7",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'problems' repeats the same single statement 2 times (lines 430-430, 432-432): same shape, names/literals differ"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+      "detector": "intra_function_duplicate_block",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": 706,
+        "line_start": 706,
+        "related_files": [
+          "assay_production/verification.py:710-710"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.211006+00:00",
+      "id": "ghost-7c94bab2756f",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'compare_block_to_table' repeats the same single statement 2 times (lines 706-706, 710-710): same shape, names/literals differ"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+      "detector": "intra_function_duplicate_block",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": 807,
+        "line_start": 807,
+        "related_files": [
+          "assay_production/verification.py:816-816"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.217540+00:00",
+      "id": "ghost-ada57f75e064-7183d3",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'prose_checks' repeats the same single statement 2 times (lines 807-807, 816-816): same shape, names/literals differ"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+      "detector": "intra_function_duplicate_block",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": 810,
+        "line_start": 808,
+        "related_files": [
+          "assay_production/verification.py:817-819"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.217831+00:00",
+      "id": "ghost-b3d43e36381b",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'prose_checks' repeats the same 3-statement block 2 times (lines 808-810, 817-819): same shape, names/literals differ"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+      "detector": "intra_function_duplicate_block",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": 808,
+        "line_start": 808,
+        "related_files": [
+          "assay_production/verification.py:817-817"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.218041+00:00",
+      "id": "ghost-ada57f75e064-7b2511",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'prose_checks' repeats the same single statement 2 times (lines 808-808, 817-817): same shape, names/literals differ"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+      "detector": "intra_function_duplicate_block",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/citadel_v1.2.py",
+        "file": "specimens/reference/citadel_v1.2.py",
+        "line_end": 97,
+        "line_start": 97,
+        "related_files": [
+          "specimens/reference/citadel_v1.2.py:102-102",
+          "specimens/reference/citadel_v1.2.py:107-107",
+          "specimens/reference/citadel_v1.2.py:128-128"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.283488+00:00",
+      "id": "ghost-42b08840bc14",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "'detect' repeats the same single statement 4 times (lines 97-97, 102-102, 107-107, 128-128): same shape, names/literals differ"
+    },
+    {
+      "attributes": {},
+      "category": "duplication",
+      "confidence": null,
+      "detail": "Structural fingerprint match within one function, not a whole-function match (near_duplicate_function's detection is blind to this shape). Typical real cause: several branches each hand-build the same kind of object or perform the same sequence of calls -- worth a single shared helper if the branches really are doing the same thing, not just a coincidental resemblance.",
+      "detector": "intra_function_duplicate_block",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/tests/test_verifier.py",
+        "file": "tests/test_verifier.py",
+        "line_end": 302,
+        "line_start": 302,
+        "related_files": [
+          "tests/test_verifier.py:304-304"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.364169+00:00",
+      "id": "ghost-6a90edfabfc5",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "'test_todo_count_matches_an_independent_count' repeats the same single statement 2 times (lines 302-302, 304-304): same shape, names/literals differ"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "tmp.\nAn `_old` beside a `_new` is two implementations sharing a scope, and a `_v2` is a decision nobody came back to. Neither is wrong on its own, which is why this is MINOR: it names where the code remembers being written rather than what it does.",
+      "detector": "placeholder_name",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.474620+00:00",
+      "id": "ghost-e88f283d76be",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "sandbox.py holds 1 placeholder or versioned name(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "state_copy.\nAn `_old` beside a `_new` is two implementations sharing a scope, and a `_v2` is a decision nobody came back to. Neither is wrong on its own, which is why this is MINOR: it names where the code remembers being written rather than what it does.",
+      "detector": "placeholder_name",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/quorum_state_governance_source.recovered.py",
+        "file": "recovered-originals/quorum_state_governance_source.recovered.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.490965+00:00",
+      "id": "ghost-5f911dc5b8ab",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "quorum_state_governance_source.recovered.py holds 1 placeholder or versioned name(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "state_copy.\nAn `_old` beside a `_new` is two implementations sharing a scope, and a `_v2` is a decision nobody came back to. Neither is wrong on its own, which is why this is MINOR: it names where the code remembers being written rather than what it does.",
+      "detector": "placeholder_name",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.495787+00:00",
+      "id": "ghost-4e6ee66f1dda",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "solvar_stability_governance_source.recovered.py holds 1 placeholder or versioned name(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "state_copy.\nAn `_old` beside a `_new` is two implementations sharing a scope, and a `_v2` is a decision nobody came back to. Neither is wrong on its own, which is why this is MINOR: it names where the code remembers being written rather than what it does.",
+      "detector": "placeholder_name",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_cleanup.py",
+        "file": "specimens/pairs/solvar_stability_governance_cleanup.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.506834+00:00",
+      "id": "ghost-2ce8fe9b1844",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "solvar_stability_governance_cleanup.py holds 1 placeholder or versioned name(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `before` is only ever passed a variable named `snap`, and `snap` is only ever passed to `before` -- 1 call site(s) in sandbox.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 813,
+        "related_files": [
+          "assay_production/sandbox.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.616191+00:00",
+      "id": "ghost-719498fd97cd",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`before` and `snap` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `capabilities` is only ever passed a variable named `caps`, and `caps` is only ever passed to `capabilities` -- 2 call site(s) in artifact_2.py, artifact_3.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py",
+        "file": "specimens/reference/secure/artifact_2.py",
+        "line_end": null,
+        "line_start": 45,
+        "related_files": [
+          "specimens/reference/secure/artifact_2.py",
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.616603+00:00",
+      "id": "ghost-f22b199786f1",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`capabilities` and `caps` are one value under two names, across 2 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `corpus_before` is only ever passed a variable named `before`, and `before` is only ever passed to `corpus_before` -- 1 call site(s) in verification.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": null,
+        "line_start": 620,
+        "related_files": [
+          "assay_production/verification.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.616918+00:00",
+      "id": "ghost-e387d045021c",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`corpus_before` and `before` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `envelope` is only ever passed a variable named `output_envelope`, and `output_envelope` is only ever passed to `envelope` -- 3 call site(s) in code-repo-governance-and-gsa-core.py, artifact_2.py, artifact_3.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/code-repo-governance-and-gsa-core.py",
+        "file": "specimens/reference/code-repo-governance-and-gsa-core.py",
+        "line_end": null,
+        "line_start": 232,
+        "related_files": [
+          "specimens/reference/code-repo-governance-and-gsa-core.py",
+          "specimens/reference/secure/artifact_2.py",
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.617123+00:00",
+      "id": "ghost-da64252023d5",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`envelope` and `output_envelope` are one value under two names, across 3 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `expected` is only ever passed a variable named `expected_data`, and `expected_data` is only ever passed to `expected` -- 1 call site(s) in verification.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": null,
+        "line_start": 1053,
+        "related_files": [
+          "assay_production/verification.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.617449+00:00",
+      "id": "ghost-e415f622c592",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`expected` and `expected_data` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `governed_text` is only ever passed a variable named `scrubbed_text`, and `scrubbed_text` is only ever passed to `governed_text` -- 1 call site(s) in sovereign_kernel.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/sovereign_kernel.py",
+        "file": "specimens/reference/sovereign_kernel.py",
+        "line_end": null,
+        "line_start": 154,
+        "related_files": [
+          "specimens/reference/sovereign_kernel.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.617649+00:00",
+      "id": "ghost-e2f861d12acb",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`governed_text` and `scrubbed_text` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `iteration` is only ever passed a variable named `next_iteration`, and `next_iteration` is only ever passed to `iteration` -- 3 call site(s) in code-repo-governance-and-gsa-core.py, artifact_2.py, artifact_3.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/code-repo-governance-and-gsa-core.py",
+        "file": "specimens/reference/code-repo-governance-and-gsa-core.py",
+        "line_end": null,
+        "line_start": 232,
+        "related_files": [
+          "specimens/reference/code-repo-governance-and-gsa-core.py",
+          "specimens/reference/secure/artifact_2.py",
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.617874+00:00",
+      "id": "ghost-d7268e7f1a51",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`iteration` and `next_iteration` are one value under two names, across 3 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `limit_source` is only ever passed a variable named `source`, and `source` is only ever passed to `limit_source` -- 1 call site(s) in sandbox.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 880,
+        "related_files": [
+          "assay_production/sandbox.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.618154+00:00",
+      "id": "ghost-0ff8e17ac460",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`limit_source` and `source` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `log_odds_value` is only ever passed a variable named `raw_odds`, and `raw_odds` is only ever passed to `log_odds_value` -- 10 call site(s) in solvar_stability_governance_source.recovered.py, solvar_stability_governance_cleanup.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": null,
+        "line_start": 247,
+        "related_files": [
+          "recovered-originals/solvar_stability_governance_source.recovered.py",
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.618379+00:00",
+      "id": "ghost-a990c0976224",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`log_odds_value` and `raw_odds` are one value under two names, across 2 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `nodes` is only ever passed a variable named `inner`, and `inner` is only ever passed to `nodes` -- 1 call site(s) in verification.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": null,
+        "line_start": 217,
+        "related_files": [
+          "assay_production/verification.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.618647+00:00",
+      "id": "ghost-3d0083af9a41",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`nodes` and `inner` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `outcome_name` is only ever passed a variable named `outcome`, and `outcome` is only ever passed to `outcome_name` -- 1 call site(s) in cns_connector.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/cns_connector.py",
+        "file": "assay_production/cns_connector.py",
+        "line_end": null,
+        "line_start": 352,
+        "related_files": [
+          "assay_production/cns_connector.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.618832+00:00",
+      "id": "ghost-418783c12382",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`outcome_name` and `outcome` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `p` is only ever passed a variable named `base_abandon`, and `base_abandon` is only ever passed to `p` -- 1 call site(s) in solvar_stability_governance_adapter.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_adapter.py",
+        "file": "specimens/pairs/solvar_stability_governance_adapter.py",
+        "line_end": null,
+        "line_start": 90,
+        "related_files": [
+          "specimens/pairs/solvar_stability_governance_adapter.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.619022+00:00",
+      "id": "ghost-c8b87487b796",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`p` and `base_abandon` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `parts` is only ever passed a variable named `sub`, and `sub` is only ever passed to `parts` -- 1 call site(s) in manifest_registry.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py",
+        "file": "assay_production/manifest_registry.py",
+        "line_end": null,
+        "line_start": 230,
+        "related_files": [
+          "assay_production/manifest_registry.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.619229+00:00",
+      "id": "ghost-36f06652a688",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`parts` and `sub` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `paths` is only ever passed a variable named `files`, and `files` is only ever passed to `paths` -- 1 call site(s) in sandbox.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 777,
+        "related_files": [
+          "assay_production/sandbox.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.619438+00:00",
+      "id": "ghost-94d8a0d78575",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`paths` and `files` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `probability_distribution` is only ever passed a variable named `normalized_scores`, and `normalized_scores` is only ever passed to `probability_distribution` -- 1 call site(s) in sre_system_resilience_evaluator_adapter.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/sre_system_resilience_evaluator_adapter.py",
+        "file": "specimens/pairs/sre_system_resilience_evaluator_adapter.py",
+        "line_end": null,
+        "line_start": 275,
+        "related_files": [
+          "specimens/pairs/sre_system_resilience_evaluator_adapter.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.619626+00:00",
+      "id": "ghost-b085323bd60d",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`probability_distribution` and `normalized_scores` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `projected_node` is only ever passed a variable named `wrapped_projections`, and `wrapped_projections` is only ever passed to `projected_node` -- 2 call site(s) in solvar_stability_governance_source.recovered.py, solvar_stability_governance_cleanup.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": null,
+        "line_start": 715,
+        "related_files": [
+          "recovered-originals/solvar_stability_governance_source.recovered.py",
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.619839+00:00",
+      "id": "ghost-3045a0a3d930",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`projected_node` and `wrapped_projections` are one value under two names, across 2 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `record_bytes` is only ever passed a variable named `serialized_json_bytes`, and `serialized_json_bytes` is only ever passed to `record_bytes` -- 1 call site(s) in vanguard-behavioral-simulation.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/vanguard-behavioral-simulation.py",
+        "file": "specimens/pairs/vanguard-behavioral-simulation.py",
+        "line_end": null,
+        "line_start": 129,
+        "related_files": [
+          "specimens/pairs/vanguard-behavioral-simulation.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.620061+00:00",
+      "id": "ghost-c18ed75e42a7",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`record_bytes` and `serialized_json_bytes` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `requested` is only ever passed a variable named `timeout`, and `timeout` is only ever passed to `requested` -- 1 call site(s) in sandbox.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 488,
+        "related_files": [
+          "assay_production/sandbox.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.620267+00:00",
+      "id": "ghost-a0934d3ec63a",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`requested` and `timeout` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `signum` is only ever passed a variable named `rebuilt_state`, and `rebuilt_state` is only ever passed to `signum` -- 2 call site(s) in solvar_stability_governance_source.recovered.py, solvar_stability_governance_cleanup.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 681,
+        "related_files": [
+          "assay_production/sandbox.py",
+          "recovered-originals/solvar_stability_governance_source.recovered.py",
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.620489+00:00",
+      "id": "ghost-1466eddf80d1",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`signum` and `rebuilt_state` are one value under two names, across 2 file(s)"
+    },
+    {
+      "attributes": {},
+      "category": "naming",
+      "confidence": null,
+      "detail": "The parameter `unprovable` is only ever passed a variable named `flagged`, and `flagged` is only ever passed to `unprovable` -- 1 call site(s) in verification.py.\nA one-to-one correspondence is the only case where two names provably denote the same thing: a parameter taking several variables is doing its job, and renaming it would collide with a name legitimately in use. Which of the two should win is yours to pick -- the parameter is the contract, the variable is the caller's local, and neither is automatically right.",
+      "detector": "name_disagreement",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": null,
+        "line_start": 322,
+        "related_files": [
+          "assay_production/verification.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.620746+00:00",
+      "id": "ghost-218443423087",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`unprovable` and `flagged` are one value under two names, across 1 file(s)"
+    },
+    {
+      "attributes": {
+        "qualified": "Verifier.finish",
+        "shape": "pass"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "verification.py:1007 defines `Verifier.finish` with a body of `pass`, something in the scanned set calls it, and nothing in the scanned set is arranged to fill it: no abstract or Protocol base, no @abstractmethod, and no subclass overriding it with a real body.\nThis is the silent shape, which is why it is MAJOR. The call returns, the caller believes the work happened, and nothing says otherwise.\nThis says nothing about `never`. It says nothing HERE provides a body. An implementation in a repository this scan was not pointed at would settle it; scan the siblings if the answer matters.",
+      "detector": "dead_end_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/verification.py",
+        "file": "assay_production/verification.py",
+        "line_end": null,
+        "line_start": 1007,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.720842+00:00",
+      "id": "ghost-4933efbce676",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "`Verifier.finish` is called and its body is `pass`"
+    },
+    {
+      "attributes": {
+        "copies": "2",
+        "differing": "5"
+      },
+      "category": "parallel_implementation",
+      "confidence": null,
+      "detail": "  /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py\n  /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_cleanup.py\n\nThese copies no longer agree. `DynamicDelayBuffer`, `EchoStateReservoir`, `HorizonForecastingEngine`, `MacroRegimeDetector`, `SOLVARSystemKernel` differ structurally between them, so a change made to one did not reach the others. Comments, formatting and line numbers are excluded from the comparison, so this is a difference in what the code does.\nByte-identical copies are reported by `duplicate_file` instead and are deliberately not repeated here. Whether the copies are meant to exist is yours to judge: a `_v1.1` beside a `_v1.2` may be an intended archive. What this says is which definitions stopped matching.",
+      "detector": "drifted_copy",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/solvar_stability_governance_source.recovered.py",
+        "file": "recovered-originals/solvar_stability_governance_source.recovered.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [
+          "recovered-originals/solvar_stability_governance_source.recovered.py",
+          "specimens/pairs/solvar_stability_governance_cleanup.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.814708+00:00",
+      "id": "ghost-1bb2a758da72",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "2 copies of solvar_stability_governance_source.recovered.py define the same 34 name(s); 5 of them differ"
+    },
+    {
+      "attributes": {
+        "copies": "2",
+        "differing": "2"
+      },
+      "category": "parallel_implementation",
+      "confidence": null,
+      "detail": "  /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py\n  /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/wrapper/artifact_3.py\n\nThese copies no longer agree. `CircuitBreaker`, `_main` differ structurally between them, so a change made to one did not reach the others. Comments, formatting and line numbers are excluded from the comparison, so this is a difference in what the code does.\nByte-identical copies are reported by `duplicate_file` instead and are deliberately not repeated here. Whether the copies are meant to exist is yours to judge: a `_v1.1` beside a `_v1.2` may be an intended archive. What this says is which definitions stopped matching.",
+      "detector": "drifted_copy",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py",
+        "file": "specimens/reference/secure/artifact_2.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [
+          "specimens/reference/secure/artifact_2.py",
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.815072+00:00",
+      "id": "ghost-6175efe5da41",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "2 copies of artifact_2.py define the same 30 name(s); 2 of them differ"
+    },
+    {
+      "attributes": {
+        "caught": "Exception"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:571\nThis catches everything -- the missing dependency it was probably written for, and also the typo, the None, the failed write and the bug introduced next year. Nothing that goes wrong in this block can be seen again, which is why it is MAJOR.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 571,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.869530+00:00",
+      "id": "ghost-2ac16ca0c0c8-6c96a0",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "`except Exception` at sandbox.py:571 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "OSError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:583\n`OSError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 583,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.869920+00:00",
+      "id": "ghost-b9144eed2b28-fc116a",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except OSError` at sandbox.py:583 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "OSError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:585\n`OSError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 585,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.870193+00:00",
+      "id": "ghost-b9144eed2b28-ba6d13",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except OSError` at sandbox.py:585 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "(ValueError, OSError)"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:603\n`(ValueError, OSError)` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 603,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.870559+00:00",
+      "id": "ghost-e03322fb208f-d37d45",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except (ValueError, OSError)` at sandbox.py:603 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "(ProcessLookupError, PermissionError, OSError)"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:647\n`(ProcessLookupError, PermissionError, OSError)` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 647,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.870825+00:00",
+      "id": "ghost-f0c134800cd6",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except (ProcessLookupError, PermissionError, OSError)` at sandbox.py:647 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "OSError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:651\n`OSError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 651,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.871076+00:00",
+      "id": "ghost-b9144eed2b28-dbf75a",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except OSError` at sandbox.py:651 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "OSError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:661\n`OSError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 661,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.871357+00:00",
+      "id": "ghost-b9144eed2b28-d0c8ac",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except OSError` at sandbox.py:661 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "(ValueError, OSError)"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:687\n`(ValueError, OSError)` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 687,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.871620+00:00",
+      "id": "ghost-e03322fb208f-cc9156",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except (ValueError, OSError)` at sandbox.py:687 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "ProcessLookupError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:724\n`ProcessLookupError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 724,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.871861+00:00",
+      "id": "ghost-dfc01d4bf282",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except ProcessLookupError` at sandbox.py:724 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "OSError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:768\n`OSError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 768,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.872113+00:00",
+      "id": "ghost-b9144eed2b28-83f222",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except OSError` at sandbox.py:768 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "(RuntimeError, OSError)"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:772\n`(RuntimeError, OSError)` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 772,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.872401+00:00",
+      "id": "ghost-d191fb07a56a",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except (RuntimeError, OSError)` at sandbox.py:772 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "OSError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:783\n`OSError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 783,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.872667+00:00",
+      "id": "ghost-b9144eed2b28-d954de",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except OSError` at sandbox.py:783 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "Exception"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:902\nThis catches everything -- the missing dependency it was probably written for, and also the typo, the None, the failed write and the bug introduced next year. Nothing that goes wrong in this block can be seen again, which is why it is MAJOR.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 902,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.872905+00:00",
+      "id": "ghost-2ac16ca0c0c8-6c8f2c",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "`except Exception` at sandbox.py:902 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "OSError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:929\n`OSError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 929,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.873133+00:00",
+      "id": "ghost-b9144eed2b28-a7b9f1",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except OSError` at sandbox.py:929 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "(OSError, ValueError)"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:947\n`(OSError, ValueError)` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 947,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.873393+00:00",
+      "id": "ghost-3c791a0ef8b2",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except (OSError, ValueError)` at sandbox.py:947 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "subprocess.TimeoutExpired"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:960\n`subprocess.TimeoutExpired` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 960,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.873625+00:00",
+      "id": "ghost-b116fa1a6dd7",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except subprocess.TimeoutExpired` at sandbox.py:960 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "ImportError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/vanguard-behavioral-simulation.py:59\n`ImportError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/vanguard-behavioral-simulation.py",
+        "file": "specimens/pairs/vanguard-behavioral-simulation.py",
+        "line_end": null,
+        "line_start": 59,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.873834+00:00",
+      "id": "ghost-c78f3c90f00c",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except ImportError` at vanguard-behavioral-simulation.py:59 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "IOError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/vanguard-behavioral-simulation.py:148\n`IOError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/vanguard-behavioral-simulation.py",
+        "file": "specimens/pairs/vanguard-behavioral-simulation.py",
+        "line_end": null,
+        "line_start": 148,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.874091+00:00",
+      "id": "ghost-83c1fdda70d1",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except IOError` at vanguard-behavioral-simulation.py:148 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "IOError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py:321\n`IOError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py",
+        "file": "specimens/reference/secure/artifact_2.py",
+        "line_end": null,
+        "line_start": 321,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.874461+00:00",
+      "id": "ghost-28913bf2da98",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except IOError` at artifact_2.py:321 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "caught": "IOError"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/wrapper/artifact_3.py:427\n`IOError` is narrow, so the handler hides one class of failure and may well be the intended behaviour -- an absent optional dependency is the usual case. MINOR for that reason, and worth a look rather than a fix.\nThe operation reports success either way. That is the same failure `dead_end_call` reports one level up: the caller believes the work happened.\n`contextlib.suppress` is not flagged: it says in its own name what it does.",
+      "detector": "swallowed_exception",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/wrapper/artifact_3.py",
+        "file": "specimens/reference/wrapper/artifact_3.py",
+        "line_end": null,
+        "line_start": 427,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:11.874785+00:00",
+      "id": "ghost-da7904bc2e9a",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "`except IOError` at artifact_3.py:427 does nothing with what it catches"
+    },
+    {
+      "attributes": {
+        "bytes": 11700,
+        "lines": 1,
+        "signatures_in_comments": 72
+      },
+      "category": "other",
+      "confidence": null,
+      "detail": "A silent pass. This file imports cleanly and raises nothing, so an importability check, and every structural detector, reports it as healthy. It is not: every definition in it is commented out, so importing it gives you an empty module.\n\nThe usual cause is a copy-paste that destroyed the line breaks and left one enormous line beginning with `#`. If so, the code is recoverable by restoring the breaks; if a readable copy of the same content exists elsewhere, that copy is the one to keep.",
+      "detector": "commented_out_module",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/governance_os_security_source.py",
+        "file": "specimens/pairs/governance_os_security_source.py",
+        "line_end": null,
+        "line_start": 1,
+        "related_files": [],
+        "snippet": "# governance_os_full.py # ========================= # Gates # ========================= class BaseGate: def __init__(self, rules, label): self.rules = rules self.label = label def run(self, context): "
+      },
+      "first_seen": "2026-10-22T22:07:11.876142+00:00",
+      "id": "ghost-d7ba6bd5ddf2",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/pairs/governance_os_security_source.py parses but defines nothing: its 72 def/class signature(s) are all inside comments (11,700 bytes on 1 line(s))"
+    },
+    {
+      "attributes": {
+        "token_similarity": 1.0,
+        "twin": "recovered-originals/quorum_state_governance_source.recovered.py"
+      },
+      "category": "duplication",
+      "confidence": null,
+      "detail": "The unreadable file is the same content as a readable one with its formatting destroyed, which is what a paste through a chat window does to line breaks. Nothing was lost: the readable copy is the one to keep, and the unreadable one is either a duplicate to remove or a specimen to keep on purpose.",
+      "detector": "flattened_copy",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/quorum_state_governance_source.py",
+        "file": "specimens/pairs/quorum_state_governance_source.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [
+          "recovered-originals/quorum_state_governance_source.recovered.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:12.127636+00:00",
+      "id": "ghost-0f886396f22b",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/pairs/quorum_state_governance_source.py cannot be parsed, and is a copy of recovered-originals/quorum_state_governance_source.recovered.py, which can (100% of tokens match ignoring whitespace)"
+    },
+    {
+      "attributes": {
+        "token_similarity": 1.0,
+        "twin": "recovered-originals/solvar_stability_governance_source.recovered.py"
+      },
+      "category": "duplication",
+      "confidence": null,
+      "detail": "The unreadable file is the same content as a readable one with its formatting destroyed, which is what a paste through a chat window does to line breaks. Nothing was lost: the readable copy is the one to keep, and the unreadable one is either a duplicate to remove or a specimen to keep on purpose.",
+      "detector": "flattened_copy",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/pairs/solvar_stability_governance_source.py",
+        "file": "specimens/pairs/solvar_stability_governance_source.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [
+          "recovered-originals/solvar_stability_governance_source.recovered.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.617024+00:00",
+      "id": "ghost-c63494eaed36",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/pairs/solvar_stability_governance_source.py cannot be parsed, and is a copy of recovered-originals/solvar_stability_governance_source.recovered.py, which can (100% of tokens match ignoring whitespace)"
+    },
+    {
+      "attributes": {
+        "token_similarity": 0.989,
+        "twin": "specimens/reference/wrapper/artifact_3.py"
+      },
+      "category": "duplication",
+      "confidence": null,
+      "detail": "The unreadable file is the same content as a readable one with its formatting destroyed, which is what a paste through a chat window does to line breaks. Nothing was lost: the readable copy is the one to keep, and the unreadable one is either a duplicate to remove or a specimen to keep on purpose.",
+      "detector": "flattened_copy",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_1.py",
+        "file": "specimens/reference/secure/artifact_1.py",
+        "line_end": null,
+        "line_start": null,
+        "related_files": [
+          "specimens/reference/wrapper/artifact_3.py"
+        ],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.707548+00:00",
+      "id": "ghost-3a2ff837772c",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "specimens/reference/secure/artifact_1.py cannot be parsed, and is a copy of specimens/reference/wrapper/artifact_3.py, which can (99% of tokens match ignoring whitespace)"
+    },
+    {
+      "attributes": {
+        "class": "Universal_Zero_Trust_Construct",
+        "method": "validate_synthesis",
+        "missing": "_check_node_compliance"
+      },
+      "category": "dead_code",
+      "confidence": null,
+      "detail": "Every base of Universal_Zero_Trust_Construct is visible in this file and none of them defines '_check_node_compliance', the class has no __getattr__, no metaclass, no decorator and no setattr, so there is nowhere else for the name to come from. The method reads as finished and cannot run past this call. Either the helper was never written, or it was renamed and this call was missed.",
+      "detector": "undefined_self_method",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/progressions/uztc/uztc-construct-v1.2-validated.py",
+        "file": "specimens/progressions/uztc/uztc-construct-v1.2-validated.py",
+        "line_end": 19,
+        "line_start": 19,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.757093+00:00",
+      "id": "ghost-b038c37d3f94",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "Universal_Zero_Trust_Construct.validate_synthesis calls self._check_node_compliance(), and Universal_Zero_Trust_Construct has no '_check_node_compliance' anywhere: not defined, not inherited, never assigned. It raises AttributeError the first time it runs"
+    },
+    {
+      "attributes": {
+        "kind": "loop_invariant_call"
+      },
+      "category": "complexity",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py:323\nThe arguments never mention the loop variable, so the call computes the same thing every iteration -- unless it has a side effect or reads something that changes, which the tree cannot see. Reported, never hoisted for you.\nMeasured redundancy across a whole run is a different finding: see `ghost-buster --profile`.",
+      "detector": "loop_invariant_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py",
+        "file": "assay_production/manifest_registry.py",
+        "line_end": null,
+        "line_start": 323,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.959169+00:00",
+      "id": "ghost-b6bc5a4ed7b8-308a76",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "manifest_registry.py:323 `Path(...)` with arguments the loop never changes inside a loop"
+    },
+    {
+      "attributes": {
+        "kind": "loop_invariant_call"
+      },
+      "category": "complexity",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py:468\nThe arguments never mention the loop variable, so the call computes the same thing every iteration -- unless it has a side effect or reads something that changes, which the tree cannot see. Reported, never hoisted for you.\nMeasured redundancy across a whole run is a different finding: see `ghost-buster --profile`.",
+      "detector": "loop_invariant_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py",
+        "file": "assay_production/manifest_registry.py",
+        "line_end": null,
+        "line_start": 468,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.959481+00:00",
+      "id": "ghost-b6bc5a4ed7b8-908218",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "manifest_registry.py:468 `Path(...)` with arguments the loop never changes inside a loop"
+    },
+    {
+      "attributes": {
+        "kind": "loop_invariant_call"
+      },
+      "category": "complexity",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py:249\nThe arguments never mention the loop variable, so the call computes the same thing every iteration -- unless it has a side effect or reads something that changes, which the tree cannot see. Reported, never hoisted for you.\nMeasured redundancy across a whole run is a different finding: see `ghost-buster --profile`.",
+      "detector": "loop_invariant_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py",
+        "file": "assay_production/manifest_registry.py",
+        "line_end": null,
+        "line_start": 249,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.959666+00:00",
+      "id": "ghost-b6bc5a4ed7b8-2dff60",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "manifest_registry.py:249 `Path(...)` with arguments the loop never changes inside a loop"
+    },
+    {
+      "attributes": {
+        "kind": "loop_invariant_call"
+      },
+      "category": "complexity",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py:306\nThe arguments never mention the loop variable, so the call computes the same thing every iteration -- unless it has a side effect or reads something that changes, which the tree cannot see. Reported, never hoisted for you.\nMeasured redundancy across a whole run is a different finding: see `ghost-buster --profile`.",
+      "detector": "loop_invariant_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/manifest_registry.py",
+        "file": "assay_production/manifest_registry.py",
+        "line_end": null,
+        "line_start": 306,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.959833+00:00",
+      "id": "ghost-b6bc5a4ed7b8-734001",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "manifest_registry.py:306 `Path(...)` with arguments the loop never changes inside a loop"
+    },
+    {
+      "attributes": {
+        "kind": "loop_invariant_call"
+      },
+      "category": "complexity",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py:895\nThe arguments never mention the loop variable, so the call computes the same thing every iteration -- unless it has a side effect or reads something that changes, which the tree cannot see. Reported, never hoisted for you.\nMeasured redundancy across a whole run is a different finding: see `ghost-buster --profile`.",
+      "detector": "loop_invariant_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/assay_production/sandbox.py",
+        "file": "assay_production/sandbox.py",
+        "line_end": null,
+        "line_start": 895,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.959988+00:00",
+      "id": "ghost-b5f97a599922",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "sandbox.py:895 `Path(...)` with arguments the loop never changes inside a loop"
+    },
+    {
+      "attributes": {
+        "kind": "loop_invariant_call"
+      },
+      "category": "complexity",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/quorum_state_governance_source.recovered.py:148\nThe arguments never mention the loop variable, so the call computes the same thing every iteration -- unless it has a side effect or reads something that changes, which the tree cannot see. Reported, never hoisted for you.\nMeasured redundancy across a whole run is a different finding: see `ghost-buster --profile`.",
+      "detector": "loop_invariant_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/recovered-originals/quorum_state_governance_source.recovered.py",
+        "file": "recovered-originals/quorum_state_governance_source.recovered.py",
+        "line_end": null,
+        "line_start": 148,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.960149+00:00",
+      "id": "ghost-ad4ef43d4301",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "quorum_state_governance_source.recovered.py:148 `TypeError(...)` with arguments the loop never changes inside a loop"
+    },
+    {
+      "attributes": {
+        "kind": "loop_invariant_call"
+      },
+      "category": "complexity",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py:213\nThe arguments never mention the loop variable, so the call computes the same thing every iteration -- unless it has a side effect or reads something that changes, which the tree cannot see. Reported, never hoisted for you.\nMeasured redundancy across a whole run is a different finding: see `ghost-buster --profile`.",
+      "detector": "loop_invariant_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/secure/artifact_2.py",
+        "file": "specimens/reference/secure/artifact_2.py",
+        "line_end": null,
+        "line_start": 213,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.960303+00:00",
+      "id": "ghost-379e9ccfbd60",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "artifact_2.py:213 `conn(...)` with arguments the loop never changes inside a loop"
+    },
+    {
+      "attributes": {
+        "kind": "loop_invariant_call"
+      },
+      "category": "complexity",
+      "confidence": null,
+      "detail": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/wrapper/artifact_3.py:239\nThe arguments never mention the loop variable, so the call computes the same thing every iteration -- unless it has a side effect or reads something that changes, which the tree cannot see. Reported, never hoisted for you.\nMeasured redundancy across a whole run is a different finding: see `ghost-buster --profile`.",
+      "detector": "loop_invariant_call",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/reference/wrapper/artifact_3.py",
+        "file": "specimens/reference/wrapper/artifact_3.py",
+        "line_end": null,
+        "line_start": 239,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.960535+00:00",
+      "id": "ghost-5d07ab57a3f1",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "artifact_3.py:239 `conn(...)` with arguments the loop never changes inside a loop"
+    },
+    {
+      "attributes": {
+        "name": "test_governance_boots",
+        "shape": "stub"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "The test cannot fail. It is still counted, so every count of passing tests in this repository is one too high for each test like it, and whatever it is named for is unchecked.",
+      "detector": "assertless_test",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/failure-modes/cannot_fail/test_governance_boots.py",
+        "file": "specimens/failure-modes/cannot_fail/test_governance_boots.py",
+        "line_end": 47,
+        "line_start": 46,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.961183+00:00",
+      "id": "ghost-4d2294d7d90f",
+      "layer": "mechanical",
+      "severity": "major",
+      "status": "confirmed",
+      "summary": "test_governance_boots.py:46 test 'test_governance_boots' does nothing: its body is only pass or ..."
+    },
+    {
+      "attributes": {
+        "name": "test_audit_ring_pushes",
+        "shape": "assertless"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "No assert or raise statement, no call that looks like an assertion (assert*, check*, verify*, expect*, ensure*, require*, confirm*, raises, warns, fail) and no call to a local helper that asserts, anywhere in the body. The test can fail only by raising, so it checks that the code ran, not what it did. MINOR because a smoke test that catches a crash is a real test; one that was meant to check a result is not, and the tree cannot tell them apart.",
+      "detector": "assertless_test",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/failure-modes/cannot_fail/test_governance_boots.py",
+        "file": "specimens/failure-modes/cannot_fail/test_governance_boots.py",
+        "line_end": 53,
+        "line_start": 50,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:14.961461+00:00",
+      "id": "ghost-de6362a4adaa",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "test_governance_boots.py:50 test 'test_audit_ring_pushes' asserts nothing"
+    },
+    {
+      "attributes": {
+        "name": "test_gateway_is_called",
+        "shape": "mock_only"
+      },
+      "category": "vacuous_check",
+      "confidence": null,
+      "detail": "Every assertion in the test is a Mock assertion (assert_called..., assert_awaited...). It proves the code called the mock, which is a fact about the test's wiring, and nothing about what the real collaborator would have done. If this is the only test of the feature, the feature has not been validated.",
+      "detector": "mock_only_test",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/failure-modes/cannot_fail/test_governance_boots.py",
+        "file": "specimens/failure-modes/cannot_fail/test_governance_boots.py",
+        "line_end": 68,
+        "line_start": 63,
+        "related_files": [],
+        "snippet": null
+      },
+      "first_seen": "2026-10-22T22:07:15.008291+00:00",
+      "id": "ghost-f6f3a9b0bd00",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "test_governance_boots.py:63 test 'test_gateway_is_called' is validated only against a mock"
+    },
+    {
+      "attributes": {
+        "kind": "production_ready",
+        "phrase": "production-ready",
+        "test_files_seen": "18"
+      },
+      "category": "doc_drift",
+      "confidence": null,
+      "detail": "A reader takes \"production-ready\" as a verdict somebody reached. This scan reads no evidence for it and does not decide whether it is true; it hands the label over to be re-verified independently. The one thing the tree offers mechanically: the scan saw 18 test file(s) beside this document. A label like this with no suite behind it is the shape recorded in this project's history (a README claiming readiness for things that had not shipped).",
+      "detector": "unverified_status_claim",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/MANIFEST.md",
+        "file": "MANIFEST.md",
+        "line_end": null,
+        "line_start": 216,
+        "related_files": [],
+        "snippet": "its project production-ready, battle-tested and hardened, lists \"RL Ready\","
+      },
+      "first_seen": "2026-10-22T22:07:15.057546+00:00",
+      "id": "ghost-582a06524c15",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "MANIFEST.md:216 says \"production-ready\", a status label nothing in the tree is read to back"
+    },
+    {
+      "attributes": {
+        "kind": "production_ready",
+        "phrase": "Production-ready",
+        "test_files_seen": "18"
+      },
+      "category": "doc_drift",
+      "confidence": null,
+      "detail": "A reader takes \"Production-ready\" as a verdict somebody reached. This scan reads no evidence for it and does not decide whether it is true; it hands the label over to be re-verified independently. The one thing the tree offers mechanically: the scan saw 18 test file(s) beside this document. A label like this with no suite behind it is the shape recorded in this project's history (a README claiming readiness for things that had not shipped).",
+      "detector": "unverified_status_claim",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/failure-modes/status_claims/README.md",
+        "file": "specimens/failure-modes/status_claims/README.md",
+        "line_end": null,
+        "line_start": 3,
+        "related_files": [],
+        "snippet": "Production-ready governance kernel for multi-agent systems. Battle-tested"
+      },
+      "first_seen": "2026-10-22T22:07:15.066475+00:00",
+      "id": "ghost-a90f3a540ec6",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "README.md:3 says \"Production-ready\", a status label nothing in the tree is read to back"
+    },
+    {
+      "attributes": {
+        "kind": "ready_badge",
+        "phrase": "RL Ready",
+        "test_files_seen": "18"
+      },
+      "category": "doc_drift",
+      "confidence": null,
+      "detail": "A reader takes \"RL Ready\" as a verdict somebody reached. This scan reads no evidence for it and does not decide whether it is true; it hands the label over to be re-verified independently. The one thing the tree offers mechanically: the scan saw 18 test file(s) beside this document. A label like this with no suite behind it is the shape recorded in this project's history (a README claiming readiness for things that had not shipped).",
+      "detector": "unverified_status_claim",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/failure-modes/status_claims/README.md",
+        "file": "specimens/failure-modes/status_claims/README.md",
+        "line_end": null,
+        "line_start": 8,
+        "related_files": [],
+        "snippet": "- RL Ready"
+      },
+      "first_seen": "2026-10-22T22:07:15.066801+00:00",
+      "id": "ghost-6e68629373a9",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "README.md:8 says \"RL Ready\", a status label nothing in the tree is read to back"
+    },
+    {
+      "attributes": {
+        "kind": "ready_badge",
+        "phrase": "Multi-AI Orchestration Ready",
+        "test_files_seen": "18"
+      },
+      "category": "doc_drift",
+      "confidence": null,
+      "detail": "A reader takes \"Multi-AI Orchestration Ready\" as a verdict somebody reached. This scan reads no evidence for it and does not decide whether it is true; it hands the label over to be re-verified independently. The one thing the tree offers mechanically: the scan saw 18 test file(s) beside this document. A label like this with no suite behind it is the shape recorded in this project's history (a README claiming readiness for things that had not shipped).",
+      "detector": "unverified_status_claim",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/failure-modes/status_claims/README.md",
+        "file": "specimens/failure-modes/status_claims/README.md",
+        "line_end": null,
+        "line_start": 9,
+        "related_files": [],
+        "snippet": "- Multi-AI Orchestration Ready"
+      },
+      "first_seen": "2026-10-22T22:07:15.067047+00:00",
+      "id": "ghost-c12b5c949195",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "README.md:9 says \"Multi-AI Orchestration Ready\", a status label nothing in the tree is read to back"
+    },
+    {
+      "attributes": {
+        "kind": "ready_badge",
+        "phrase": "Zero-Trust Ready",
+        "test_files_seen": "18"
+      },
+      "category": "doc_drift",
+      "confidence": null,
+      "detail": "A reader takes \"Zero-Trust Ready\" as a verdict somebody reached. This scan reads no evidence for it and does not decide whether it is true; it hands the label over to be re-verified independently. The one thing the tree offers mechanically: the scan saw 18 test file(s) beside this document. A label like this with no suite behind it is the shape recorded in this project's history (a README claiming readiness for things that had not shipped).",
+      "detector": "unverified_status_claim",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/failure-modes/status_claims/README.md",
+        "file": "specimens/failure-modes/status_claims/README.md",
+        "line_end": null,
+        "line_start": 10,
+        "related_files": [],
+        "snippet": "- Zero-Trust Ready"
+      },
+      "first_seen": "2026-10-22T22:07:15.067252+00:00",
+      "id": "ghost-800b73df9c5a",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "README.md:10 says \"Zero-Trust Ready\", a status label nothing in the tree is read to back"
+    },
+    {
+      "attributes": {
+        "kind": "full_coverage",
+        "phrase": "100% test coverage",
+        "test_files_seen": "18"
+      },
+      "category": "doc_drift",
+      "confidence": null,
+      "detail": "A reader takes \"100% test coverage\" as a verdict somebody reached. This scan reads no evidence for it and does not decide whether it is true; it hands the label over to be re-verified independently. The one thing the tree offers mechanically: the scan saw 18 test file(s) beside this document. A label like this with no suite behind it is the shape recorded in this project's history (a README claiming readiness for things that had not shipped).",
+      "detector": "unverified_status_claim",
+      "disposition": null,
+      "disposition_note": "",
+      "evidence": {
+        "absolute_file": "/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/probe/ASSAY/specimens/failure-modes/status_claims/README.md",
+        "file": "specimens/failure-modes/status_claims/README.md",
+        "line_end": null,
+        "line_start": 11,
+        "related_files": [],
+        "snippet": "- 100% test coverage"
+      },
+      "first_seen": "2026-10-22T22:07:15.067510+00:00",
+      "id": "ghost-ebc0f46a0737",
+      "layer": "mechanical",
+      "severity": "minor",
+      "status": "confirmed",
+      "summary": "README.md:11 says \"100% test coverage\", a status label nothing in the tree is read to back"
+    }
+  ],
+  "scan": {
+    "files_scanned": 82,
+    "files_skipped": 0,
+    "files_unparsable": 10,
+    "max_file_bytes": 5242880,
+    "python_files_analysed": 55,
+    "skipped_dirs": [
+      {
+        "dirs": 1,
+        "files": 0,
+        "name": ".git"
+      }
+    ],
+    "skipped_dirs_more": 0,
+    "symlinked_dirs": [],
+    "symlinked_dirs_more": 0,
+    "unparsable": [
+      {
+        "file": "specimens/pairs/quorum_state_governance_source.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/pairs/solvar_stability_governance_source.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/pairs/sre-system-resilience-evaluator-flattened.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/pairs/vanguard-behavioral-simulation-flattened.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/progressions/uztc/uztc-construct-v1.0-flattened.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/reference/secure/artifact_1.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/reference/wrapper/artifact_1.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/reference/wrapper/artifact_2.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/superseded/citadel-processor-router-flattened.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      },
+      {
+        "file": "specimens/superseded/ure-universal-resilience-engine-flattened.py",
+        "reason": "SyntaxError at line 1: invalid syntax"
+      }
+    ]
+  },
+  "status": "incomplete",
+  "unmeasured": [
+    {
+      "by_request": true,
+      "check": "mutate",
+      "reason": "opt-in and not requested (--mutate)",
+      "state": "not_run"
+    },
+    {
+      "by_request": true,
+      "check": "kernel",
+      "reason": "opt-in and not requested (--kernel PATH)",
+      "state": "not_run"
+    },
+    {
+      "by_request": false,
+      "check": "boundary",
+      "reason": "single-repository scan; this repository reaches across a boundary and no other repository was joined (--join)",
+      "state": "not_run"
+    },
+    {
+      "by_request": true,
+      "check": "structure",
+      "reason": "skipped at your request (--no-structure)",
+      "state": "declined"
+    },
+    {
+      "by_request": true,
+      "check": "branches",
+      "reason": "skipped at your request (--no-branches)",
+      "state": "declined"
+    },
+    {
+      "by_request": true,
+      "check": "tests",
+      "reason": "skipped at your request (--no-tests)",
+      "state": "declined"
+    },
+    {
+      "by_request": true,
+      "check": "project",
+      "reason": "skipped at your request (--no-project)",
+      "state": "declined"
+    },
+    {
+      "by_request": true,
+      "check": "secrets",
+      "reason": "skipped at your request (--no-secrets)",
+      "state": "declined"
+    },
+    {
+      "by_request": false,
+      "check": "parse",
+      "reason": "10 file(s) could not be parsed, so the code detectors skipped them",
+      "state": "unparsable"
+    }
+  ]
+}

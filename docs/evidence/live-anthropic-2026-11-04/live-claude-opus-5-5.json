@@ -1,0 +1,52 @@
+[
+ {
+  "below": {
+   "refused": "adapter_output: the output is not one strict JSON object (malformed)"
+  },
+  "clears": {
+   "refused": "adapter_output: the output is not one strict JSON object (malformed)"
+  },
+  "executed": true,
+  "live": true,
+  "model": "claude-opus-5-5",
+  "provenance": [
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 7469,
+    "model_reported": "claude-opus-5-5",
+    "model_requested": "claude-opus-5-5",
+    "outcome": "rejected",
+    "provider": "anthropic",
+    "reason": "adapter_output: the output is not one strict JSON object (malformed)",
+    "request_sha256": "3de2c70042e7f1ae0a9ded642a369f913e2d0493e11ce99ccae289f3b8f482ed",
+    "response_sha256": "38946c8edefca4fb71b692aeae593eacbbf47af4d664783ce1314b14c8821d61"
+   },
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 7915,
+    "model_reported": "claude-opus-5-5",
+    "model_requested": "claude-opus-5-5",
+    "outcome": "rejected",
+    "provider": "anthropic",
+    "reason": "adapter_output: the output is not one strict JSON object (malformed)",
+    "request_sha256": "11c327c9a08971659db4338af71872d86d8785d2d5de28daa5f5e31a6eb9e903",
+    "response_sha256": "3d33bdcb743b6c6e84d2de362d9678e7bcf8018a7be14e4e14cbcb7b046aafe3"
+   }
+  ],
+  "provider": "anthropic"
+ },
+ {
+  "executed": false,
+  "provider": "google"
+ },
+ {
+  "executed": false,
+  "provider": "openai"
+ },
+ {
+  "executed": false,
+  "provider": "copilot-github-models"
+ }
+]

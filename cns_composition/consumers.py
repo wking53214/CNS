@@ -32,7 +32,9 @@ import ast
 import importlib
 import sys
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple
+
+from cns_composition import delivery, repin
 
 __all__ = ["REQUIRED", "drift", "main", "missing", "scan"]
 
@@ -66,7 +68,12 @@ REQUIRED: Mapping[str, Imports] = {
         "cns.gate": (),
     },
     "observe-perceive": {
+        "cns": (),
         "cns.gate": ("Gate", "GateChain", "GateOutcome", "GatePosition", "resolve", "subject_digest", "unbound"),
+        # root_admission.py: the roster that must approve a root before the kernel registers it. These are the
+        # consequential imports, and they were missing, so a rename here would have broken it unannounced.
+        "cns_composition.decision_guard": ("DecisionGuard",),
+        "cns_composition.super_gate": ("Judged", "SuperGate"),
     },
     # Optional connectors that load cns.gate on demand: the module is all an import can show, and CNS's own
     # gate tests cover the names (subject_digest, GateResult, GateOutcome, GatePosition, GateChain) they use.
@@ -82,12 +89,42 @@ REQUIRED: Mapping[str, Imports] = {
     "interconnected_zeta": {"cns.gate": ()},
     "interconnected_beta": {"cns.gate": ()},
     "interconnected_delta": {"cns.gate": ()},
+    # Registered 2026-11-04 from each repository's own source (`scan`), after `drift` was changed to name an importer
+    # that is not here. Until then 16 repositories took things from CNS that no check watched, among them the shapes
+    # (`cns.seat`, `cns.suite`, `cns.defect`, `cns.run`) WARDEN, JUDGE, BURNISH, DRAFTER, ASSAY and WATCHER_MCU stand on.
+    "ghost_tools": {"cns.gate": ()},
+    "SWIZZLE": {"cns.gate": ()},
+    "ASSAY": {"cns.assay": (), "cns.gate": ()},
+    "DRAFTER": {"cns.defect": ("Defect",), "cns.seat": ("FileEdit",)},
+    "JUDGE": {
+        "cns.gate": ("GateChain", "GateOutcome", "GatePosition", "GateResult", "subject_digest"),
+        "cns.seat": ("Evidence", "Verdict"),
+        "cns.suite": ("SuiteRun",),
+    },
+    "BURNISH": {
+        "cns.defect": ("Defect",), "cns.epistemic": ("EpistemicState",), "cns.seat": ("Facts", "FileEdit"),
+        "cns.suite": ("SuiteRun",),
+    },
+    "WARDEN": {
+        "cns.attack": ("AttackResult",), "cns.defect": ("Defect", "DefectLifecycle", "DefectSeverity"),
+        "cns.epistemic": ("EpistemicState",), "cns.finding": ("Finding",),
+        "cns.seat": ("Evidence", "Facts", "FileEdit", "Verdict"), "cns.suite": ("SuiteRun",),
+    },
+    "CCC": {"cns.gate": ()},
+    "WATCHER_MCU": {"cns.run": ("RunRecord",)},
+    "HERALD": {"cns.gate": ()},
+    "Conservation_Kernel": {"cns.gate": ()},
+    "GEMS": {"cns.gate": ()},
+    "fortress-kernel": {"cns.gate": ()},
+    "DIT": {"cns.gate": ()},
+    "PERCEIVE": {"cns.gate": ()},
+    "Governance_Gateway": {"cns.gate": ()},
     # Private repositories: the links workflow cannot clone them, so `drift` skips them when there is no checkout.
     "ATS": {"cns.gate": ()},
     "Resume_OS": {"cns.gate": ()},
 }
 
-_OURS = ("cns", "cns_composition")
+_OURS = ("cns", "cns_composition", "cns_interop")
 #: Folders that are not the repository's own running code. `archive` holds preserved records (GSA keeps an old
 #: file there that imports cns.governance on purpose); a record is not a consumer.
 _SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "site-packages", "__pycache__", "build", "dist", "archive"}
@@ -145,15 +182,20 @@ def missing(required: Optional[Mapping[str, Imports]] = None) -> List[str]:
 
 
 def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None,
-          private: Tuple[str, ...] = ()) -> List[str]:
+          private: Tuple[str, ...] = (), expect: Iterable[str] = ()) -> List[str]:
     """Where `REQUIRED` no longer matches the source in `stack`, for each registered repository that is there.
 
-    A repository named in `private` (the ledger's private ones) may have no checkout; it is skipped then."""
+    A repository named in `private` (the ledger's private ones) may have no checkout; it is skipped then.
+
+    `expect` names the repositories the ledger says are connected. Each one that has a checkout, imports CNS in its
+    non-test source and is NOT registered is named: without this the check only ever looked at repositories someone had
+    already registered, so a consumer nobody listed could be broken by a rename in CNS without a test saying so."""
+    if isinstance(expect, (str, bytes)):
+        raise ValueError("expect must be a collection of repository names, not one string")
     stack = Path(stack)
     out: List[str] = []
     for repo, registered in (REQUIRED if required is None else required).items():
-        folder = next((p for p in sorted(stack.iterdir())
-                       if p.is_dir() and not p.is_symlink() and p.name.casefold() == repo.casefold()), None)
+        folder = next((p for p in repin.stack_folders(stack) if p.name.casefold() == repo.casefold()), None)
         if folder is None:
             if repo.casefold() not in {p.casefold() for p in private}:
                 out.append(f"{repo} is registered but has no checkout in {str(stack)!r}")
@@ -172,10 +214,20 @@ def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None,
                 if want - have:
                     out.append(f"{repo} no longer takes {', '.join(sorted(want - have))} from {module}; "
                                "remove from REQUIRED")
+    known = {r.casefold() for r in (REQUIRED if required is None else required)}
+    for repo in expect:
+        if repo.casefold() in known:
+            continue
+        folder = next((p for p in repin.stack_folders(stack) if p.name.casefold() == repo.casefold()), None)
+        actual = scan(folder) if folder is not None else {}
+        if actual:
+            seen = ", ".join(f"{m} ({', '.join(n)})" if n else m for m, n in actual.items())
+            out.append(f"{repo} imports {seen}, but is not registered in REQUIRED; list it so a rename in CNS "
+                       "fails here and names it")
     return out
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.consumers",
         description="Check that CNS still provides what the registered repositories take from it, "
@@ -189,17 +241,26 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 2
         from cns_composition.link_ledger import LedgerError, read_ledger
         try:
-            private = tuple(k.repo for k in read_ledger(Path(__file__).resolve().parents[1] / "contracts" / "cns-links.json")
-                            if k.private)
-        except LedgerError:
-            private = ()
-        problems += drift(args.stack, private=private)
+            links = read_ledger(delivery.CONTRACTS / "cns-links.json")
+            private = tuple(k.repo for k in links if k.private)
+            connected = tuple(k.repo for k in links if not k.hub and not k.exempt)
+        except LedgerError as err:
+            # Without the ledger the private repositories would be reported as missing checkouts, which is not
+            # what is wrong. Say what is, and claim nothing.
+            print(f"consumers: {err}", file=sys.stderr)
+            return 2
+        problems += drift(args.stack, private=private, expect=connected)
     for line in problems:
         print(f"consumers: {line}", file=sys.stderr)
     if not problems:
         names = sum(len(n) or 1 for m in REQUIRED.values() for n in m.values())
         print(f"consumers: CNS provides everything {len(REQUIRED)} repositories take from it ({names} items)")
     return 1 if problems else 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.run(_main, argv, "consumers")
 
 
 if __name__ == "__main__":

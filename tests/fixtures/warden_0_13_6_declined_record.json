@@ -1,0 +1,222 @@
+{
+  "schema": "cns.run/1",
+  "decision": "FINISH_REJECTED",
+  "converged": true,
+  "cycles": [
+    {
+      "number": 1,
+      "outcome": "NOTHING_TO_PROPOSE",
+      "observed": 27
+    }
+  ],
+  "finished": false,
+  "put_back": false,
+  "held_digest": null,
+  "reason": "Finishing: SUITE_RED. The finishing change was put back.",
+  "notes": [
+    "SWIZZLE proofs: 12 of 12 proofs hold.",
+    "ASSAY: Ghost caught 5 of 7 known failure modes (60/60 manifest claims hold)",
+    "Ghost Tools observed 27 finding(s).",
+    "Drafter is out of proposals but Ghost still reports 27 finding(s). Converged means no proposals left, not zero findings.",
+    "SWIZZLE proofs: 12 of 12 proofs hold.",
+    "Rule 7 suite converged: did not run (pytest collected no tests).",
+    "Rule 7 suite cycle 0 before: did not run (pytest collected no tests).",
+    "Rule 7: the target's suite is not green before the change (did not run (pytest collected no tests)), so it cannot protect behavior. Nothing was written.",
+    "Finishing: SUITE_RED. The finishing change was put back."
+  ],
+  "observed": [
+    "ghost-e537faa16d83",
+    "ghost-4d5a8e5b2f77",
+    "ghost-c85a03fd76fe-4dd849",
+    "ghost-c85a03fd76fe-81fb1e",
+    "ghost-c85a03fd76fe-81fb1e",
+    "ghost-19a2138045a1",
+    "ghost-e3802313cb4e-e274a0",
+    "ghost-961e4e252370",
+    "ghost-98e68274c878",
+    "ghost-3771d8bc752c",
+    "ghost-cab329e91da8",
+    "ghost-6bfc473b7758",
+    "ghost-e3802313cb4e-14c181",
+    "ghost-2ee85000ea00",
+    "ghost-9826c60efc6c",
+    "ghost-23969b89159e-5cac34",
+    "ghost-23969b89159e-f372d7",
+    "ghost-dcb5edc24da3",
+    "ghost-df5184fb6ac1",
+    "ghost-5b44b04f3e05",
+    "ghost-8164aa6f5a29",
+    "ghost-73f17b0c0eac",
+    "ghost-01535fcf52d1",
+    "ghost-14315cb2df41",
+    "ghost-aac7e68a8097",
+    "ghost-9912cbe233cc",
+    "ghost-e1597ddffb8a"
+  ],
+  "reobserved": [
+    "ghost-e537faa16d83",
+    "ghost-4d5a8e5b2f77",
+    "ghost-c85a03fd76fe-4dd849",
+    "ghost-c85a03fd76fe-81fb1e",
+    "ghost-c85a03fd76fe-81fb1e",
+    "ghost-19a2138045a1",
+    "ghost-e3802313cb4e-e274a0",
+    "ghost-961e4e252370",
+    "ghost-98e68274c878",
+    "ghost-3771d8bc752c",
+    "ghost-cab329e91da8",
+    "ghost-6bfc473b7758",
+    "ghost-e3802313cb4e-14c181",
+    "ghost-2ee85000ea00",
+    "ghost-9826c60efc6c",
+    "ghost-23969b89159e-5cac34",
+    "ghost-23969b89159e-f372d7",
+    "ghost-dcb5edc24da3",
+    "ghost-df5184fb6ac1",
+    "ghost-5b44b04f3e05",
+    "ghost-8164aa6f5a29",
+    "ghost-73f17b0c0eac",
+    "ghost-01535fcf52d1",
+    "ghost-14315cb2df41",
+    "ghost-aac7e68a8097",
+    "ghost-9912cbe233cc",
+    "ghost-e1597ddffb8a"
+  ],
+  "contract": "1",
+  "versions": {
+    "warden": {
+      "version": "0.13.6",
+      "contract": "1",
+      "commit": "0c1ea567f0b69586cfd735f82260774aec9552bb",
+      "dirty": false
+    },
+    "ghost_tools": {
+      "path": "/stack/ghost_tools",
+      "commit": "c2ada82d2f6c0404074a668ba749c7872743aad9",
+      "version": "1.10.5",
+      "dirty": false,
+      "module": "/stack/ghost_tools/ghost_buster/__init__.py",
+      "module_in_root": true
+    },
+    "swizzle": {
+      "path": "/stack/SWIZZLE",
+      "commit": "6bd88f3a6e9de1f83e64f401e13cbcb5233499fc",
+      "version": "0.8.4",
+      "dirty": false,
+      "module": "/stack/SWIZZLE/swizzle/__init__.py",
+      "module_in_root": true
+    },
+    "assay": {
+      "path": "/stack/ASSAY",
+      "commit": "54248beb5a36600f69de7c816cb2271dda20a879",
+      "version": "0.11.2",
+      "dirty": false,
+      "module": "/stack/ASSAY/assay_production/__init__.py",
+      "module_in_root": true
+    },
+    "seats": {
+      "drafter": {
+        "spec": "drafter.seat:Drafter",
+        "requires_contract": "1",
+        "version": "0.2.7",
+        "commit": "467dacf100802329de13bdde9de573c2a162345e",
+        "dirty": false
+      },
+      "finisher": {
+        "spec": "burnish.finisher:Burnish",
+        "requires_contract": "1",
+        "version": "0.3.8",
+        "commit": "ab6a19ca174ccb2821c46a780635ee6e9ed53883",
+        "dirty": false
+      },
+      "judge": {
+        "spec": "judge.seat:Judge",
+        "requires_contract": "1",
+        "version": "0.4.7",
+        "commit": "cf71fb468d483e868834c8c06b650a5d60726967",
+        "dirty": false
+      }
+    },
+    "joins": [
+      {
+        "path": "/stack/ghost_tools",
+        "commit": "c2ada82d2f6c0404074a668ba749c7872743aad9",
+        "version": "1.10.5",
+        "dirty": false
+      },
+      {
+        "path": "/stack/SWIZZLE",
+        "commit": "6bd88f3a6e9de1f83e64f401e13cbcb5233499fc",
+        "version": "0.8.4",
+        "dirty": false
+      },
+      {
+        "path": "/stack/ASSAY",
+        "commit": "54248beb5a36600f69de7c816cb2271dda20a879",
+        "version": "0.11.2",
+        "dirty": false
+      },
+      {
+        "path": "/stack/DRAFTER",
+        "commit": "467dacf100802329de13bdde9de573c2a162345e",
+        "version": "0.2.7",
+        "dirty": false
+      },
+      {
+        "path": "/stack/JUDGE",
+        "commit": "cf71fb468d483e868834c8c06b650a5d60726967",
+        "version": "0.4.7",
+        "dirty": false
+      },
+      {
+        "path": "/stack/BURNISH",
+        "commit": "ab6a19ca174ccb2821c46a780635ee6e9ed53883",
+        "version": "0.3.8",
+        "dirty": false
+      },
+      {
+        "path": "/stack/WARDEN",
+        "commit": "0c1ea567f0b69586cfd735f82260774aec9552bb",
+        "version": "0.13.6",
+        "dirty": false
+      }
+    ]
+  },
+  "swizzle_sound": true,
+  "allow_uncommitted_instruments": false,
+  "unmeasured": [],
+  "ghost_scan": {
+    "status": "ok",
+    "files_scanned": 2,
+    "files_skipped": 0,
+    "files_unparsable": 0,
+    "gaps": [],
+    "gaps_not_shown": 0,
+    "declined": [
+      "mutate",
+      "kernel",
+      "structure",
+      "tests",
+      "project",
+      "secrets",
+      "correlate"
+    ],
+    "baseline": {
+      "path": null,
+      "suppressed": 0
+    }
+  },
+  "ghost_baseline": {
+    "before": {
+      "path": null,
+      "suppressed": 0
+    },
+    "after": {
+      "path": null,
+      "suppressed": 0
+    }
+  },
+  "drafter_skipped": [],
+  "informational": [],
+  "verdict": null
+}

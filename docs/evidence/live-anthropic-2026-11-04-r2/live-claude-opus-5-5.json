@@ -1,0 +1,60 @@
+[
+ {
+  "below": {
+   "reasons": [
+    "Disclosed monthly_income_cents of 100000 is below the required threshold of 450000 cents for income-screen v1.",
+    "The shortfall is 350000 cents, so the threshold check fails on the disclosed data.",
+    "Document digest is all zeros, which may indicate placeholder or demo data. This was noted but does not change the threshold outcome."
+   ],
+   "verdict": "terminal_breach"
+  },
+  "clears": {
+   "reasons": [
+    "Disclosed monthly income of 512000 cents meets the threshold of 450000 cents."
+   ],
+   "verdict": "pass"
+  },
+  "executed": true,
+  "live": true,
+  "model": "claude-opus-5-5",
+  "provenance": [
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 2388,
+    "model_reported": "claude-opus-5-5",
+    "model_requested": "claude-opus-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict pass",
+    "request_sha256": "1cbeaf36b2658968e2d186a0c6d68cf31319f93ea375974f9d31d684644894ef",
+    "response_sha256": "3853d58d8c9924a838e1e293e9bd61c85e3930e57e3573833360476bd0b6e2aa"
+   },
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 5593,
+    "model_reported": "claude-opus-5-5",
+    "model_requested": "claude-opus-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict terminal_breach",
+    "request_sha256": "fd801bd96612e32c828481a58ac22b54582af44141ece9021d3a6b2de06865b1",
+    "response_sha256": "8b2f3f181b21ed84c440843bc9c8e6254a94651e068841bfec3fe5a54c440c2c"
+   }
+  ],
+  "provider": "anthropic"
+ },
+ {
+  "executed": false,
+  "provider": "google"
+ },
+ {
+  "executed": false,
+  "provider": "openai"
+ },
+ {
+  "executed": false,
+  "provider": "copilot-github-models"
+ }
+]

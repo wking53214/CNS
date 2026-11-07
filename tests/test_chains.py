@@ -32,12 +32,12 @@ def test_the_workflow_can_only_read_and_runs_on_a_schedule_by_hand_and_for_its_o
 def test_nothing_from_the_event_is_spliced_into_a_shell():
     body = WORKFLOW.split("\njobs:\n", 1)[1]
     assert "${{ github.event" not in body and "${{ github.head_ref" not in body
-    assert body.count("persist-credentials: false") == body.count("uses: actions/checkout@v4")
+    assert body.count("persist-credentials: false") == body.count("uses: actions/checkout@")
 
 
 def test_every_repository_the_chains_use_is_checked_out():
     declared = set(re.findall(r"repository: \$\{\{ github\.repository_owner \}\}/(\S+)", WORKFLOW))
-    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", "HERALD", "TIE", "Conservation_Kernel", *SPINE}
+    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", "HERALD", "TIE", "Conservation_Kernel", "ccc", *SPINE}
 
 
 def test_the_full_chain_names_only_repositories_whose_gate_ends_cns_declares():
@@ -119,8 +119,8 @@ def test_each_chain_requires_a_hand_written_roster_and_never_one_derived_from_it
         seats, passed = _required_seats(path)
         assert seats and all(isinstance(s, str) and s.count(":") == 1 for s in seats) and len(set(seats)) == len(seats)
         assert {s.split(":")[0] for s in seats} <= set(ENDS)
-        assert len(passed) == 1 and isinstance(passed[0], ast.Name) and passed[0].id == "REQUIRED_SEATS", \
-            f"{path.name} must pass the literal REQUIRED_SEATS to SuperGate"
+        assert passed and all(isinstance(p, ast.Name) and p.id == "REQUIRED_SEATS" for p in passed), \
+            f"{path.name} must pass the literal REQUIRED_SEATS to every SuperGate it builds"
 
 
 def test_both_chains_check_that_a_gate_dropped_from_the_roster_is_refused():
@@ -134,7 +134,8 @@ def test_the_evidence_script_runs_with_exactly_its_four_repositories_importable(
     assert "run: python hub/chains/evidence_spine.py" in step.split("\n      - ", 1)[0]
     path = re.search(r"PYTHONPATH: (.+)", step).group(1).split(":")
     assert path == ["${{ github.workspace }}/stack/HERALD", "${{ github.workspace }}/stack/TIE/src",
-                    "${{ github.workspace }}/stack/Conservation_Kernel/src", "${{ github.workspace }}/stack/Governance_Gateway/src"]
+                    "${{ github.workspace }}/stack/Conservation_Kernel/src", "${{ github.workspace }}/stack/Governance_Gateway/src",
+                    "${{ github.workspace }}/stack/ccc"]
 
 
 def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repositories():
@@ -142,7 +143,9 @@ def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repo
     tree = ast.parse(text)
     assert "SCENARIOS" in text and "return 1 if" in text and "raise SystemExit(main())" in text
     imported = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-    assert imported == {"__future__", "cns", "cns_composition", "conservation_kernel", "governance_gateway", "herald", "tie", "typing"}
+    # cryptography: the spine generates its HERALD export key per run (Ed25519), the one addition since the four-repository rule.
+    assert imported == {"__future__", "ccc", "cns", "cns_composition", "cns_interop", "conservation_kernel", "cryptography",
+                        "governance_gateway", "herald", "tie", "typing"}
 
 
 def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fact():
@@ -150,5 +153,160 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
-    assert sum(name.startswith("GAP: ") for name in names) == 6
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 2
+    assert sum(name.startswith("GAP: ") for name in names) == 3
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 44
+
+
+def test_the_evidence_script_carries_the_roster_decision_across_the_process_boundary():
+    """The PORTABLE scenarios: the roster's decision signed with UAI-1 and acted on by a RemoteDecisionGuard."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
+             and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
+    assert sum(name.startswith("PORTABLE: ") for name in names) == 4
+    assert "RemoteDecisionGuard(" in text and "request_judgment(" in text and "interop" in text
+
+
+def test_the_evidence_script_names_every_door_ccc_gates_and_checks_the_names_against_ccc():
+    """The write reader's two lists are policy, pinned here so changing them is a change made in review. The script
+    also compares them with the doors CCC really gates, so a new gated door cannot stay unnamed unnoticed."""
+    tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
+    policy = {t.id: ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
+              for t in n.targets if isinstance(t, ast.Name) and t.id in ("WRITES_A_DOCUMENT", "WRITES_NO_DOCUMENT")}
+    assert set(policy) == {"WRITES_A_DOCUMENT", "WRITES_NO_DOCUMENT"}
+    assert policy["WRITES_A_DOCUMENT"] == ("ingest", "record")
+    assert set(policy["WRITES_NO_DOCUMENT"]) == {"derive", "infer", "interpret", "record_external_finding", "discover",
+                                                 "detect_road_sign", "record_road_sign",
+                                                 # CCC #51 (single write funnel): doors that act on an existing record or are a
+                                                 # person's act. Reviewed 2026-10-31: no roster decision reads a document from them.
+                                                 "accept", "adopt_discovery", "advance_discovery", "amend", "attach_evidence",
+                                                 "classify", "correct", "decide", "erase", "establish_provenance", "ratify",
+                                                 "record_resolution", "redact", "reject", "relate", "resolve_uncertainty",
+                                                 "supersede"}
+    assert not set(policy["WRITES_A_DOCUMENT"]) & set(policy["WRITES_NO_DOCUMENT"])
+    text = EVIDENCE.read_text(encoding="utf-8")
+    assert "ccc_doors_all_named()" in text and "def ccc_gated_doors" in text and "__wrapped__" in text
+
+
+def test_the_evidence_script_builds_its_kernel_with_an_evidence_guard_that_checks_where_a_record_came_from():
+    """The evidence guard is policy, pinned here so changing what it checks is a change made in review. A decision
+    guard cannot do this job (the evidence must exist before any decision does), so the guard checks provenance."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    guard = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "tie_evidence_guard")
+    body = ast.get_source_segment(text, guard)
+    for required in ("evidence_id in produced", "EvidenceKind.SOURCE_OBSERVATION", '"source_id"', '"source_sha256"'):
+        assert required in body, required
+    assert "evidence_guard=tie_evidence_guard(" in text
+
+
+def _chain_imports():
+    """Every cns and cns_composition module the chain scripts import, followed through their own imports."""
+    def names(path):
+        found = set()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.split(".")[0] in ("cns", "cns_composition"):
+                found.add(node.module)
+                found.update(f"{node.module}.{a.name}" for a in node.names)
+            elif isinstance(node, ast.Import):
+                found.update(a.name for a in node.names if a.name.split(".")[0] in ("cns", "cns_composition"))
+        return found
+
+    seen, todo = set(), []
+    for script in (ROOT / "chains").glob("*.py"):
+        todo.extend(names(script))
+    while todo:
+        module = ROOT / (todo.pop().replace(".", "/") + ".py")
+        if module.exists() and module not in seen:
+            seen.add(module)
+            todo.extend(names(module))
+    return {m.relative_to(ROOT).as_posix() for m in seen}
+
+
+def test_the_workflow_runs_when_any_module_the_chains_import_changes():
+    triggers = WORKFLOW.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+    listed = set(re.findall(r"(?m)^      - (\S+)$", triggers))
+    assert _chain_imports() <= listed, sorted(_chain_imports() - listed)
+
+
+def test_the_evidence_script_binds_each_permission_to_its_seat_and_to_the_required_roster():
+    """The permissions are policy, pinned here so loosening one is a change made in review. Each guard opens only for
+    the exact object one seat judged and only for a decision from a roster that seats every required seat; and the
+    roster checks every verdict against what its gate was given."""
+    tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
+    functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    wanted = {"fresh_guard": "Conservation_Kernel:root_admission", "fresh_ccc_guard": "CCC:ccc.transition"}
+    for name, seat in wanted.items():
+        calls = [c for c in ast.walk(functions[name]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "DecisionGuard"]
+        assert len(calls) == 1, name
+        given = {k.arg: k.value for k in calls[0].keywords}
+        assert isinstance(given.get("seat"), ast.Constant) and given["seat"].value == seat, name
+        assert isinstance(given.get("expected_seats"), ast.Name) and given["expected_seats"].id == "REQUIRED_SEATS", name
+        assert "binding_of" in given, name
+    gates = [c for c in ast.walk(functions["decide"]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "SuperGate"]
+    assert len(gates) == 1
+    given = {k.arg: k.value for k in gates[0].keywords}
+    assert isinstance(given.get("strict_binding"), ast.Constant) and given["strict_binding"].value is True
+    assert "binding_of" in given
+
+
+def test_the_evidence_guard_compares_the_whole_record_with_what_tie_s_translation_gives_for_that_id():
+    """Policy, pinned so loosening it is a change made in review: a record under a real TIE id must equal the one
+    `kernel_evidence` builds, apart from when it was added. Checking some fields lets an id be taken first with false
+    metadata, because the registry keeps the first record under an id and refuses the honest one as a duplicate."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    guard = next(n for n in ast.parse(text).body if isinstance(n, ast.FunctionDef) and n.name == "tie_evidence_guard")
+    body = ast.get_source_segment(text, guard)
+    for required in ("kernel_evidence(", "whole(record) == whole(expected[record.evidence_id])", '!= "created_at"'):
+        assert required in body, required
+
+
+def test_the_evidence_script_accepts_only_the_guards_it_builds_and_requires_a_ccc_permission():
+    """Policy, pinned so loosening it is a change made in review. Asking whether a guard exists is satisfied by a function
+    that says yes to everything, so the kernel seat is given predicates that accept the script's own guards, and the CCC
+    seat requires a write permission and accepts only the script's kind."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    functions = {n.name: n for n in ast.parse(text).body if isinstance(n, ast.FunctionDef)}
+    calls = {name: [c for c in ast.walk(functions["decide"]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == name]
+             for name in ("CnsRootAdmissionGate", "CccGate")}
+    assert all(len(found) == 1 for found in calls.values())
+    kernel = {k.arg: k.value for k in calls["CnsRootAdmissionGate"][0].keywords}
+    assert [kernel[a].id for a in ("accept_guard", "accept_evidence_guard")] == ["is_root_guard", "is_evidence_guard"]
+    ccc = {k.arg: k.value for k in calls["CccGate"][0].keywords}
+    assert ccc["require_permission"].value is True and ccc["accept_permission"].id == "is_write_permission"
+    for name, kind in (("is_root_guard", "(DecisionGuard, RemoteDecisionGuard)"), ("is_evidence_guard", "TieEvidenceGuard"),
+                       ("is_write_permission", "(DecisionGuard, RemoteDecisionGuard)")):
+        assert f"isinstance({'guard' if name != 'is_write_permission' else 'permission'}, {kind})" in ast.get_source_segment(text, functions[name])
+    assert "refuse_inactive_root_evidence=True" in ast.get_source_segment(text, functions["kernel_root"])
+
+
+def test_the_evidence_script_gives_every_decision_a_lifetime_and_checks_the_evidence_timestamp():
+    """Policy, pinned so loosening it is a change made in review: an approval that nobody uses should not wait forever,
+    and a record that says it was added in the future is not one the guard takes."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    ttl = next(n for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "SPINE_TTL")
+    assert 0 < ast.literal_eval(ttl.value) <= 3600
+    functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    decide = functions["decide"]
+    assert next(a for a in decide.args.args + decide.args.kwonlyargs if a.arg == "ttl") is not None
+    assert [d.id for d in decide.args.defaults if isinstance(d, ast.Name)] == ["SPINE_TTL"]
+    decides = [c for c in ast.walk(decide) if isinstance(c, ast.Call) and getattr(c.func, "attr", "") == "decide"]
+    assert len(decides) == 1 and any(k.arg == "ttl" for k in decides[0].keywords)
+    assert "added_by_now(record.created_at)" in ast.get_source_segment(text, functions["tie_evidence_guard"])
+
+
+def test_every_spine_scenario_declares_an_expect_and_none_is_a_plain_string():
+    """The scenarios cannot run in this suite, so the table is read by syntax: each row's third element is `Expect(...)` or
+    one of the two shared Expects (CLEAN, GAP), never a string. The script itself also refuses a table that is not so, when
+    it loads (`check_table`)."""
+    tree = ast.parse(SPINE_RUN.read_text(encoding="utf-8"))
+    table = next(n for n in tree.body if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "SCENARIOS")
+    rows = table.value.elts  # type: ignore[union-attr]
+    assert len(rows) > 60
+    for row in rows:
+        assert isinstance(row, ast.Tuple) and len(row.elts) == 3
+        third = row.elts[2]
+        assert (isinstance(third, ast.Call) and getattr(third.func, "id", "") == "Expect") or \
+            (isinstance(third, ast.Name) and third.id in ("CLEAN", "GAP")), ast.get_source_segment(SPINE_RUN.read_text(encoding="utf-8"), row)
+    assert "check_table(SCENARIOS)" in SPINE_RUN.read_text(encoding="utf-8")

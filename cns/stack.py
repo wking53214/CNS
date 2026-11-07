@@ -20,10 +20,13 @@ hub holds the shape of that claim so every consumer reads it the same way.
 WHAT THIS MODULE IS
 
 Two rows and pure functions of them. `StackPin` names one checkout and the
-commit it must be at. `StackManifest` is the whole: a schema name, the seat
-contract the stack speaks, and its pins. `problems` is the validation every
-consumer would otherwise write for itself; `pin_for` is the case-blind lookup
-Warden's `--stack` folder matching already does; `to_dict` is the wire shape.
+commit it must be at: the full 40-character commit, lowercase hex as git
+prints it, and nothing shorter (2.0.0; before that a prefix of seven or more
+was allowed, which no reader of the manifest accepted). `StackManifest` is
+the whole: a schema name, the seat contract the stack speaks, and its pins.
+`problems` is the validation every consumer would otherwise write for itself;
+`pin_for` is the case-blind lookup Warden's `--stack` folder matching already
+does; `to_dict` is the wire shape.
 
 Reading the manifest off disk is I/O and stays in the consumer. The data
 itself, the circuit's current pins, lives beside this package in
@@ -49,22 +52,22 @@ class StackPin:
     commit: str
 
     def pins(self, actual: str) -> bool:
-        """Whether a checkout at `actual` satisfies this pin. A full commit must match
-        exactly; an abbreviated pin of seven or more characters matches as a prefix."""
-        if not actual:
-            return False
-        if actual == self.commit:
-            return True
-        return len(self.commit) >= 7 and actual.startswith(self.commit)
+        """Whether a checkout at `actual` satisfies this pin: the full commit, exactly.
+
+        Until 2.0.0 an abbreviated pin of seven or more characters matched as a prefix. Warden has refused
+        anything but a full 40-character commit since 0.13.7, and the stack workflow's checkout step refuses
+        it too, so the shape said one thing and every reader of it enforced another. A prefix names a set of
+        commits, and a pin is a claim about one."""
+        return bool(actual) and actual == self.commit
 
     def problems(self) -> Tuple[str, ...]:
         out = []
-        if not self.name or not self.name.strip():
+        if not isinstance(self.name, str) or not self.name.strip():
             out.append("a pin has no name")
         elif "/" in self.name or "\\" in self.name or self.name in (".", ".."):
             out.append(f"the pin {self.name!r} is a path, not a folder name")
-        if not _is_hex(self.commit) or not 7 <= len(self.commit) <= 40:
-            out.append(f"the pin {self.name!r} has commit {self.commit!r}, not 7 to 40 hex characters")
+        if not _is_hex(self.commit) or len(self.commit) != 40:
+            out.append(f"the pin {self.name!r} has commit {self.commit!r}, not 40 lowercase hex characters")
         return tuple(out)
 
 
@@ -96,7 +99,7 @@ class StackManifest:
         seen: Dict[str, str] = {}
         for pin in self.repos:
             out.extend(pin.problems())
-            key = pin.name.casefold()
+            key = str(pin.name).casefold()
             if key in seen:
                 out.append(f"{pin.name!r} is pinned twice (names are matched without regard to case)")
             seen.setdefault(key, pin.name)
@@ -112,4 +115,4 @@ class StackManifest:
 
 
 def _is_hex(text: str) -> bool:
-    return bool(text) and all(c in "0123456789abcdef" for c in text)
+    return isinstance(text, str) and bool(text) and all(c in "0123456789abcdef" for c in text)

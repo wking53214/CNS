@@ -5,6 +5,8 @@ library's repositories checked out and the four real consumer files
 imported against HEAD. Every claim below was measured, not read off the
 documentation. Where a measurement contradicts a docstring, both are shown.
 
+**Status as of 2026-11-06 (CNS `main` at d572b22).** The grades and the verdict are the 2026-09-11 assessment and were not re-graded here. Findings since resolved are marked where they appear. Findings still open are marked too.
+
 **Verdict: not production grade yet. A well-founded prototype with live
 adopters.** The thesis is sound and demonstrably works: three repositories
 deleted their local copies and import from here, and the extraction is
@@ -25,7 +27,7 @@ before three repositories pin it.
 | 9 | Confidentiality posture | C | A public repository names CNS, the kernel convention, and nine private repos. |
 | 10 | Operational risk | D | One human author, nine commits, one day, no second maintainer. |
 
-## 1. Extraction fidelity — B
+## 1. Extraction fidelity: B
 
 Every top-level class in `cns` was compared against every same-named class
 in the ten repositories, using the same docstring-stripped AST hash the map
@@ -43,14 +45,14 @@ is unbooked migration debt: the majority of copies in the library disagree
 with the package that claims to be their contract, and no document says who
 has to move or when.
 
-One documentation defect. `cns/graph.py` says `Graph` was extracted from
+One documentation defect (still open at d572b22: `cns/graph.py` line 3 says it). `cns/graph.py` says `Graph` was extracted from
 four repos "that each carried it verbatim (Ecology, GRAPH,
 GSA-Master-Kernel, sentinel_os)". GRAPH defines no `Graph` today. That is
 the migration having succeeded rather than a false claim, but a provenance
 note that reads as false on inspection costs the reader the trust the rest
 of the evidence earns.
 
-## 2. API consistency — D
+## 2. API consistency: D
 
 The package's one job is that two repositories mean the same thing by the
 same name. It is internally inconsistent about this:
@@ -75,10 +77,14 @@ Fixing it is a major version under this repo's own rule: GSA-815 imports
 `CallOutcome`, and changing its base changes both equality and
 serialization.
 
-## 3. Rule integrity — C
+**Status: resolved in `v1.0.0`.** `CallOutcome` is now a `RowEnum`, a string enum, and `CallOutcome == "resolved"` holds. The JSON round trip of `CallPercept` was not re-run here.
+
+## 3. Rule integrity: C
 
 `cns/__init__.py` states the package "carries no behaviour, no I/O, no
-business logic". Five functions have real bodies:
+business logic". Five functions had real bodies at the assessment.
+
+**Status:** `default_likelihoods()` was removed in `v1.0.0`. The package rule was amended to allow "a pure function of itself" (`cns/__init__.py`, README), so the other four now sit within it. Whether `snapshot()` still raises on a plain-dict `latent` was not re-tested here.
 
 | location | why it matters |
 |---|---|
@@ -100,20 +106,22 @@ moved out, or the rule should be amended to permit pure, dependency-free
 row helpers and say so. Both are defensible. Silently doing one while
 documenting the other is not.
 
-## 4. Tests — C
+## 4. Tests: C
 
-12 tests, all passing, and they assert genuinely useful things: field order,
+12 tests, all passing at the assessment, and they assert genuinely useful things: field order,
 both pre-extraction constructor shapes, enum value sets, frozen-ness, the
 exception hierarchy, and that `KernelComponent` is still a hollow seam.
 
-Absent: any serialization round trip, any check that the package is
+**Status:** the repository's suite now collects 2,907 tests in total (the 12 above were the package's own tests at the time). The later additions include a public-shape snapshot test and a Python-version matrix in CI. The points below were not re-checked one by one.
+
+Absent at the assessment: any serialization round trip, any check that the package is
 behaviour-free, any test that a consumer's import still resolves, and any
 run on more than one Python version despite `requires-python = ">=3.10"`
 and an enum mixin whose string behaviour has changed across recent releases.
 
-## 5. Adoption — C+
+## 5. Adoption: C+
 
-Four real import sites in three repositories:
+Four real import sites in three repositories (at the assessment; the consuming repositories are outside this one and were not re-checked here):
 
 | repo | module used | pinned at |
 |---|---|---|
@@ -127,26 +135,28 @@ local `Graph` and imports it. The extraction is not theoretical.
 Two observations. The pins are coherent, and `cns/graph.py` between
 `9f8f3fe` and HEAD differs only by the confidentiality header, so advancing
 those pins is safe today. And `cns.governance` is 108 lines and 14 of the
-package's 24 classes, with zero consumers. More than half the package has
-never been exercised by anything but its own tests.
+package's 24 classes, with zero consumers (at the assessment; GSA-815 is the consumer named in the roadmap, and it was not re-checked here). More than half the package had
+never been exercised by anything but its own tests at the time.
 
-Of roughly 30 repositories in the library, 3 consume CNS.
+Of roughly 30 repositories in the library, 3 consumed CNS at the assessment. The current count is not measured here.
 
-## 6. Release engineering — F
+## 6. Release engineering: F
 
 No CI. No tags. No release process. No branch protection evident. Consumers
 pin raw commit SHAs, which works, but nothing runs the test suite before a
 commit becomes pinnable, and nothing tells a consumer that a newer commit
 exists or whether it is safe.
 
+**Status:** CI (`.github/workflows/ci.yml`) and tags `v0.1.0` through `v2.3.0` now exist, and consumers pin tags. Whether the test job is a required check on `main` was not verified here.
+
 For a package three repositories depend on, a push to `main` that breaks a
 contract is invisible until a consumer's own tests fail, and the README
 correctly notes those consumer tests are "the check that can fail". That is
 an acceptable design only when the package itself is also checked.
 
-## 7. Packaging and typing — D
+## 7. Packaging and typing: D
 
-**No `py.typed` marker.** Under PEP 561, a package without it is treated as
+**No `py.typed` marker (at the assessment; resolved since: `cns/py.typed` exists and is in package-data).** Under PEP 561, a package without it is treated as
 untyped: `mypy` and `pyright` in every consumer silently ignore every
 annotation in `cns`. For a package whose entire deliverable is typed row
 shapes, this discards most of the value at the consumer boundary. It is a
@@ -156,20 +166,20 @@ No `LICENSE` file, only `NOTICE`. (Resolved 2026-10-06: Apache-2.0 `LICENSE`, `N
 field. For proprietary code that is a defensible choice, but it should be
 deliberate and stated rather than absent.
 
-## 8. Evidence reproducibility — B-
+## 8. Evidence reproducibility: B-
 
 The methodology is genuinely good: structural hashing, a held-out
 prediction test with a third-party control, mechanical vocabulary
 reduction, and an honest account of two runs differing. `COLLISIONS.md` now
 reconciles itself against `CNS_MAP.md` and prints the differences.
 
-Weaknesses: `ROOT` is hard-coded to `/home/user/lib` in `cns_map.py`; the
+Weaknesses: `ROOT` is hard-coded to `/home/user/lib` in `docs/evidence/cns_map.py` (still open at d572b22); the
 source commit SHAs of the scanned repositories are recorded nowhere, so no
 run is exactly reproducible; and `GSA-815/vendor/sentinel_os` is a git
 submodule whose absence silently removes eight collisions from any scan
 (now documented in `docs/evidence/README.md`).
 
-## 9. Confidentiality posture — C
+## 9. Confidentiality posture: C
 
 > **Superseded 2026-10-06.** The owner decided to make CNS public under the
 > Apache License 2.0; the confidentiality notice and NOTICE terms were
@@ -194,7 +204,7 @@ the owner, not a defect to fix unilaterally: either the public references
 come out, or the notice is narrowed to the shapes and evidence it can
 actually defend.
 
-## 10. Operational risk — D
+## 10. Operational risk: D
 
 Nine commits, all on 2026-09-11, one human author and one agent. No second
 maintainer, no runbook, no documented process for cutting a version or
@@ -225,5 +235,7 @@ Ranked by value per unit of effort.
 6. **Decide the ghost_tools disclosure.** Owner's call, but it should be a
    decision rather than an oversight.
 
-None of these is large. The package is 309 lines. The gap between where it
+None of these is large. The package was 309 lines at the assessment and is 1,603 lines in `cns/*.py` at d572b22. The gap between where it
 is and production grade is process, not code.
+
+**Status:** items 1 to 4 are resolved, as recorded in each section above. Item 5 and item 6 were not re-checked here; item 6 is still an owner decision.

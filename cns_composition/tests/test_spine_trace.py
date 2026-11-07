@@ -1,6 +1,7 @@
 """spine_trace: the four stages of the decision spine must describe one run."""
 
 import dataclasses
+from typing import Any
 
 import pytest
 from cns.gate import subject_digest
@@ -13,7 +14,7 @@ def d(label: str) -> str:
 
 
 def record(**over) -> SpineRecord:
-    base = dict(
+    base: dict[str, Any] = dict(
         entity_id="patient_1",
         keyset_digest=d("keys"), keys_present=("fever", "septic_shock", "tachycardia"),
         lock_result_digests={"sepsis_lock": d("sepsis"), "abnormal_vitals_lock": d("abnormal")},

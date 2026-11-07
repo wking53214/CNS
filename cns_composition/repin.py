@@ -2,9 +2,9 @@
 
 WHY THIS EXISTS
 
-`contracts/warden-stack.json` says which commits of the seven circuit repositories belong together, and
+`contracts/warden-stack.json` says which commits of the circuit repositories belong together, and
 Warden refuses a stack whose checkout is at any other commit. That is the point of it, and it is also the
-chore: every merge to any of the seven makes the manifest wrong, and until somebody edits it by hand the
+chore: every merge to any of them makes the manifest wrong, and until somebody edits it by hand the
 whole circuit refuses to run. It went stale twice on the day the manifest was first merged.
 
 This module is the editing, done by a program, from facts. It reads each pinned repository's HEAD in a
@@ -15,7 +15,12 @@ WHAT IT WILL NOT DO
 
   It never adds or removes a repository. The manifest says which repositories make up the stack; this
     only moves their commits. A name in the manifest with no checkout is an error, not a skipped pin.
-  It never pins a dirty checkout unless told to. A commit that is not what is on disk is not a fact.
+  It never pins a dirty checkout unless told to. A commit that is not what is on disk is not a fact. "Dirty"
+    is asked the way Warden 0.13.8 asks it, because git's own answer depends on who asks: git runs with no user
+    or system configuration, every untracked file is listed (only the repository's own .gitignore can hide
+    one), submodules are not ignored, the executable bit is compared, and a tracked file whose index entry
+    carries `assume-unchanged` or `skip-worktree` counts as uncommitted work, since git would not report its
+    next edit. Before 2.0.0 a seat file edited and then marked `assume-unchanged` was pinned as clean.
   It never touches `schema` or `contract`. Those are claims about the seat contract, not about commits.
   It never guesses. Any checkout it cannot read is an error that names the checkout.
 
@@ -27,27 +32,62 @@ newline) and a test holds the committed file to it, so an unchanged stack gives 
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import shutil
 import subprocess  # nosec B404 - git is run with a fixed argument list, never through a shell
 import sys
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from cns.stack import StackManifest, StackPin
+from cns_composition import delivery
 
-__all__ = ["RepinError", "DEFAULT_MANIFEST", "stack_folders", "manifest_names", "unread", "read_heads", "repin_text",
-           "changes", "main"]
+__all__ = ["RepinError", "DEFAULT_MANIFEST", "DEFAULT_RELEASED", "stack_folders", "load_manifest", "manifest_names",
+           "load_released", "released_beside", "released_text", "released_drift", "unread", "uncovered_notes",
+           "read_heads", "uncommitted", "repin_text", "changes", "render_install", "main"]
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
+#: The repositories released from the circuit, each at the commit its CNS pin is read at. The manifest never names
+#: them; they are consumers of CNS, read by `seat_pins` and `cns_versions` and never part of Warden's stack.
+DEFAULT_RELEASED = Path(__file__).resolve().parents[1] / "contracts" / "released-seats.json"
+RELEASED_SCHEMA = "released-seats/1"
 
-#: Environment for git: no prompts, no system config, and the same scrub the scanners use.
-_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_OPTIONAL_LOCKS": "0"}
 #: Config that names a program is overridden on the command line, because a checkout's own config is data
-#: written by somebody else and git will run what it names.
-_GIT_SAFE = ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=cat")
+#: written by somebody else and git will run what it names. The rest is what a status of uncommitted work must
+#: not be talked out of by configuration: no global ignore file, file stat not trusted blindly, the mode bit
+#: compared, no untracked-file cache.
+_GIT_SAFE = ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=cat",
+             "-c", "core.excludesFile=", "-c", "core.ignoreStat=false", "-c", "core.fileMode=true",
+             "-c", "core.untrackedCache=false")
 _GIT_TIMEOUT_SECONDS = 30
+
+_empty_config_dir: Optional[Path] = None
+
+
+def _empty_config() -> Path:
+    """A folder holding an empty git config file, made once per process and removed when it ends."""
+    global _empty_config_dir
+    if _empty_config_dir is None or not (_empty_config_dir / "gitconfig").is_file():
+        folder = Path(tempfile.mkdtemp(prefix="cns-git-"))
+        (folder / "gitconfig").write_text("", encoding="utf-8")
+        atexit.register(shutil.rmtree, str(folder), True)
+        _empty_config_dir = folder
+    return _empty_config_dir
+
+
+def _git_env() -> Dict[str, str]:
+    """The environment git runs in: no GIT_* variable from the caller (a stray GIT_DIR would point it
+    elsewhere), no prompt, no optional locks, and no user or system configuration at all. HOME and
+    XDG_CONFIG_HOME point at the empty folder for a git that predates GIT_CONFIG_GLOBAL."""
+    folder = _empty_config()
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
+                "HOME": str(folder), "XDG_CONFIG_HOME": str(folder),
+                "GIT_CONFIG_GLOBAL": str(folder / "gitconfig"), "GIT_CONFIG_SYSTEM": str(folder / "gitconfig")})
+    return env
 
 
 class RepinError(Exception):
@@ -58,7 +98,7 @@ def _git(folder: Path, *args: str) -> str:
     exe = shutil.which("git")
     if exe is None:
         raise RepinError("git is not on PATH")
-    env = {**os.environ, **_GIT_ENV}
+    env = _git_env()
     try:
         done = subprocess.run(  # nosec B603 - fixed argument list, no shell
             [exe, *_GIT_SAFE, "-C", str(folder), *args],
@@ -76,21 +116,82 @@ def stack_folders(stack: Path) -> List[Path]:
     return sorted(p for p in Path(stack).iterdir() if p.is_dir())
 
 
-def manifest_names(path: Optional[Path] = None) -> List[str]:
-    """The repository names a manifest pins, in its order. Raises RepinError if it cannot be read as a manifest."""
+def load_manifest(path: Optional[Path] = None) -> Dict[str, str]:
+    """The pins a manifest holds, name to commit, in its order. Raises RepinError if it cannot be read as a manifest."""
     path = Path(path) if path else DEFAULT_MANIFEST
     try:
-        text = path.read_text(encoding="utf-8")
+        text = delivery.read_text(path)
+    except delivery.DeliveryError as err:
+        raise RepinError(str(err)) from err
     except (OSError, UnicodeDecodeError) as err:
         raise RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
     _, manifest = _load(text)
-    return [p.name for p in manifest.repos]
+    _refuse_released(path, [p.name for p in manifest.repos])
+    return {p.name: p.commit for p in manifest.repos}
+
+
+def manifest_names(path: Optional[Path] = None) -> List[str]:
+    """The repository names a manifest pins, in its order. Raises RepinError if it cannot be read as a manifest."""
+    return list(load_manifest(path))
+
+
+def released_beside(manifest: Path) -> Optional[Path]:
+    """The released-seats file that sits beside a manifest, or None when the manifest has none (a throwaway one)."""
+    path = Path(manifest).with_name(DEFAULT_RELEASED.name)
+    return path if path.is_file() else None
+
+
+def load_released(path: Optional[Path] = None) -> Dict[str, str]:
+    """The repositories released from the circuit, name to commit, in the file's order. Raises RepinError if the file
+    cannot be read as a released-seats file or names a repository twice (without regard to case)."""
+    path = Path(path) if path else DEFAULT_RELEASED
+    try:
+        data = json.loads(delivery.read_text(path))
+    except delivery.DeliveryError as err:
+        raise RepinError(str(err)) from err
+    except (OSError, ValueError) as err:
+        raise RepinError(f"{str(path)!r} cannot be read as JSON: {type(err).__name__}") from err
+    if not isinstance(data, dict) or data.get("schema") != RELEASED_SCHEMA or not isinstance(data.get("repos"), dict):
+        raise RepinError(f"{str(path)!r} is not a {RELEASED_SCHEMA} file with a \"repos\" object")
+    seats: Dict[str, str] = {}
+    for name, commit in data["repos"].items():
+        if not isinstance(commit, str) or len(commit) != 40 or commit.strip("0123456789abcdef"):
+            raise RepinError(f"{str(path)!r}: {name!r} is not pinned to a full lowercase 40-character commit")
+        if name.casefold() in {n.casefold() for n in seats}:
+            raise RepinError(f"{str(path)!r} names {name!r} twice")
+        seats[str(name)] = commit
+    return seats
+
+
+def _refuse_released(manifest: Path, names: Sequence[str]) -> None:
+    """A manifest that sits beside a released-seats file must not name a released repository: re-pinning would put it
+    back into the circuit. A manifest with no such file beside it (a throwaway one) is not held to it."""
+    beside = released_beside(manifest)
+    if beside is None:
+        return
+    released = {n.casefold() for n in load_released(beside)}
+    back = [n for n in names if n.casefold() in released]
+    if back:
+        raise RepinError(f"the manifest names {', '.join(back)}, which {beside.name} lists as released from the "
+                         "circuit; a released repository is not part of the stack")
 
 
 def unread(names: Sequence[str], read: Sequence[str]) -> List[str]:
     """The manifest names that no folder name in `read` matches (without regard to case, as Warden matches them)."""
     seen = {r.casefold() for r in read}
     return [n for n in names if n.casefold() not in seen]
+
+
+def uncovered_notes(stack: Path, names: Sequence[str]) -> List[str]:
+    """One note when the stack folder holds checkouts the manifest does not name. A note, not a failure: Warden
+    refuses only a folder it uses (WATCHER_MCU, released from the circuit, may sit beside the five and read the record afterwards), but a
+    person reading "every pin agrees" should know which folders that claim does not cover."""
+    covered = {n.casefold() for n in names}
+    extra = [p.name for p in stack_folders(stack) if p.name.casefold() not in covered and not p.name.startswith(".")]
+    if not extra:
+        return []
+    return [f"the stack folder also holds {', '.join(extra)}, which the manifest does not name, so nothing pins "
+            + ("it" if len(extra) == 1 else "them") + " to a commit"]
 
 
 def _folder_for(stack: Path, name: str) -> Path:
@@ -113,11 +214,29 @@ def read_heads(stack: Path, names: Sequence[str], *, allow_dirty: bool = False) 
     for name in names:
         folder = _folder_for(stack, name)
         head = _git(folder, "rev-parse", "HEAD")
-        if not allow_dirty and _git(folder, "status", "--porcelain", "--untracked-files=no"):
-            raise RepinError(f"{name!r} has uncommitted changes, so its HEAD is not what is on disk; "
-                             "commit or stash them, or pass allow_dirty")
+        if not allow_dirty:
+            changed, hidden = uncommitted(folder)
+            if changed:
+                flagged = (f"; {hidden} of them hidden from git status by an index flag, which `git update-index "
+                           "--no-assume-unchanged` or `--no-skip-worktree` clears") if hidden else ""
+                raise RepinError(f"{name!r} has uncommitted changes ({changed} path(s) are dirty{flagged}), so "
+                                 "its HEAD is not what is on disk; commit, stash or remove them, or pass allow_dirty")
         heads[name] = head
     return heads
+
+
+def uncommitted(folder: Path) -> Tuple[int, int]:
+    """(paths with uncommitted work, of which hidden by an index flag) for a checkout, asked the strict way.
+
+    Every untracked file is listed and only the repository's own .gitignore can hide one; submodules are not
+    ignored; a tracked file flagged `assume-unchanged` (a lowercase letter in `git ls-files -v`) or
+    `skip-worktree` (`S`) counts, because git would report nothing for it whatever it holds."""
+    status = _git(folder, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none")
+    changed = {line[3:] for line in status.splitlines() if line.strip()}
+    listing = _git(folder, "ls-files", "-v", "-z", "--full-name", "--", ":/")
+    hidden = {entry.partition(" ")[2] for entry in listing.split("\0")
+              if entry and (entry[0].islower() or entry[0] == "S")}
+    return len(changed | hidden), len(hidden - changed)
 
 
 def _load(text: str) -> Tuple[Dict[str, object], StackManifest]:
@@ -158,7 +277,42 @@ def repin_text(text: str, heads: Mapping[str, str]) -> str:
     return new
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def released_text(text: str, heads: Mapping[str, str]) -> str:
+    """The released-seats file with each commit moved to `heads[name]`. Only `repos` values change; the set and the
+    order of the names, the schema and every other field stay."""
+    try:
+        data = json.loads(text)
+    except ValueError as err:
+        raise RepinError(f"the released-seats file cannot be read as JSON: {type(err).__name__}") from err
+    if not isinstance(data, dict) or data.get("schema") != RELEASED_SCHEMA or not isinstance(data.get("repos"), dict):
+        raise RepinError(f"the released-seats file is not a {RELEASED_SCHEMA} file with a \"repos\" object")
+    missing = [n for n in data["repos"] if n not in heads]
+    if missing:
+        raise RepinError("no commit was given for: " + ", ".join(missing))
+    new = json.dumps({**data, "repos": {n: heads[n] for n in data["repos"]}}, indent=2) + "\n"
+    return new
+
+
+def released_drift(consumers: Path, released: Mapping[str, str]) -> List[str]:
+    """One sentence per released repository whose checkout in `consumers` is at a commit other than the one the
+    released-seats file records. A repository with no checkout there, or a folder that is not a git checkout, is not
+    compared (seat_pins says separately when none was read)."""
+    problems: List[str] = []
+    for name, recorded in released.items():
+        try:
+            folder = _folder_for(Path(consumers), name)
+        except RepinError:
+            continue
+        if not (folder / ".git").exists():
+            continue
+        head = _git(folder, "rev-parse", "HEAD")
+        if head != recorded:
+            problems.append(f"{name} is checked out at {head[:12]}, but contracts/released-seats.json records "
+                            f"{recorded[:12]}; run repin with --released to record it, or check out the recorded commit")
+    return problems
+
+
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.repin",
         description="Rewrite the pins in the circuit manifest to the HEAD of each checkout in a stack folder.")
@@ -168,29 +322,86 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--check", action="store_true",
                         help="write nothing; exit 1 if any pin is stale, 0 if all are current")
     parser.add_argument("--allow-dirty", action="store_true", help="pin a checkout that has uncommitted changes")
+    parser.add_argument("--released", type=Path, default=None, metavar="DIR",
+                        help="a folder holding a checkout of each repository released from the circuit: the "
+                             "released-seats file beside the manifest is re-pinned to their HEADs the same way (and "
+                             "--check counts a stale one). Without it the file is left as it is")
     args = parser.parse_args(argv)
 
     path = args.manifest or Path(__file__).resolve().parents[1] / "contracts" / "warden-stack.json"
     try:
-        text = path.read_text(encoding="utf-8")
+        text = delivery.read_text(path)
         _, manifest = _load(text)
+        _refuse_released(path, [p.name for p in manifest.repos])
         heads = read_heads(args.stack, [p.name for p in manifest.repos], allow_dirty=args.allow_dirty)
         moved = changes(text, heads)
         new = repin_text(text, heads)
+        released_file = released_beside(path)
+        released_moved: List[Tuple[str, str, str]] = []
+        released_new: Optional[str] = None
+        if args.released is not None:
+            if released_file is None:
+                raise RepinError(f"--released was given but there is no {DEFAULT_RELEASED.name} beside {str(path)!r}")
+            seats = load_released(released_file)
+            released_heads = read_heads(args.released, list(seats), allow_dirty=args.allow_dirty)
+            released_moved = [(n, seats[n], released_heads[n]) for n in seats if released_heads[n] != seats[n]]
+            released_new = released_text(delivery.read_text(released_file), released_heads)
     except (RepinError, OSError) as err:
         print(f"repin: {err}", file=sys.stderr)
         return 2
-    for name, old, now in moved:
+    for note in uncovered_notes(args.stack, [p.name for p in manifest.repos]):
+        print(f"note: {note}")
+    if args.released is None and released_file is not None:
+        print(f"note: {released_file.name} was not compared with any checkout (no --released folder), so it is left as it is")
+    for name, old, now in moved + released_moved:
         print(f"{name}: {old[:12]} -> {now[:12]}")
-    if not moved:
+    if not moved and not released_moved:
         print("repin: every pin is current")
         return 0
     if args.check:
-        print(f"repin: {len(moved)} pin(s) are stale", file=sys.stderr)
+        print(f"repin: {len(moved) + len(released_moved)} pin(s) are stale", file=sys.stderr)
         return 1
-    path.write_text(new, encoding="utf-8")
-    print(f"repin: wrote {len(moved)} pin(s) to {path}")
+    try:
+        if moved:
+            delivery.write_file(path, new)
+        if released_moved and released_file is not None and released_new is not None:
+            delivery.write_file(released_file, released_new)
+    except delivery.DeliveryError as err:
+        print(f"repin: {err}", file=sys.stderr)
+        return 2
+    if moved:
+        print(f"repin: wrote {len(moved)} pin(s) to {path}")
+    if released_moved and released_file is not None:
+        print(f"repin: wrote {len(released_moved)} released commit(s) to {released_file}")
+    return render_install(path, args.stack) if moved else 0
+
+
+def render_install(manifest_path: Path, stack: Path) -> int:
+    """After the manifest moved: rewrite the install file beside it so the two cannot drift apart, with each
+    version comment refreshed from its checkout. No install file beside the manifest is said, not skipped silently.
+    Returns the exit code for the command."""
+    from cns_composition import cns_versions, install_stack  # here, not at the top: cns_versions imports repin
+    install = manifest_path.with_name("install-stack.txt")
+    if not install.exists():
+        print(f"repin: no install-stack.txt beside {manifest_path}, so nothing was rendered from the new pins")
+        return 0
+    try:
+        text = delivery.read_text(install)
+        manifest = load_manifest(manifest_path)
+        table = cns_versions.load_table()
+        rendered = install_stack.render(text, manifest, table, install_stack.stack_versions(stack, list(manifest)))
+        if rendered != text:
+            delivery.write_file(install, rendered)
+    except (RepinError, install_stack.RenderError, OSError) as err:
+        print(f"repin: the manifest moved but {install} could not be rendered from it: {err}", file=sys.stderr)
+        return 2
+    print(f"repin: {'wrote' if rendered != text else 'left'} {install}")
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.run(_main, argv, "repin")
 
 
 if __name__ == "__main__":

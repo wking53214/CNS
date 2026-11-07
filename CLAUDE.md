@@ -9,7 +9,7 @@ may add to them; it may not relax them.
 2. Minimal diffs. No rewrites. Preserve every existing behaviour not named
    in a step.
 3. The `cns` package stays shapes-only. Its own test,
-   `test_rows_do_not_mutate_themselves`, is the judge. Behaviour written
+   `test_rows_do_not_mutate_themselves` (in `tests/test_graph.py`), is the judge. Behaviour written
    against the shapes lives beside the package (`cns_composition`), never
    inside it.
 4. Run the affected test suite after every step. If a pre-existing test
@@ -24,4 +24,4 @@ may add to them; it may not relax them.
    counts, commits made, anything skipped and why.
 
 A recorded gap is an assertion, never a skip; `conftest.py` fails the run
-on a skip and says why. Every test directory is in `testpaths`.
+on a skip and says why. Every test directory is in `testpaths` (set in `pyproject.toml`).

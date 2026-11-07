@@ -1,0 +1,61 @@
+[
+ {
+  "below": {
+   "reasons": [
+    "Disclosed monthly income of 100000 cents is below the 450000 cent threshold for income-screen v1.",
+    "The document digest is all zeros and the identity is marked live-demo, so the document may not be an authentic submission and needs human review.",
+    "escalated: a person must look"
+   ],
+   "verdict": "retry"
+  },
+  "clears": {
+   "reasons": [
+    "Disclosed monthly income of 512000 cents meets the income-screen v1 threshold of 450000 cents.",
+    "The disclosed document type is a paystub, and the income figure is an integer in cents."
+   ],
+   "verdict": "pass"
+  },
+  "executed": true,
+  "live": true,
+  "model": "claude-haiku-5-5",
+  "provenance": [
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 1795,
+    "model_reported": "claude-haiku-5-5",
+    "model_requested": "claude-haiku-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict pass",
+    "request_sha256": "9d3b525133f01b1be684b5466742f69b41fb65c3f7f0ca143de21711fb2f5938",
+    "response_sha256": "5638caf219d67be87f71de9851a0d2dd531110193906ee44b91bf556ab3c6e20"
+   },
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 2994,
+    "model_reported": "claude-haiku-5-5",
+    "model_requested": "claude-haiku-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict retry",
+    "request_sha256": "289048e6387e416b5cee96fd417462b337d1f84864d3261bbb8dd6ea2d200761",
+    "response_sha256": "eb310217519dab149f7d684ddf6fd0722241abb379b352fe817ed808fc422367"
+   }
+  ],
+  "provider": "anthropic"
+ },
+ {
+  "executed": false,
+  "provider": "google"
+ },
+ {
+  "executed": false,
+  "provider": "openai"
+ },
+ {
+  "executed": false,
+  "provider": "copilot-github-models"
+ }
+]

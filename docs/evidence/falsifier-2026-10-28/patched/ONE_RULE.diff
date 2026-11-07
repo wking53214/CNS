@@ -1,0 +1,33 @@
+diff --git a/warden/guard.py b/warden/guard.py
+index 6332295..b96af3f 100644
+--- a/warden/guard.py
++++ b/warden/guard.py
+@@ -435,10 +435,9 @@ def violation(target: Path, proposal: Transformation, auth: Authorization) -> Op
+             return "refused", (f"{edit.path} is test material (a fixture, specimen, golden file, snapshot or "
+                                "corpus folder); the loop never edits what the tests compare against, not even "
+                                "its whitespace")
+-        if (is_protected(edit.path, hooks) or is_protected(real, hooks)) and not format_only(target, edit):
+-            return "refused", (f"{edit.path} decides whether a change is acceptable or how the project is built "
+-                               "and run (tests, test or build configuration, CI, dependency lists, git hooks); "
+-                               "the loop may not edit it")
++        # FALSIFIER (throwaway): a protected path is no longer refused here. The edit is applied, measured
++        # and judged; the Judge turns it into INSUFFICIENT, so the run ends ACCEPT_UNVERIFIED and HELD by
++        # digest for a named human (`warden keep`). `judging_files_touched` still names every such path.
+         if not (scope_allows(auth, edit.path) and scope_allows(auth, real)) and out_of_scope is None:
+             out_of_scope = ("scope", f"{edit.path} is outside the grant's scope {auth.scope!r} "
+                                      "(a documentation grant covers prose only)")
+diff --git a/judge/seat.py b/judge/seat.py
+index 6f40a58..c862b89 100644
+--- a/judge/seat.py
++++ b/judge/seat.py
+@@ -466,7 +466,9 @@ def _decide(e: Evidence) -> Verdict:
+         harm.append(f"Ghost's baseline or another .ghost_ file was changed ({', '.join(baseline_changed[:3])}), "
+                     "which can hide findings")
+     if judging:
+-        harm.append(f"tests or test settings were changed ({', '.join(judging[:3])})")
++        # FALSIFIER (throwaway): not harm but unknown, so the result is held for a named human to keep or drop.
++        unknown.append(f"tests or test settings were changed ({', '.join(judging[:3])}); the machine does not "
++                       "approve that, a named human keeps or drops the held result")
+     if outside:
+         harm.append(f"an edit reached outside the project or into git or environment folders ({', '.join(outside[:3])})")
+ 

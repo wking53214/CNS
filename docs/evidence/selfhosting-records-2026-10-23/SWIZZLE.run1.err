@@ -1,0 +1,25 @@
+warden: INFO warden.cli: seat loaded: drafter.seat:Drafter (Drafter, requires_contract=1)
+warden: INFO warden.cli: seat loaded: burnish.finisher:Burnish (Burnish, requires_contract=1)
+warden: INFO warden.cli: seat loaded: judge.seat:Judge (Judge, requires_contract=1)
+warden: INFO warden.tagteam: run: target=/tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/targets/SWIZZLE scope=documentation authorized=selfhost-experiment judge=yes
+warden: INFO warden.isolation: instrument swizzle.cli --contract exited 0 in 0.2s
+warden: INFO warden.isolation: instrument swizzle.cli prove exited 0 in 0.4s
+warden: INFO warden.tagteam: swizzle proofs: hold (SWIZZLE proofs: 12 of 12 proofs hold.)
+warden: INFO warden.isolation: instrument swizzle.cli assay exited 0 in 7.3s
+warden: INFO warden.tagteam: assay grading: usable (ASSAY: Ghost caught 5 of 7 known failure modes (60/60 manifest claims hold))
+warden: INFO warden.isolation: instrument ghost_buster.cli /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/targets/SWIZZLE exited 1 in 14.5s
+warden: INFO warden.tagteam: ghost scan: 215 finding(s)
+warden: INFO warden.isolation: instrument swizzle.cli --contract exited 0 in 0.2s
+warden: INFO warden.isolation: instrument swizzle.cli prove exited 0 in 0.5s
+warden: INFO warden.tagteam: swizzle proofs: hold (SWIZZLE proofs: 12 of 12 proofs hold.)
+warden: INFO warden.suite: suite: running the target's own tests with pytest (timeout 3000s)
+warden: INFO warden.suite: suite: ran in 81.4s: 1374 passed, 0 failed, 0 errors, 5 skipped, 0 xfailed, 0 xpassed
+warden: INFO warden.suite: suite: running the target's own tests with pytest (timeout 3000s)
+warden: INFO warden.suite: suite: ran in 79.7s: 1374 passed, 0 failed, 0 errors, 5 skipped, 0 xfailed, 0 xpassed
+warden: INFO warden.suite: suite: running the target's own tests with pytest (timeout 3000s)
+warden: INFO warden.suite: suite: ran in 83.8s: 1373 passed, 1 failed, 0 errors, 5 skipped, 0 xfailed, 0 xpassed; pytest exited 1
+warden: INFO warden.tagteam: verdict: FINISH_REJECTED (unmeasured: none) Finishing: PUT_BACK. The finishing change was put back.
+warden: INFO warden.tagteam: put back: 1 path(s) restored after FINISH_REJECTED
+warden: INFO warden.cli: tagteam finished: decision=FINISH_REJECTED exit=1 put_back=True unmeasured=none
+warden: INFO warden.horsemen: receipt prcp_22aff30a68be: FINISH_REJECTED, 6 handoff(s)
+warden: receipt written to /tmp/claude-0/-home-user/f6a28526-97bd-5e48-a511-1959d5dd9622/scratchpad/selfhost/records/SWIZZLE.run1.receipt.json

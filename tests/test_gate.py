@@ -288,3 +288,67 @@ def test_negative_zero_digests_the_same_as_zero():
     different digests, or a verdict stops binding to content that did not
     change."""
     assert subject_digest({"d": -0.0}) == subject_digest({"d": 0.0})
+
+
+@pytest.mark.parametrize("key", [1, 1.5, None, True, ("a",), b"a"])
+def test_a_mapping_key_that_is_not_text_is_a_type_error_before_any_lookup(key):
+    """Documented as TypeError; it used to be a KeyError for {1: "a"}, which a caller catching TypeError missed."""
+    with pytest.raises(TypeError, match="keys must be text"):
+        subject_digest({key: "a"})
+    with pytest.raises(TypeError, match="keys must be text"):
+        subject_digest({"outer": {key: "a"}})
+
+
+def test_a_text_key_that_looks_like_a_number_still_digests_as_text():
+    assert subject_digest({"1": "a"}) == subject_digest({"1": "a"})
+    assert len(subject_digest({"1": "a"})) == 64
+
+
+# ------------------------------------------------- every refusal is a TypeError (D-14)
+
+@pytest.mark.parametrize("text", ["\ud800", "\udfff", "a\ud83d", "\ude00b", "ok \udc80 ok"])
+def test_a_lone_surrogate_is_a_type_error_not_a_unicode_error(text):
+    """It used to escape as UnicodeEncodeError from the final encode, which a caller catching TypeError missed."""
+    with pytest.raises(TypeError, match="lone surrogate"):
+        subject_digest({"s": text})
+    with pytest.raises(TypeError, match="lone surrogate"):
+        subject_digest({text: "key"})
+    with pytest.raises(TypeError, match="lone surrogate"):
+        subject_digest({"deep": [{"x": text}]})
+
+
+def test_a_surrogate_pair_written_as_one_code_point_still_digests():
+    """Only an unpaired surrogate is refused. A real astral character is one code point and always was fine."""
+    from cns.gate import _canonical
+    assert _canonical({"s": "\U0001f600"}) == "d:1:s:1:ss:1:\U0001f600"
+    with pytest.raises(TypeError, match="lone surrogate"):
+        subject_digest({"s": "\ud83d\ude00"})  # two halves written apart in Python are two lone surrogates
+
+
+@pytest.mark.parametrize("make", [
+    lambda: b"ab",
+    lambda: bytearray(b"ab"),
+    lambda: memoryview(b"ab"),
+    lambda: __import__("array").array("B", b"ab"),
+])
+def test_bytes_like_content_is_refused_not_digested_as_a_list_of_ints(make):
+    """bytearray, memoryview and array.array are registered sequences and used to digest exactly as [97, 98]."""
+    with pytest.raises(TypeError, match="cannot bind a verdict to"):
+        subject_digest({"a": make()})
+    with pytest.raises(TypeError, match="cannot bind a verdict to"):
+        subject_digest({"outer": [1, make()]})
+
+
+def test_a_list_and_a_tuple_and_other_sequences_still_digest_alike():
+    from collections import deque
+    want = subject_digest({"a": [97, 98]})
+    assert subject_digest({"a": (97, 98)}) == want
+    assert subject_digest({"a": range(97, 99)}) == want
+    assert subject_digest({"a": deque([97, 98])}) == want
+
+
+def test_every_refusal_from_subject_digest_is_a_type_error():
+    for bad in ({"x": float("nan")}, {"x": float("-inf")}, {1: "a"}, {"x": b""}, {"x": bytearray()},
+                {"x": "\ud800"}, {"\udc00": 1}, {"x": object()}, {"x": {1, 2}}):
+        with pytest.raises(TypeError):
+            subject_digest(bad)

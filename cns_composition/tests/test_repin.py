@@ -90,9 +90,60 @@ def test_a_dirty_checkout_is_refused_unless_allowed(stack):
     assert repin.read_heads(stack, ["alpha"], allow_dirty=True)["alpha"] == git(stack / "alpha", "rev-parse", "HEAD")
 
 
-def test_an_untracked_file_does_not_make_a_checkout_dirty(stack):
+def test_an_untracked_file_makes_a_checkout_dirty_and_an_ignored_one_does_not(stack):
+    """2.0.0: an untracked file is code the pin does not describe, as Warden counts it. Only the repository's own
+    .gitignore can hide one. Before 2.0.0 untracked files were not counted."""
+    (stack / "alpha" / ".gitignore").write_text("*.pyc\n")
+    git(stack / "alpha", "add", "-A")
+    git(stack / "alpha", "commit", "-q", "-m", "ignore")
     (stack / "alpha" / "__pycache__.pyc").write_text("x")
     assert "alpha" in repin.read_heads(stack, ["alpha"])
+    (stack / "alpha" / "extra.py").write_text("x")
+    with pytest.raises(repin.RepinError, match=r"1 path\(s\) are dirty"):
+        repin.read_heads(stack, ["alpha"])
+    assert repin.uncommitted(stack / "alpha") == (1, 0)
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_a_tracked_file_an_index_flag_hides_from_status_still_counts(stack, flag):
+    """git status reports nothing for such a file whatever it holds; the pin would describe code that is not there."""
+    (stack / "alpha" / "f0.txt").write_text("tampered\n")
+    git(stack / "alpha", "update-index", flag, "f0.txt")
+    assert git(stack / "alpha", "status", "--porcelain") == ""  # the bypass works on plain git
+    with pytest.raises(repin.RepinError, match=r"1 of them hidden from git status by an index flag"):
+        repin.read_heads(stack, ["alpha"])
+    assert repin.uncommitted(stack / "alpha") == (1, 1)
+
+
+def test_the_callers_global_git_configuration_cannot_hide_a_change(stack, tmp_path, monkeypatch):
+    """A global excludes file, a global status.showUntrackedFiles=no and a core.fileMode=false in the checkout's
+    own config each hide a change from plain git; none of them is read."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "excludes").write_text("extra.py\n")
+    (home / ".gitconfig").write_text(f"[core]\n\texcludesFile = {home / 'excludes'}\n"
+                                     "[status]\n\tshowUntrackedFiles = no\n")
+    git(stack / "alpha", "config", "core.fileMode", "false")  # git init wrote true there; the checkout's own config wins
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home))
+    monkeypatch.delenv("GIT_CONFIG_GLOBAL", raising=False)
+    (stack / "alpha" / "extra.py").write_text("x")
+    assert git(stack / "alpha", "status", "--porcelain") == ""  # the bypass works on plain git
+    with pytest.raises(repin.RepinError, match="uncommitted changes"):
+        repin.read_heads(stack, ["alpha"])
+    (stack / "alpha" / "extra.py").unlink()
+    (stack / "alpha" / "f0.txt").chmod(0o755)
+    assert git(stack / "alpha", "status", "--porcelain") == ""
+    with pytest.raises(repin.RepinError, match="uncommitted changes"):
+        repin.read_heads(stack, ["alpha"])
+
+
+def test_a_stray_git_dir_in_the_environment_does_not_point_git_elsewhere(stack, tmp_path, monkeypatch):
+    other = make_repo(tmp_path / "other", "x")
+    expected = git(stack / "alpha", "rev-parse", "HEAD")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    assert git(stack / "alpha", "rev-parse", "HEAD") != expected  # plain git now answers for the other repository
+    assert repin.read_heads(stack, ["alpha"])["alpha"] == expected
 
 
 def test_repin_moves_only_the_commits(stack):
@@ -225,3 +276,15 @@ def test_manifest_names_come_in_the_manifests_order(tmp_path):
     assert repin.manifest_names() == list(json.loads(repin.DEFAULT_MANIFEST.read_text(encoding="utf-8"))["repos"])
     with pytest.raises(repin.RepinError, match="cannot be read"):
         repin.manifest_names(tmp_path / "absent-manifest.json")
+
+
+def test_a_stack_folder_the_manifest_does_not_name_is_noted_by_check_and_by_write(stack, tmp_path, capsys):
+    make_repo(stack, "WATCHER_MCU")
+    heads = repin.read_heads(stack, ["alpha", "Beta"])
+    path = tmp_path / "m.json"
+    path.write_text(manifest_text({"alpha": heads["alpha"], "Beta": heads["Beta"]}), encoding="utf-8")
+    assert repin.main(["--stack", str(stack), "--manifest", str(path), "--check"]) == 0
+    assert "note: the stack folder also holds WATCHER_MCU, which the manifest does not name" in capsys.readouterr().out
+    assert repin.uncovered_notes(stack, ["alpha", "beta"]) == [
+        "the stack folder also holds WATCHER_MCU, which the manifest does not name, so nothing pins it to a commit"]
+    assert repin.uncovered_notes(stack, ["alpha", "Beta", "watcher_mcu"]) == []

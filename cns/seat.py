@@ -71,6 +71,10 @@ class Evidence:
     #: Scanner finding identities at the start and at the end. None: the scanner never ran.
     ghost_before: Optional[Tuple[str, ...]]
     ghost_after: Optional[Tuple[str, ...]]
+    #: Finding id -> the scanner's own severity word (Ghost: critical, major, minor, informational).
+    #: None means the writer did not say. Added in 2.1.0; the bare ids stay in ghost_before and ghost_after.
+    #: Keyword-only, so it can sit here beside the ids it describes without moving any positional field.
+    ghost_severity: Optional[Mapping[str, str]] = field(default=None, kw_only=True)
     #: Removals that failed a test and were left in place.
     declined: Tuple[str, ...]
     #: True: the attacker's own proofs held. False: they did not. None: not run.
@@ -84,6 +88,11 @@ class Evidence:
     assay: Optional[Mapping[str, object]] = None
     ghost_baseline_before: Optional[Mapping[str, object]] = None
     ghost_baseline_after: Optional[Mapping[str, object]] = None
+    #: True: the finisher was called after the loop converged. False: it was not. None: the governor did
+    #: not say (a governor older than this field). Added in 2.0.0 because a converged run ends on
+    #: NOTHING_TO_PROPOSE whether or not a finisher then edited files, so without this the judge cannot
+    #: tell a finishing edit from a fabricated one; JUDGE 0.4.8 records that limit in its own docstring.
+    finisher_ran: Optional[bool] = None
 
 
 @dataclass(frozen=True)

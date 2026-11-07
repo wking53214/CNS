@@ -2,13 +2,15 @@
 
 WHY THIS EXISTS
 
-`repin` can say what the heads of the seven repositories are. It cannot say whether those seven still work
-together, and a manifest that names a combination nobody ran is a guess with a commit hash on it. This is the
-run: it builds a small throwaway repository, hands it to Warden with `--stack` and `--cns`, and reports whether
-the whole circuit (Ghost Tools, SWIZZLE, ASSAY, the Drafter, the Judge, Burnish) ended ACCEPT.
+`repin` can say what the heads of the circuit repositories are. It cannot say whether they still work together, and
+a manifest that names a combination nobody ran is a guess with a commit hash on it. This is the run: it builds a
+small throwaway repository with one ordinary change committed on a side branch, hands it to Warden with `--stack`,
+`--cns` and `--claim-commit`, and reports whether the whole circuit (Ghost Tools, SWIZZLE, ASSAY, the Judge, with
+Warden's claim seat in the Drafter's place and no finisher) ended ACCEPT. DRAFTER and BURNISH are released from the
+circuit: the stack folder holds neither, and Warden runs without them because the manifest does not name them.
 
 It is also a daily health check for the combination, because the same run answers "did a merge to any one of
-the seven break the others". That check is what an exact-commit pin was standing in for.
+them break the others". That check is what an exact-commit pin was standing in for.
 
 WHAT COUNTS AS A PASS
 
@@ -35,6 +37,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+from cns_composition import delivery
+
 __all__ = ["CanaryResult", "run_canary", "main"]
 
 #: What the interpreter must be able to import on its own. The throwaway repository's tests need pytest, and the
@@ -44,12 +48,12 @@ __all__ = ["CanaryResult", "run_canary", "main"]
 #: matplotlib are for ASSAY: a claim it cannot run is a failure, so without them Warden ends INCONCLUSIVE.
 _NEEDED = ("pytest", "cns", "numpy", "matplotlib")
 #: The checkouts whose packages Warden imports as seats. Matched without regard to case, as Warden matches a stack.
-_IMPORTED = ("WARDEN", "JUDGE", "DRAFTER", "BURNISH")
+_IMPORTED = ("WARDEN", "JUDGE")
 _TIMEOUT_SECONDS = 1800
 _GIT_IDENT = ("-c", "user.name=circuit-canary", "-c", "user.email=canary@invalid", "-c", "commit.gpgsign=false")
 
-#: The throwaway repository: a tiny package whose README says nothing about its tests, which is what the
-#: circuit has already been shown to accept under a documentation grant.
+#: The throwaway repository: a tiny package whose README says nothing about its tests. The canary claims one
+#: ordinary change to it (`_claim_commit`) under a code grant.
 _TARGET = {
     "README.md": "# shapes\n\nArea helpers for circles and rectangles.\n",
     "shapes/__init__.py": '"""Small geometry helpers."""\n',
@@ -64,15 +68,28 @@ _TARGET = {
 }
 
 
+#: The one change the canary claims: an ordinary edit to a code file that no test or configuration covers, which Ghost
+#: reads as clean (a new function nobody calls is a dead-code finding; a rewrite of an expression is not).
+_CLAIM_PATH = Path("shapes") / "area.py"
+_CLAIM_OLD, _CLAIM_NEW = "return math.pi * radius * radius", "return math.pi * radius ** 2"
+
+
 @dataclass(frozen=True)
 class CanaryResult:
     ok: bool
     decision: str
     reason: str
+    #: True when the canary could not be set up (no stack folder, a checkout or a module missing, no interpreter): the
+    #: question was not asked, which the command reports as exit 2, not as the exit 1 of "the circuit did not ACCEPT".
+    unusable: bool = False
 
 
 def _fail(decision: str, reason: str) -> CanaryResult:
     return CanaryResult(ok=False, decision=decision, reason=reason)
+
+
+def _unusable(reason: str) -> CanaryResult:
+    return CanaryResult(ok=False, decision="CANARY_ERROR", reason=reason, unusable=True)
 
 
 def _folder(stack: Path, name: str) -> Optional[Path]:
@@ -114,37 +131,64 @@ def _make_target(root: Path) -> Path:
     return target
 
 
+def _rev(folder: Path) -> str:
+    exe = shutil.which("git")
+    if exe is None:
+        raise OSError("git is not on PATH")
+    done = subprocess.run([exe, "-C", str(folder), "rev-parse", "HEAD"],  # nosec B603 - fixed argument list
+                          capture_output=True, text=True, check=True, timeout=60)
+    return done.stdout.strip()
+
+
+def _claim_commit(target: Path) -> str:
+    """Commit the one claimed change on a side branch of `target`, return to the base it applies to, and return the
+    claimed commit. Warden's claim seat reads the diff of that commit from the target's own git and applies it to the
+    target as it stands, so the target is left at the base with nothing uncommitted."""
+    path = target / _CLAIM_PATH
+    text = path.read_text(encoding="utf-8")
+    if _CLAIM_OLD not in text:
+        raise OSError(f"the claimed change does not apply to {_CLAIM_PATH.as_posix()}")
+    _git(target, "checkout", "-q", "-b", "claimed-change")
+    path.write_text(text.replace(_CLAIM_OLD, _CLAIM_NEW), encoding="utf-8")
+    _git(target, "add", "-A")
+    _git(target, "commit", "-q", "-m", "write the circle area with a power")
+    claimed = _rev(target)
+    _git(target, "checkout", "-q", "-")
+    return claimed
+
+
 def run_canary(stack: Path, cns: Path, *, python: Optional[str] = None,
                timeout: int = _TIMEOUT_SECONDS) -> CanaryResult:
     """Run the whole circuit over `stack` with the manifest from `cns`; say whether it ended ACCEPT."""
     stack, cns = Path(stack), Path(cns)
     if not stack.is_dir():
-        return _fail("CANARY_ERROR", f"the stack folder {str(stack)!r} does not exist")
+        return _unusable(f"the stack folder {str(stack)!r} does not exist")
     paths: List[str] = []
     for name in _IMPORTED:
         found = _folder(stack, name)
         if found is None:
-            return _fail("CANARY_ERROR", f"the stack folder has no {name} checkout")
+            return _unusable(f"the stack folder has no {name} checkout")
         paths.append(str(found))
     paths.append(str(cns))
     try:
         missing = _missing_modules(python or sys.executable)
     except (OSError, subprocess.SubprocessError) as err:
-        return _fail("CANARY_ERROR", f"the interpreter could not be started: {type(err).__name__}")
+        return _unusable(f"the interpreter could not be started: {type(err).__name__}")
     if missing:
-        return _fail("CANARY_ERROR",
-                     f"this interpreter cannot import {', '.join(missing)} without PYTHONPATH, and the circuit's "
-                     "instruments do not inherit PYTHONPATH; install them (pip install pytest numpy matplotlib . from a CNS checkout)")
+        return _unusable(f"this interpreter cannot import {', '.join(missing)} without PYTHONPATH, and the circuit's "
+                         "instruments do not inherit PYTHONPATH; install them (pip install pytest numpy matplotlib . "
+                         "from a CNS checkout)")
     env: Dict[str, str] = {**os.environ, "PYTHONPATH": os.pathsep.join(paths)}
     with tempfile.TemporaryDirectory(prefix="circuit-canary-") as tmp:
         try:
             target = _make_target(Path(tmp))
+            claimed = _claim_commit(target)
         except (OSError, subprocess.SubprocessError) as err:
             return _fail("CANARY_ERROR", f"could not build the throwaway repository: {type(err).__name__}")
         cmd = [python or sys.executable, "-m", "warden.cli", "tagteam", str(target),
-               "--stack", str(stack), "--cns", str(cns),
+               "--stack", str(stack), "--cns", str(cns), "--claim-commit", claimed,
                "--authorize", "circuit-canary", "--reason", "does the whole circuit still work together",
-               "--scope", "documentation"]
+               "--scope", "code"]
         try:
             done = subprocess.run(cmd, capture_output=True, text=True, env=env,  # nosec B603 - fixed list, no shell
                                   timeout=timeout, check=False)
@@ -170,7 +214,7 @@ def run_canary(stack: Path, cns: Path, *, python: Optional[str] = None,
                            f"put_back={record.get('put_back')!r}")
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.circuit_canary",
         description="Run the whole circuit over a stack folder and exit 0 only if it ends ACCEPT.")
@@ -183,7 +227,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("circuit canary: ACCEPT")
         return 0
     print(f"circuit canary: {result.decision}: {result.reason}", file=sys.stderr)
-    return 1
+    return 2 if result.unusable else 1
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.run(_main, argv, "circuit_canary")
 
 
 if __name__ == "__main__":

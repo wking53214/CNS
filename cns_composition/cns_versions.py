@@ -2,8 +2,8 @@
 
 WHY THIS EXISTS
 
-`seat_pins` checks that repositories which pin the same package pin it identically, but only over the seven circuit
-repositories' pyproject.toml. Measured on 2026-10-21 across all of them: seven pinned CNS 1.9.0, fourteen pinned
+`seat_pins` checks that repositories which pin the same package pin it identically, but only over the circuit
+repositories' pyproject.toml (seven when this was measured, five since the owner ruling of 2026-10-29). Measured on 2026-10-21 across all of them: seven pinned CNS 1.9.0, fourteen pinned
 1.8.0, ten pinned a commit that is CNS 1.4.0, one pinned 1.6.0. Every one of them was "connected" and the ledger was
 green, yet they were not on the same CNS, and a connector built against 1.9.0 shapes was being installed against 1.4.0.
 Nothing said so. This reads every direct CNS pin and states the version it resolves to.
@@ -31,7 +31,7 @@ HOW MANY IT READ
 
 A stack folder may be a symlink to a checkout, as `repin` already allows, and it is read like any other. The run says
 how many repositories it read, and fails (exit 2) when a repository named by `contracts/warden-stack.json` was not
-read: with one of the seven missing, "all at or above the floor" would be a claim about six.
+read: with one of them missing, "all at or above the floor" would be a claim about the rest.
 
 The files are read as text and never executed.
 """
@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from cns_composition import repin
+from cns_composition import delivery, repin
 
 __all__ = ["Pin", "Release", "Table", "assess", "load_table", "read_pins", "resolve", "main"]
 
@@ -86,10 +86,16 @@ def _key(version: str) -> Tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 
 
-def load_table(path: Path = DEFAULT_TABLE) -> Table:
-    """Read and validate the release table. Raises repin.RepinError on anything that makes a lookup untrustworthy."""
+def load_table(path: Optional[Path] = None) -> Table:
+    """Read and validate the release table. Raises repin.RepinError on anything that makes a lookup untrustworthy.
+
+    With no path the default is read when this is called, not when the module is imported, so a caller (or a test)
+    that moves DEFAULT_TABLE is obeyed."""
+    path = DEFAULT_TABLE if path is None else path
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(delivery.read_text(Path(path)))
+    except delivery.DeliveryError as err:
+        raise repin.RepinError(str(err)) from err
     except (OSError, ValueError) as err:
         raise repin.RepinError(f"{str(path)!r} cannot be read as JSON: {type(err).__name__}") from err
     if not isinstance(data, dict) or data.get("schema") != SCHEMA:
@@ -173,8 +179,12 @@ def resolve(ref: str, table: Table) -> Optional[Release]:
     return None
 
 
-def assess(pins: Sequence[Pin], table: Table) -> Tuple[List[str], List[str]]:
-    """(problems, notes). A problem fails the check; a note is a repository that lags but is above the floor."""
+def assess(pins: Sequence[Pin], table: Table, spelling: str = "any") -> Tuple[List[str], List[str]]:
+    """(problems, notes). A problem fails the check; a note is a repository that lags but is above the floor.
+
+    `spelling="tag"` also fails a pin that names a release by its commit rather than by its tag: the circuit
+    repositories spell the CNS pin as the tag, because pip treats a tag URL and a commit URL as two different
+    sources and refuses to install them together."""
     problems: List[str] = []
     notes: List[str] = []
     cur, floor = _key(table.current.version), _key(table.floor)
@@ -187,6 +197,10 @@ def assess(pins: Sequence[Pin], table: Table) -> Tuple[List[str], List[str]]:
                             f"told: pin the tag {table.current.ref}, or add the release to the table")
             continue
         resolved.setdefault(pin.repo, []).append((pin, release))
+        if spelling == "tag" and (pin.ref != release.ref or release.ref == release.commit):
+            tag = f"its tag {release.ref}" if release.ref != release.commit else f"the tag {table.current.ref}"
+            problems.append(f"{where}, which is CNS {release.version} spelled as a commit; the circuit spells the pin "
+                            f"as {tag}, because pip cannot install a tag pin and a commit pin of one package together")
         version = _key(release.version)
         if version > cur:
             problems.append(f"{where}, which is CNS {release.version}, newer than the table's current "
@@ -204,7 +218,7 @@ def assess(pins: Sequence[Pin], table: Table) -> Tuple[List[str], List[str]]:
     return problems, notes
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.cns_versions",
         description="Fail if a repository pins a CNS release below the floor, or one the table does not know.")
@@ -212,13 +226,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--table", type=Path, default=DEFAULT_TABLE, help="the release table (default: contracts/)")
     parser.add_argument("--manifest", type=Path, default=repin.DEFAULT_MANIFEST,
                         help="the manifest whose repositories must all be read (default: contracts/warden-stack.json)")
+    parser.add_argument("--consumers", type=Path, default=None, metavar="DIR",
+                        help="a folder holding a checkout of each repository released from the circuit "
+                             "(contracts/released-seats.json): their CNS pins are held to the same rules, and each "
+                             "must be read; they are never part of Warden's stack folder")
+    parser.add_argument("--spelling", choices=("any", "tag"), default="any",
+                        help="tag: also fail a pin that names its release by commit instead of by tag, the spelling "
+                             "the circuit repositories share (default: any)")
     args = parser.parse_args(argv)
     try:
         names = repin.manifest_names(args.manifest)
         table = load_table(args.table)
         pins, read = scan(args.stack)
-        problems, notes = assess(pins, table)
         folders = [p.name for p in repin.stack_folders(args.stack)]
+        beside = repin.released_beside(args.manifest)
+        released = list(repin.load_released(beside)) if beside is not None else []
+        consumer_read: List[str] = []
+        if args.consumers is not None:
+            consumer_pins, consumer_read = scan(args.consumers)
+            pins += consumer_pins
+            folders += [p.name for p in repin.stack_folders(args.consumers)]
+        problems, notes = assess(pins, table, spelling=args.spelling)
+        if released and args.consumers is None:
+            notes.append(f"{', '.join(released)} are released from the circuit and no --consumers folder was given, so "
+                         "their CNS pins are not covered")
     except repin.RepinError as err:
         print(f"cns_versions: {err}", file=sys.stderr)
         return 2
@@ -230,6 +261,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"note: no direct CNS pin in: {', '.join(absent)}")
     for problem in problems:
         print(f"cns_versions: {problem}", file=sys.stderr)
+    if args.consumers is not None:
+        absent_released = repin.unread(released, consumer_read)
+        if absent_released:
+            print(f"cns_versions: the repositories released from the circuit are {', '.join(released)}, but nothing "
+                  f"was read from: {', '.join(absent_released)}. It is missing, not a folder, or has none of the "
+                  "files this reads, so no version can be claimed for it", file=sys.stderr)
+            return 2
     missing = repin.unread(names, read)
     if missing:
         print(f"cns_versions: read {len(read)} repositories, but the manifest names {len(names)} and nothing was "
@@ -238,10 +276,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     if problems:
         return 1
-    print(f"cns_versions: read {len(read)} repositories ({len(names)} of {len(names)} named by the manifest); "
+    consumers = f" and {len(consumer_read)} released" if args.consumers is not None else ""
+    print(f"cns_versions: read {len(read)}{consumers} repositories ({len(names)} of {len(names)} named by the manifest); "
           f"{len(pins)} pin(s) in {len(pinned)} repositories, all at or above the floor {table.floor} "
           f"(current {table.current.version})")
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.run(_main, argv, "cns_versions")
 
 
 if __name__ == "__main__":

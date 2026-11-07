@@ -42,13 +42,15 @@ _A, _O = GatePosition.ALPHA, GatePosition.OMEGA
 ENDS: Mapping[str, FrozenSet[GatePosition]] = {
     "Governance_Gateway": frozenset({_A}),        # the admission door
     "DIT": frozenset({_O}),                       # judges text on its way out
-    "GEMS": frozenset({_O}),                      # judges an artifact it produced
+    "GEMS": frozenset({_A, _O}),                  # the transport's input gate at ALPHA, an artifact it produced at OMEGA
     "Conservation_Kernel": frozenset({_A, _O}),   # root admission at ALPHA, a transformation at OMEGA
     "fortress-kernel": frozenset({_A, _O}),       # numeric_safety and mandate at ALPHA, invariants and audit_chain at OMEGA
     "PERCEIVE": frozenset({_A, _O}),              # the caller picks the end
     "HERALD": frozenset({_A, _O}),                # the source gate at ALPHA, the confidence gate at OMEGA
     "DGK": frozenset({_A}),                       # perimeter rules and health limits judge a request before anything commits
     "URE": frozenset({_A, _O}),                   # omega by default (the state the work left), alpha on request
+    "CNS": frozenset({_A}),                       # the composition layer's own checks (super_gate's same_subject), run first
+    "CCC": frozenset({_A}),                       # ccc.transition judges an attempted store change before it commits
 }
 
 #: A step: the repository the gate came from, the gate, and the candidate it judges.

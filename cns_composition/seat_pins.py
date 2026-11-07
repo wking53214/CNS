@@ -24,8 +24,8 @@ agreeing is what matters. A tag pin cannot be compared with a commit, so it is n
 HOW MANY IT READ
 
 A stack folder may be a symlink to a checkout, as `repin` already allows, and it is read like any other. The run says
-how many repositories it read, and fails (exit 2) when a repository the manifest names was not read: with one of the
-seven missing, "every pin agrees" would be a claim about six.
+how many repositories it read, and fails (exit 2) when a repository the manifest names was not read: with one of them
+missing, "every pin agrees" would be a claim about the rest.
 
 The files are read as text and never executed.
 """
@@ -39,9 +39,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from cns_composition import repin
+from cns_composition import delivery, repin
 
-__all__ = ["Pin", "agreement_problems", "lag_notes", "read_pins", "main"]
+__all__ = ["Pin", "agreement_problems", "lag_notes", "read_install", "read_pins", "main"]
 
 #: `"name @ git+URL@ref"`, in a dependencies list or an extra. The ref is whatever follows the last `@`.
 _DIRECT = re.compile(r"""["'](?P<pkg>[A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[^\]]*\])?\s*@\s*(?P<target>git\+[^"'\s]+)["']""")
@@ -105,9 +105,40 @@ def agreement_problems(pins: Sequence[Pin]) -> List[str]:
             continue
         urls_differ = len({p.url for p in group}) > 1
         spelled = "; ".join(f"{p.repo} pins {p.text if urls_differ else p.ref}" for p in group)
+        if urls_differ and len({(_same_repository(p.url), p.ref) for p in group}) == 1:
+            out.append(f"{package} is spelled differently for the same repository and commit: {spelled}. pip "
+                       "compares the text, so it cannot install these together; spell the URL the same way everywhere")
+            continue
         out.append(f"{package} is pinned differently: {spelled}. pip cannot install these together; "
                    "move the pin in every repository at once")
     return out
+
+
+def _same_repository(url: str) -> str:
+    """The URL with the differences GitHub ignores and pip does not removed: case, a trailing `.git`, a trailing slash."""
+    return url.rstrip("/").removesuffix(".git").casefold()
+
+
+#: A requirement line as a requirements file carries it: `name @ git+URL@ref`, unquoted, at the start of a line.
+_REQUIREMENT = re.compile(r"(?m)^\s*(?P<pkg>[A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[^\]]*\])?\s*@\s*(?P<target>git\+\S+)")
+
+
+def read_install(path: Path) -> List[Pin]:
+    """Every direct-URL pin in a requirements file such as contracts/install-stack.txt, as one more member of the
+    agreement under the file's own name. The file is read as text and never executed."""
+    path = Path(path)
+    try:
+        text = delivery.read_text(path)
+    except delivery.DeliveryError as err:
+        raise repin.RepinError(str(err)) from err
+    except (OSError, UnicodeDecodeError) as err:
+        raise repin.RepinError(f"{str(path)!r} cannot be read: {type(err).__name__}") from err
+    pins: List[Pin] = []
+    for match in _REQUIREMENT.finditer(text):
+        url, _, ref = match.group("target").rpartition("@")
+        if url and ref:
+            pins.append(Pin(path.name, _normalise(match.group("pkg")), url, ref))
+    return pins
 
 
 def lag_notes(stack: Path, pins: Sequence[Pin]) -> List[str]:
@@ -132,26 +163,63 @@ def lag_notes(stack: Path, pins: Sequence[Pin]) -> List[str]:
     return notes
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _released_names(manifest: Path) -> List[str]:
+    """The repositories released from the circuit, from the file beside the manifest ([] when there is none)."""
+    beside = repin.released_beside(manifest)
+    return list(repin.load_released(beside)) if beside is not None else []
+
+
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.seat_pins",
         description="Fail if two repositories in a stack folder pin the same package differently.")
     parser.add_argument("--stack", required=True, type=Path, help="a folder holding one checkout per repository")
     parser.add_argument("--manifest", type=Path, default=repin.DEFAULT_MANIFEST,
                         help="the manifest whose repositories must all be read (default: contracts/warden-stack.json)")
+    parser.add_argument("--consumers", type=Path, default=None, metavar="DIR",
+                        help="a folder holding a checkout of each repository released from the circuit "
+                             "(contracts/released-seats.json): their pins are read and must agree too, and each must "
+                             "be read; they are never part of Warden's stack folder")
+    parser.add_argument("--install", type=Path, default=None, metavar="FILE",
+                        help="a requirements file (contracts/install-stack.txt) whose pins must agree with the "
+                             "repositories' pins too; a URL spelled another way there is a disagreement")
     args = parser.parse_args(argv)
     try:
         names = repin.manifest_names(args.manifest)
         pins, read = scan(args.stack)
+        released = _released_names(args.manifest)
+        consumer_read: List[str] = []
+        if args.consumers is not None:
+            consumer_pins, consumer_read = scan(args.consumers)
+            pins += consumer_pins
+        if args.install is not None:
+            pins += read_install(args.install)
         problems = agreement_problems(pins)
         notes = lag_notes(args.stack, pins)
+        notes += repin.uncovered_notes(args.stack, names)
+        if released and args.consumers is None:
+            notes.append(f"{', '.join(released)} are released from the circuit and no --consumers folder was given, so "
+                         "their pins are not covered")
     except repin.RepinError as err:
         print(f"seat_pins: {err}", file=sys.stderr)
         return 2
+    if args.consumers is not None and released:
+        # A released repository's checkout is compared with the commit contracts/released-seats.json records for it
+        # (when that checkout is a git checkout at all): the file is state, and nothing else read it against a checkout.
+        beside = repin.released_beside(args.manifest)
+        if beside is not None:
+            problems += repin.released_drift(args.consumers, repin.load_released(beside))
     for note in notes:
         print(f"note: {note}")
     for problem in problems:
         print(f"seat_pins: {problem}", file=sys.stderr)
+    if args.consumers is not None:
+        absent = repin.unread(released, consumer_read)
+        if absent:
+            print(f"seat_pins: the repositories released from the circuit are {', '.join(released)}, but no "
+                  f"pyproject.toml was read from: {', '.join(absent)}. It is missing, not a folder, or has no "
+                  "pyproject.toml of its own, so no agreement can be claimed for it", file=sys.stderr)
+            return 2
     missing = repin.unread(names, read)
     if missing:
         print(f"seat_pins: read {len(read)} repositories, but the manifest names {len(names)} and no pyproject.toml "
@@ -161,10 +229,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if problems:
         return 1
     shared = sorted({p.package for p in pins})
-    print(f"seat_pins: read {len(read)} repositories ({len(names)} of {len(names)} named by the manifest); every "
+    consumers = f" and {len(consumer_read)} released" if args.consumers is not None else ""
+    print(f"seat_pins: read {len(read)}{consumers} repositories ({len(names)} of {len(names)} named by the manifest); every "
           f"shared pin agrees ({len(pins)} pin(s) across {len({p.repo for p in pins})} repositories: "
           f"{', '.join(shared)})")
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.run(_main, argv, "seat_pins")
 
 
 if __name__ == "__main__":

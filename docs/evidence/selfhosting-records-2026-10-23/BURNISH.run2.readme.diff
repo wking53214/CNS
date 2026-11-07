@@ -1,0 +1,26 @@
+diff --git a/README.md b/README.md
+index 90524c9..760f283 100644
+--- a/README.md
++++ b/README.md
+@@ -489,3 +489,21 @@ full table of vibecode, plain language and operational terms is in
+ ## License
+ 
+ Apache-2.0. Copyright 2026 William N. King. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
++
++<!-- burnish:begin claims-vs-reality -->
++## Measured facts (generated)
++
++- Warden ran the target's suite at the end of the loop: green; nothing failed or errored.
++- `CNS is referenced`: A CNS mention is not proof of a correct seam. Subject binding is UNKNOWN until inspected. [implemented]
++- No test-count claims found in the README.
++
++Critic: **No contradiction with the measurements was found. That is not a proof of the whole design.**
++
++- Ghost Tools still reports findings of these kinds: boundary, intra_function_duplicate_block, loop_invariant_call, name_disagreement, unmerged_branch, unreachable_declared_state. Converged means no fixes were left to propose, not that Ghost is silent.
++- Unknown: Finished means the loop had no proposals left, not that Ghost is silent.
++- Unknown: Whether any CNS digest here is the CNS canonical digest.
++
++README critic, on the README as it stood going into the finish:
++
++- no failures or gaps
++<!-- burnish:end -->
