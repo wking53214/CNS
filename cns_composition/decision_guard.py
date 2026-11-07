@@ -111,9 +111,12 @@ class DecisionGuard:
         self._lock = threading.Lock()
         self._expected_seats: Optional[Tuple[str, ...]] = None
         if expected_seats is not None:
-            if isinstance(expected_seats, (str, bytes)):
-                raise ValueError("expected_seats must be a collection of seat names, not one string")
-            seats = tuple(expected_seats)
+            if isinstance(expected_seats, (str, bytes, Mapping)):
+                raise ValueError("expected_seats must be a collection of seat names, not one string or a mapping")
+            try:
+                seats = tuple(expected_seats)
+            except TypeError:
+                raise ValueError("expected_seats must be a collection of seat names") from None
             if not seats:
                 raise ValueError("expected_seats is empty, so it would expect nothing; leave it out to pin no roster")
             if any(not isinstance(s, str) or not s for s in seats):

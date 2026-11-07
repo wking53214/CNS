@@ -236,6 +236,9 @@ class Decision:
 
     def _verdict_per_seat(self) -> bool:
         """Whether the verdicts are one for each seat, by gate name. A seat is `repository:gate`."""
+        if (any(not isinstance(key, str) for key in self.seats)
+                or any(not isinstance(r.gate, str) for r in self.run.results)):
+            return False  # a hand-built decision with a non-text name is not one verdict per seat; never raise here
         return (sorted(key.partition(":")[2] for key in self.seats)
                 == sorted(r.gate for r in self.run.results))
 
@@ -289,10 +292,15 @@ def digest_context(context: Optional[Mapping[str, str]]) -> str:
     malformed one is a ValueError, because a context that binds nothing would read as one that was checked."""
     if context is None:
         return ""
-    if (not isinstance(context, Mapping) or not context
-            or any(not isinstance(k, str) or not k or not isinstance(v, str) or not v for k, v in context.items())):
+    if not isinstance(context, Mapping) or not context:
         raise ValueError("context must be a non-empty mapping of non-empty text to non-empty text, or None")
-    return subject_digest(dict(context))
+    items = list(context.items())  # read once: what is validated is exactly what is digested
+    if any(not isinstance(k, str) or not k or not isinstance(v, str) or not v for k, v in items):
+        raise ValueError("context must be a non-empty mapping of non-empty text to non-empty text, or None")
+    try:
+        return subject_digest(dict(items))
+    except (TypeError, KeyError) as exc:  # a lone surrogate, or text that is not text once digested
+        raise ValueError(f"context cannot be digested: {exc}") from None
 
 
 def _verdict(r: GateResult) -> Mapping[str, object]:

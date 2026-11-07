@@ -277,6 +277,16 @@ Unreleased. Each line names the commit that holds it.
   `TERMINAL_BREACH` with no subject recorded (CNS-005, `cfeafee`).
 - `cns.gate.subject_digest`: a mapping key that is not text is a `TypeError` before any lookup (it was a `KeyError`);
   output for every valid input is unchanged (CNS-008, `ce4e966`).
+- `cns.gate.subject_digest` refuses `bytearray`, `memoryview` and `array.array` with a `TypeError`. At `v2.3.0` they were
+  digested as a list of integers (`bytearray(b"ab")` and `[97, 98]` gave one digest), which let a mutable buffer stand in
+  for a sequence. `bytes` and `str` are unchanged. Found by the independent review of this work.
+- `Decision.allowed` and `reasons()` return False and a reason, and never raise, for a hand-built decision whose seat or
+  gate name is not text; `digest_context` reads a mapping's items once and raises `ValueError` for text it cannot
+  digest; `DecisionGuard(expected_seats=...)` raises `ValueError` for a non-collection or a mapping;
+  `consumers.drift(expect=...)` refuses a single string; `cns_interop` is now seen as a CNS import by
+  `consumers.scan`, so a repository that imports only it is named when unregistered.
+- `repo_gates.ENDS`: GEMS stands at ALPHA as well as OMEGA (its transport's `CnsInputGate` is an ALPHA gate). Two tests
+  that used GEMS as the example of an OMEGA-only repository now use DIT; no assertion about GEMS's omega end changed.
 - `ResubmissionGuard`: a full table refuses a new subject instead of forgetting the oldest, and the same content is
   counted across names (`max_same_content`, default 12) (CNS-009, `3b29b38`; one test updated under rule 5).
 - The CCC admission door names CCC's rejected, superseded and unattested answers; each is still a `TERMINAL_BREACH`

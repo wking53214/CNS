@@ -124,7 +124,7 @@ REQUIRED: Mapping[str, Imports] = {
     "Resume_OS": {"cns.gate": ()},
 }
 
-_OURS = ("cns", "cns_composition")
+_OURS = ("cns", "cns_composition", "cns_interop")
 #: Folders that are not the repository's own running code. `archive` holds preserved records (GSA keeps an old
 #: file there that imports cns.governance on purpose); a record is not a consumer.
 _SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "site-packages", "__pycache__", "build", "dist", "archive"}
@@ -190,6 +190,8 @@ def drift(stack: Path, required: Optional[Mapping[str, Imports]] = None,
     `expect` names the repositories the ledger says are connected. Each one that has a checkout, imports CNS in its
     non-test source and is NOT registered is named: without this the check only ever looked at repositories someone had
     already registered, so a consumer nobody listed could be broken by a rename in CNS without a test saying so."""
+    if isinstance(expect, (str, bytes)):
+        raise ValueError("expect must be a collection of repository names, not one string")
     stack = Path(stack)
     out: List[str] = []
     for repo, registered in (REQUIRED if required is None else required).items():

@@ -42,7 +42,7 @@ _A, _O = GatePosition.ALPHA, GatePosition.OMEGA
 ENDS: Mapping[str, FrozenSet[GatePosition]] = {
     "Governance_Gateway": frozenset({_A}),        # the admission door
     "DIT": frozenset({_O}),                       # judges text on its way out
-    "GEMS": frozenset({_O}),                      # judges an artifact it produced
+    "GEMS": frozenset({_A, _O}),                  # the transport's input gate at ALPHA, an artifact it produced at OMEGA
     "Conservation_Kernel": frozenset({_A, _O}),   # root admission at ALPHA, a transformation at OMEGA
     "fortress-kernel": frozenset({_A, _O}),       # numeric_safety and mandate at ALPHA, invariants and audit_chain at OMEGA
     "PERCEIVE": frozenset({_A, _O}),              # the caller picks the end

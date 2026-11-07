@@ -31,7 +31,7 @@ def test_every_row_names_a_nonempty_set_of_real_ends():
 
 def test_the_doors_stand_at_alpha_the_judges_at_omega_and_two_repos_have_both():
     assert ends_of("Governance_Gateway") == {A}
-    assert ends_of("DIT") == {OMEGA} and ends_of("GEMS") == {OMEGA}
+    assert ends_of("DIT") == {OMEGA} and ends_of("GEMS") == {A, OMEGA}
     assert ends_of("Conservation_Kernel") == {A, OMEGA} and ends_of("fortress-kernel") == {A, OMEGA}
     assert ends_of("PERCEIVE") == {A, OMEGA} and ends_of("HERALD") == {A, OMEGA}
     assert ends_of("URE") == {A, OMEGA}
@@ -70,15 +70,15 @@ def test_a_gate_that_moved_to_an_end_its_repository_does_not_declare_is_refused_
 
 
 def test_a_door_filed_as_a_judge_is_refused_and_every_wrong_gate_is_named_at_once():
-    bad_door, bad_judge = FakeGate("gateway", OMEGA), FakeGate("gems", A)
+    bad_door, bad_judge = FakeGate("gateway", OMEGA), FakeGate("dit", A)
     with pytest.raises(ValueError) as caught:
-        run_repo_chain([("Governance_Gateway", bad_door, 1), ("GEMS", bad_judge, 2)])
+        run_repo_chain([("Governance_Gateway", bad_door, 1), ("DIT", bad_judge, 2)])
     text = str(caught.value)
     assert "gateway (Governance_Gateway declares alpha, not omega)" in text
-    assert "gems (GEMS declares omega, not alpha)" in text
+    assert "dit (DIT declares omega, not alpha)" in text
 
 
-@pytest.mark.parametrize("repo", ["Conservation_Kernel", "fortress-kernel", "PERCEIVE", "HERALD", "URE"])
+@pytest.mark.parametrize("repo", ["Conservation_Kernel", "fortress-kernel", "PERCEIVE", "HERALD", "URE", "GEMS"])
 def test_a_repository_with_both_ends_may_seat_a_gate_at_each(repo):
     low, high = FakeGate("low", A), FakeGate("high", OMEGA)
     run = run_repo_chain([(repo, low, 1), (repo, high, 2)])
