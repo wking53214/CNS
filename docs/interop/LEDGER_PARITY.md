@@ -1,5 +1,6 @@
 # Node and Python PostgreSQL ledger parity
 
+> **Check of 2026-11-07.** Every test name and repository file this page cites was confirmed to exist in this repository. Claims about the outcome of earlier runs and about other repositories were not re-run or re-verified.
 RACE-02 I-08 (R2-C-06). Verified from source on branch `race02-parity` (based on `race02-clock`), and every row below
 marked "tested" names the test that runs it against a real PostgreSQL 16 server started by the test. Labels used:
 **implemented** (code exists), **tested** (a test exercises it here), **experimental** (works, but not hardened or not

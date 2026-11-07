@@ -1,5 +1,6 @@
 # UAI-1 replay protection: the consistency model
 
+> **Check of 2026-11-07.** Every test name and repository file this page cites was confirmed to exist in this repository. Claims about the outcome of earlier runs and about other repositories were not re-run or re-verified.
 What each ledger guarantees, what a protected action must do, and where the claims stop. Everything below was tested; the
 tests are named. A guarantee that needs something the code cannot supply by itself says so.
 

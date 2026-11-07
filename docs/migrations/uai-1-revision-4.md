@@ -1,5 +1,6 @@
 # UAI-1 revision 4: migration
 
+> **Check of 2026-11-07.** The files and test names this page cites were checked against the repository. It describes a past revision, so it is kept as written.
 Revision 4 adds; it removes nothing. Existing integrations keep working. Behaviour changes only where noted.
 
 | Change | Who is affected | Action |
