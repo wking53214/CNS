@@ -24,4 +24,4 @@ may add to them; it may not relax them.
    counts, commits made, anything skipped and why.
 
 A recorded gap is an assertion, never a skip; `conftest.py` fails the run
-on a skip and says why. Every test directory is in `testpaths`.
+on a skip and says why. Every test directory is in `testpaths` (set in `pyproject.toml`).
