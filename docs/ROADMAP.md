@@ -1,8 +1,14 @@
 # Strategic plan: moving the scorecard
 
-Companion to `PRODUCTION_READINESS.md`. Baselines measured 2026-09-11 across
+Companion to `docs/PRODUCTION_READINESS.md`. Baselines measured 2026-09-11 across
 ten checked-out repositories. Effort figures are rough relative sizing, not
 estimates you should hold anyone to.
+
+**Status as of 2026-11-06 (CNS `main` at 73671d7).** The baseline table and its "now" column are the
+2026-09-11 measurement and were not refreshed. Phase 0 and Phase 1 are done, and Phase 2 is done in
+`v1.0.0`: every enum is a `RowEnum` and `CallerState.default_likelihoods` is removed. Tags now run from
+`v0.1.0` through `v2.3.0`. Items below marked to do are kept as the plan's record; check the marked
+items against the repository before acting on them.
 
 ## The governing idea
 
@@ -256,7 +262,7 @@ What remains is the work that needs judgement rather than mechanism.
   CNS carries the canonical variant and Ecology disagrees. Per class: align
   and migrate, or rename Ecology's and record that they were never the same
   thing.
-- **The 5 SHARED+LOCAL collisions** from `COLLISIONS.md`. One definition is
+- **The 5 SHARED+LOCAL collisions** from `docs/evidence/COLLISIONS.md`. One definition is
   the join key and the rest are local classes wearing its name. Renames,
   each inside one repository, no coordination.
 - **The 9 FORKED collisions.** Two or more variants each already have
