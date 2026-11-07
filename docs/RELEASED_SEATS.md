@@ -1,9 +1,15 @@
 # Decision record: three repositories released from the circuit
 
-Date: 2026-10-29. Owner ruling by William King (wking53214). Branch `claude/horsemen-production-status-5wsndb`.
+Date: 2026-10-29. Owner ruling by William King (wking53214). Written on branch `claude/horsemen-production-status-5wsndb`,
+which is no longer on origin; the record reached `main` through the Pin22 and Stage 6 commits listed below.
 This record states a decision and the evidence it rests on. When it was written (2026-10-29) it changed no pin, no
 contract file, no version and no release table; those moved in the later steps listed at the end, and the section
 "What the manifest says now" below says where each stands as of 2026-10-30.
+
+> **Check of 2026-11-07.** This pass checked the in-repository facts: the manifest, the install file, the released-seats
+> file, the test files, the workflow steps, the tags, and the seventeen refusal cases (names read from the code, which
+> pass 107 of 107 tests). Facts about the sibling repositories (Warden's version history and tags, the Warden release
+> 0.15.0, the later self-hosting re-runs) were not re-verified here and are stated as the record gave them.
 
 ## The ruling, and what "release" means
 
@@ -63,7 +69,7 @@ behaviour as a result of it. That is no longer true: see the next section.
 ## What the manifest says now (2026-10-30)
 
 `contracts/warden-stack.json` names five repositories, ghost_tools, SWIZZLE, ASSAY, JUDGE and WARDEN; it no longer
-names DRAFTER or BURNISH. `contracts/install-stack.txt` is its rendering and installs CNS at `v2.2.0` and those five, and
+names DRAFTER or BURNISH. `contracts/install-stack.txt` is its rendering and installs CNS and those five (as of 2026-10-30 it named `v2.2.0`; on 2026-11-07 it names `v2.3.0`, commit 41592fb, the later pin step), and
 no longer installs drafter, burnish or watcher-mcu. The three released repositories are listed in
 `contracts/released-seats.json` (schema `released-seats/1`), each at the commit its CNS pin is read at. That file is
 CNS's own; the `warden-stack/1` schema Warden reads did not change. Until 2026-10-30 nothing wrote it and nothing compared its commits with a checkout. `repin --released DIR` now writes it from the released repositories' current branch heads, the way it writes the manifest (the canary job of the repin workflow passes it, and the proposal carries the file with the manifest), and `seat_pins --consumers DIR` compares each git checkout in that folder with the file (`cns_composition/tests/test_released_seats.py`).
@@ -110,7 +116,7 @@ instrument and no README may say or imply that it is released.
 ## Sequence still to run
 
 1. The owner tags CNS v2.1.0. Done by the owner on 2026-10-29. (The owner tagged `v2.2.0` the same day; it equals
-   2.1.0 in the `cns` package.)
+   2.1.0 in the `cns` package.) The tag `v2.3.0` also exists.
 2. The pin cascade moves every cross-repository pin and the CNS pin, as a separate wave. Done for `v2.1.0` on
    2026-10-29 and for `v2.2.0` on 2026-10-30.
 3. A manifest edit that omits the three: done on 2026-10-30 (Pin22 step 4b). `contracts/warden-stack.json` stops naming
