@@ -57,9 +57,9 @@ were authenticated with until they close.
 |---|---|---|---|---|---|
 | single host (files) | `FileLedger` | SQLite `GrantStore` | hash chain in a file under `flock` | one host, development | any other host seeing state |
 | single host (SQLite, either language) | `SqliteLedger` | SQLite `GrantStore` | hash chain in a file (lock file in Node) | one host, Python or Node | multi-host; do not point Python and Node at one audit file |
-| shared (PostgreSQL, Python) | `PostgresLedger` (server-clock leases, fences) | `PostgresGrantStore` | one `PostgresAudit` chain | several receiver hosts | consensus; availability beyond one primary; detection of a cut-off tail of the chain |
+| shared (PostgreSQL, Python or Node) | `PostgresLedger` (server-clock leases, fences) | `PostgresGrantStore` | one `PostgresAudit` chain, written and verified by either language | several receiver hosts | consensus; availability beyond one primary; detection of a cut-off tail of the chain |
 
-Under `UAI_PROFILE=production`, `interop/act.py` refuses the single-host backends and requires the PostgreSQL ledger
+Under `UAI_PROFILE=production`, `interop/act.py` and `interop/node/act.mjs` refuse the single-host backends and require the PostgreSQL ledger
 **and** policy backend, and both runners require the clock check (next section). A shared policy version (`--publish-policy`) makes a host with stale or divergent grants refuse to
 start. Asynchronous standbys can lose an acknowledged write on failover; `--require-sync-replication` makes the ledger
 refuse unless the server demands quorum-durable commit, which is a configuration check, not a proof of the server's
@@ -87,14 +87,14 @@ can accept it again. The production-secure receiver therefore judges lifetimes b
 **What is audited.** Every refusal to start or to sync that is not a permit decision (`config`, `clock_skew`,
 `unavailable`) writes one structured line on stderr, `{"uai_audit": {..., "stage": "startup" | "decision", "recorded":
 "file" | "postgres" | null, "audit_error": "..."}}`. It is also appended to the receiver's hash-chained audit record where
-one is configured and reachable: the shared PostgreSQL chain for Python under `--policy-backend postgres`, otherwise the
+one is configured and reachable: the shared PostgreSQL chain in either language under `--policy-backend postgres`, otherwise the
 `--audit` file in either language (one chain: a Python entry and a Node entry chain onto each other and verify). If the
 record cannot be written, the line says so (`recorded: null`, the reason in `audit_error`); the refusal is unchanged and
 nothing is swallowed. A clock that fails when re-read for a decision is recorded with stage `decision`. *Implemented, tested.*
 
 Limits of that record, said plainly:
 
-- A decision-only receiver (the only form a production Node receiver can take, see below) has no audit record at all. Its
+- A decision-only receiver (a production receiver in either language can take this form, with no receiver policy) has no audit record at all. Its
   refusals are the stderr line, which is only as durable as wherever the operator sends stderr, and is not hash-chained.
   *Limit.*
 - When the database is what is down, the production audit sink (the same database) is down too: the refusal is the stderr
@@ -136,11 +136,11 @@ Written from what the code does and what the tests above show. "Inspected" means
    connection string is not accepted on the command line (a Node test checks that it never appears on one). The Node
    receiver needs the `psql` client on the host.
 3. **Timeouts.** Connect, statement and lock timeouts are bounded (3 s by default in both languages). In Python a commit
-   waiting on a standby is cancelled and refused, not trusted (Node has no quorum-commit mode). A database that answers after 5 s was refused as `unavailable` in
+   waiting on a standby is cancelled and refused, not trusted (Node does the same from outside: it bounds the whole `psql` call and then asks the server to cancel the waiting backend; see docs/interop/LEDGER_PARITY.md). A database that answers after 5 s was refused as `unavailable` in
    under 25 s in a test.
-4. **Replication.** `--require-sync-replication` (Python) refuses to write unless the server is configured for
+4. **Replication.** `--require-sync-replication` (Python and Node) refuses to write unless the server is configured for
    quorum-durable commit. That is a configuration check, not a proof of the server's replication. Asynchronous standbys can
-   lose an acknowledged redemption on failover. *Tested* against a real primary and standby in `test_ledger_postgres.py`: a synchronous standby behind a partition makes the ledger refuse, and after promotion nothing that was acknowledged is missing. Not combined with the clock scenarios.
+   lose an acknowledged redemption on failover. *Tested* against a real primary and standby in `test_ledger_postgres.py`: a synchronous standby behind a partition makes the ledger refuse, and after promotion nothing that was acknowledged is missing; and the same for the Node ledger in `test_node_quorum.py`. The standby is a second server process on the same machine, not a second machine. Not combined with the clock scenarios.
 5. **Privileges.** The runners create their own tables (`CREATE TABLE IF NOT EXISTS`, a sequence and an index) on first
    start, so the first start needs the right to create them; a least-privilege role for steady state is a deployment
    choice. *Inspected, not tested.* A database administrator is inside the trust boundary of these stores.
@@ -151,7 +151,7 @@ Written from what the code does and what the tests above show. "Inspected" means
    they have expired. *Guidance, not tested.*
 8. **Audit files.** Python and Node entries chain onto each other in one audit file and verify (tested, written one after the
    other), but the two languages lock the file differently, so do not run both against one file at the same moment (stated
-   above). The PostgreSQL audit chain is Python-only today.
+   above). The PostgreSQL audit chain has no such limit: either language appends under the database's lock (tested, with concurrent writers of both).
 
 ## Which profile for which condition
 
@@ -160,4 +160,4 @@ Written from what the code does and what the tests above show. "Inspected" means
 | Development, tests, one machine | default crypto, `local-process`, single-host files or SQLite |
 | One production host, local callers | production crypto, `local-process`, PostgreSQL ledger and policy (`act.py` under `UAI_PROFILE=production` accepts nothing else, even on one host) |
 | Production across hosts or networks | production crypto, `tls13-mutual`, PostgreSQL ledger and policy, synchronous replication where a lost write is unacceptable |
-| Node receiver | SQLite on one host, or the shared PostgreSQL ledger (`act.mjs --ledger-backend postgres`, needs the `psql` client); withdrawals and audit stay local, and there is no quorum-commit mode. Under `UAI_PROFILE=production` it enforces the same profile as `act.py`: the PostgreSQL ledger and `--max-clock-skew-ms` are required, and because Node has no shared policy store the only form that can run is `--decision-only` (no receiver policy, no audit record) |
+| Node receiver | SQLite on one host, or the shared PostgreSQL ledger (`act.mjs --ledger-backend postgres`, needs the `psql` client); with `--policy-backend postgres` withdrawals, the policy version and the audit chain are shared too, and `--require-sync-replication` is honoured. Under `UAI_PROFILE=production` it enforces the same profile as `act.py`: the PostgreSQL ledger, `--policy-backend postgres` (or `--decision-only`) and `--max-clock-skew-ms` are required. Multi-host operation is not proven; see docs/interop/LEDGER_PARITY.md |
