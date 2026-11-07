@@ -1,5 +1,6 @@
 # Falsifier run, 2026-10-28
 
+> **Check of 2026-11-07.** The records in this folder were confirmed to be present. The run itself was not repeated.
 ## What this folder is
 
 The records of one day of runs that put real AI co-authored commits through the Warden circuit and asked what the

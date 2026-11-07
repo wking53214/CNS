@@ -1,5 +1,6 @@
 # UAI-1 revision 3 (in progress): receiver policy is enforced where actions happen
 
+> **Check of 2026-11-07.** The files and test names this page cites were checked against the repository. It describes a past revision, so it is kept as written.
 Revision 3 changes no wire format. It changes what a receiver does with a verified decision.
 
 ## Tier 0 (this step): what changed

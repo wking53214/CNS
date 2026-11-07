@@ -1,5 +1,6 @@
 # Falsifier: method and environment (day one, 2026-10-28)
 
+> **Check of 2026-11-07.** Paths in this method refer to the run machine's working folder. Only the records, the patched files and the status file were copied here; the scripts and logs named below were not. Nothing was re-run.
 Everything under `scratchpad/falsifier/`. No real repository checkout was written to, nothing pushed, no tag, no PR,
 no write to /dev/null or any device node. Commits were made only in the two throwaway copies `patched/WARDEN` and
 `patched/JUDGE` (one commit each, the one-rule change) and read from the throwaway reference clone. No permission

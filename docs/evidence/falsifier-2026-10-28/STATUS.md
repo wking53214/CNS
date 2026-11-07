@@ -1,5 +1,6 @@
 # Falsifier status (written 2026-10-28 19:50:11 UTC by scripts/status.py)
 
+> **Check of 2026-11-07.** This file is the status script's own output from 2026-10-28, kept as written. It was not regenerated.
 ## as built (base): 20 of 20 run
 
 | n | commit | decision | exit | wall s | rules that fired | new Ghost findings (id, severity) | suite before -> after | held_digest |

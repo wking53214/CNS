@@ -1,5 +1,6 @@
 # UAI-1 revision 4: adversarial campaign
 
+> **Check of 2026-11-07.** Every test name and repository file this page cites was confirmed to exist in this repository. Claims about the outcome of earlier runs and about other repositories were not re-run or re-verified.
 Each row is a threat, the setup that tests it, what must happen, what happened when the test ran in this campaign
 (EXECUTED, 2026-10-31, see the run record in `UAI1_R4_ASSESSMENT.md`), whether the attack succeeded, and where it lives. "Class" is
 IMPL (an implementation defect), SPEC (a specification gap) or DEPLOY (a deployment limitation the design states). Where an
