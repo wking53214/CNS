@@ -1,5 +1,10 @@
 # UAI-1 8.0 closure campaign: Phases 1 to 3 (nothing modified)
 
+> **Status check of 2026-11-07.** This is a plan written on a dated baseline. Several files it proposes to add are not on
+> `main` today: `contracts/uai-authz-vectors.json`, `contracts/uai-errors.json`, `docs/interop/ERRORS.md`,
+> `docs/interop/TRANSPORT.md` and `docs/interop/DELEGATION.md`. The probe scripts it cites live in a scratch folder
+> outside the repository, not in it. The plan is kept as written so its reasons stay readable.
+
 ## Phase 1: verified baseline
 
 - `origin/main` = `279e7ffad64c82fc0dee23201af60f9960421f77` (merge of PR #73). Unchanged since the previous campaign; no newer commits.
