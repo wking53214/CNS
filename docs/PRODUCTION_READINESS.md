@@ -121,7 +121,7 @@ and an enum mixin whose string behaviour has changed across recent releases.
 
 ## 5. Adoption: C+
 
-Four real import sites in three repositories:
+Four real import sites in three repositories (at the assessment; the consuming repositories are outside this one and were not re-checked here):
 
 | repo | module used | pinned at |
 |---|---|---|
@@ -135,10 +135,10 @@ local `Graph` and imports it. The extraction is not theoretical.
 Two observations. The pins are coherent, and `cns/graph.py` between
 `9f8f3fe` and HEAD differs only by the confidentiality header, so advancing
 those pins is safe today. And `cns.governance` is 108 lines and 14 of the
-package's 24 classes, with zero consumers. More than half the package has
-never been exercised by anything but its own tests.
+package's 24 classes, with zero consumers (at the assessment; GSA-815 is the consumer named in the roadmap, and it was not re-checked here). More than half the package had
+never been exercised by anything but its own tests at the time.
 
-Of roughly 30 repositories in the library, 3 consume CNS.
+Of roughly 30 repositories in the library, 3 consumed CNS at the assessment. The current count is not measured here.
 
 ## 6. Release engineering: F
 
