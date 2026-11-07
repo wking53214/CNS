@@ -145,6 +145,7 @@ from ccc.models import ProvenanceStatus, RoadSignCategory
 from ccc.permission import WriteRequest
 from ccc.system import CCCSystem
 from cns.gate import GateOutcome
+from cns_composition.evidence_trace import EvidenceTrace, problems
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cns_composition.decision_guard import DecisionGuard
 from cns_composition.super_gate import Decision, Judged, SuperGate
@@ -668,14 +669,30 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
     return decision, unchecked.count
 
 
-def facts(decided, evidence: list, refusal: str, **extra) -> Dict[str, object]:
+def trace(read: Read, tie_source_id: str, tie_text: str, evidence: list, root: RootArtifact, entry: DoorArtifact) -> EvidenceTrace:
+    """The facts each hop states about the document, read off the real objects. Every value is the repository's own."""
+    return EvidenceTrace(
+        herald_source_id=read.document.source_id, herald_text_sha256=read.document.content_hash,
+        claim_source_hashes=tuple(e["source_hash"] for e in read.export["admitted"]),
+        tie_source_id=tie_source_id, tie_text_sha256=sha256(tie_text),
+        tie_evidence_ids=tuple(e.evidence_id for e in evidence),
+        tie_evidence_source_ids=tuple(e.source_ref.source_id for e in evidence),
+        root_text_sha256=root.content_digest,
+        root_source_refs=tuple(ref for prop in root.propositions for ref in prop.source_refs),
+        root_evidence_refs=tuple(ref for prop in root.propositions for ref in prop.evidence_refs),
+        root_artifact_digest=root.artifact_digest,
+        door_root_digest=str(entry.payload["root"]), door_source_id=str(entry.provenance["source_id"]))
+
+
+def facts(decided, evidence: list, refusal: str, seen: Optional[EvidenceTrace] = None, **extra) -> Dict[str, object]:
     decision, unchecked = decided
     run = decision.run
     return {"outcome": run.outcome.value, "allowed": decision.allowed,
             "blocked_by": sorted(r.gate for r in run.blocking()),
             "tie_refused": bool(refusal), "tie_evidence": len(evidence),
             "tie_source": sorted({e.source_ref.source_id for e in evidence}),
-            "omega_source_checked": run.omega_ran and unchecked == 0, **extra}
+            "omega_source_checked": run.omega_ran and unchecked == 0,
+            "one_document": problems(seen) == [] if seen is not None else None, **extra}
 
 
 def stopped(refusal: str, **extra) -> Dict[str, object]:
@@ -700,7 +717,8 @@ def run(text: str = INVOICE, source_id: str = "doc-1") -> Dict[str, object]:
     if refusal:
         return stopped(refusal)
     kernel, root = kernel_root(evidence, source_id, text)
-    return facts(decide(read, kernel, root, door(root, source_id)), evidence, refusal)
+    entry = door(root, source_id)
+    return facts(decide(read, kernel, root, entry), evidence, refusal, trace(read, source_id, text, evidence, root, entry))
 
 
 def export_to_other_text() -> Dict[str, object]:
@@ -721,7 +739,8 @@ def export_relabelled() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-7", INVOICE)
     kernel, root = kernel_root(evidence, "doc-7", INVOICE)
-    return facts(decide(read, kernel, root, door(root, "doc-7")), evidence, refusal)
+    entry = door(root, "doc-7")
+    return facts(decide(read, kernel, root, entry), evidence, refusal, trace(read, "doc-7", INVOICE, evidence, root, entry))
 
 
 def mixed_run() -> Dict[str, object]:
@@ -730,7 +749,9 @@ def mixed_run() -> Dict[str, object]:
     inflated_read = herald(INFLATED, "doc-1")
     evidence, refusal = tie(inflated_read.export, "doc-1", INFLATED)
     kernel, root = kernel_root(evidence, "doc-1", INFLATED)
-    return facts(decide(true_read, kernel, root, door(root, "doc-1")), evidence, refusal,
+    entry = door(root, "doc-1")
+    return facts(decide(true_read, kernel, root, entry), evidence, refusal,
+                 trace(true_read, "doc-1", INFLATED, evidence, root, entry),
                  root_text_is_what_herald_read=root.content == true_read.document.text)
 
 
@@ -738,7 +759,8 @@ def root_from_unread_source() -> Dict[str, object]:
     """The kernel root is an inference citing a source no hop ever read, and no evidence at all."""
     read = herald(INVOICE, "doc-1")
     kernel, root = kernel_root([], "doc-never-read", "The invoice came to $41,200.00.")
-    return facts(decide(read, kernel, root, door(root, "doc-never-read")), [], "")
+    entry = door(root, "doc-never-read")
+    return facts(decide(read, kernel, root, entry), [], "", trace(read, "doc-1", INVOICE, [], root, entry))
 
 
 def refused_by_evidence_guard(call: Callable[[], object]) -> bool:
@@ -871,10 +893,12 @@ def door_refused_kernel_proceeds(guarded: bool) -> Dict[str, object]:
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_guard() if guarded else None
     kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard, unguarded=not guarded)
-    decided = decide(read, kernel, root, tampered(door(root, "doc-1")))
+    entry = tampered(door(root, "doc-1"))
+    decided = decide(read, kernel, root, entry)
     opened = authorize(guard, decided[0]) if guard else False
     registered, by_guard = register(kernel, root)
-    return facts(decided, evidence, refusal, guard_opened=opened, kernel_registered_after_refusal=registered,
+    return facts(decided, evidence, refusal, trace(read, "doc-1", INVOICE, evidence, root, entry),
+                 guard_opened=opened, kernel_registered_after_refusal=registered,
                  refused_by_guard=by_guard)
 
 
@@ -1557,7 +1581,7 @@ NOT_REACHED = {"outcome": "not reached", "allowed": False, "tie_refused": True, 
 #: (name, how to observe it, the facts it must produce)
 SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] = [
     ("one document through all five repositories: every gate passes and the roster allows it",
-     run, HELD),
+     run, {**HELD, "one_document": True}),
     ("SEAM HOLDS: HERALD's confidence gate, given its document by the roster, re-checks the amount claim's citation against it",
      run, {"outcome": PASS, "allowed": True, "omega_source_checked": True}),
     ("SEAM HOLDS: the record HERALD read is handed to the roster relabelled as an attestation; same_subject cannot see standing, and HERALD's confidence gate refuses the claim against it",
@@ -1567,13 +1591,14 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("SEAM HOLDS: HERALD's export edited after it was signed is refused by TIE",
      export_edited, {**NOT_REACHED, "tie_refused_because": "export did not verify"}),
     ("SEAM HOLDS: HERALD read doc-1, TIE is told the same text is doc-7 and records it as doc-7; same_subject refuses it",
-     export_relabelled, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"], "tie_source": ["doc-7"]}),
+     export_relabelled, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"], "tie_source": ["doc-7"],
+                          "one_document": False}),
     ("SEAM HOLDS: HERALD judged the true invoice, kernel and gateway judged the inflated one; same_subject refuses it",
      mixed_run, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"],
-                 "root_text_is_what_herald_read": False}),
+                 "root_text_is_what_herald_read": False, "one_document": False}),
     ("SEAM HOLDS: a kernel root stated as FACT, citing a source no hop read and no evidence, is refused by same_subject",
      root_from_unread_source, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"],
-                               "tie_evidence": 0, "tie_source": []}),
+                               "tie_evidence": 0, "tie_source": [], "one_document": False}),
     ("SEAM HOLDS: a kernel root stated as FACT about the document HERALD read, citing no evidence, is refused by the kernel",
      fact_without_evidence, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["root_admission"],
                              "tie_evidence": 0, "tie_source": []}),
@@ -1588,7 +1613,7 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("SEAM HOLDS: the gateway refuses the door and the roster says no; the kernel built with the guard refuses to register the root",
      lambda: door_refused_kernel_proceeds(True),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway"], "guard_opened": False,
-      "kernel_registered_after_refusal": False, "refused_by_guard": True}),
+      "kernel_registered_after_refusal": False, "refused_by_guard": True, "one_document": False}),
     ("SEAM HOLDS: an approved decision opens the guard for the root it judged, once; a second root is refused",
      approved_registration, {**HELD, "guard_opened": True, "kernel_registered": True, "second_root_registered": False,
                              "second_refused_by_guard": True}),
