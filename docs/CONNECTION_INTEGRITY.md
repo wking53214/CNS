@@ -1,5 +1,8 @@
 # Connection integrity: what CNS binds, what it does not, and how to tell
 
+> **Check of 2026-11-07.** Each named function, option, module and test here was confirmed in code on `main`. The test
+> files named by short name are under `cns_composition/tests/`. Facts about other repositories are not covered by this page.
+
 This page says what the library proves about a connection and a decision, and what it leaves to the repository that
 owns the matter. Every claim here names the file or command that backs it. Where a property is not held, it is listed
 as a limit and a test asserts the limit (the `GAP` tests), so the day it closes a test fails and says so.
@@ -34,8 +37,8 @@ over the roster and every verdict, so a stored root cannot stand in for the verd
 - **Not correctness.** A digest says what a gate judged, not that it judged well.
 - **Not that the code behind a name is the repository's.** A roster binds the NAME of a seat. A lenient gate registered
   under `DIT:identity` fills it. Closing that is a package pin and an install the caller cannot replace, which is the
-  deployment's. `test_roster_enforcement.py::test_GAP_a_lenient_gate_under_a_required_name...` holds this limit.
-- **Not freshness.** Equal inputs give an equal root (`test_GAP_equal_inputs_give_equal_roots...`). Freshness is carried
+  deployment's. `cns_composition/tests/test_roster_enforcement.py::test_GAP_a_lenient_gate_under_a_required_name...` holds this limit.
+- **Not freshness.** Equal inputs give an equal root (`cns_composition/tests/test_roster_enforcement.py::test_GAP_equal_inputs_give_equal_roots...`). Freshness is carried
   by the decision's nonce, `ttl` and, for a portable decision, the UAI-1 envelope.
 - **Not tamper-proofing.** There is no secret in `cns`. A party that recomputes a digest after editing content gets a
   valid one. A consumer that needs more adds a MAC, as HERALD does.
@@ -62,7 +65,7 @@ a decision that is complete for the smaller roster. So the roster is established
 
 1. The application writes its roster by hand in its own file, reviewed with the code (`chains/*.py` call it
    `REQUIRED_SEATS`). It is never built from the seat list it checks, which would pass with a gate missing.
-2. The party that acts passes it to its guard: `DecisionGuard(read, expected_seats=REQUIRED_SEATS)`. A decision whose
+2. The party that acts passes it to its guard: `DecisionGuard(<the reader of the document>, expected_seats=REQUIRED_SEATS)`. A decision whose
    roster lacks a seat is refused, naming it, and is not spent. Seats beyond the list never weaken a decision.
 3. What a decision is for goes in `decide(..., context={"action": ..., "tenant": ..., "policy": ...})` and
    `DecisionGuard(..., expected_context=...)`. CNS does not interpret the context, it binds it.
