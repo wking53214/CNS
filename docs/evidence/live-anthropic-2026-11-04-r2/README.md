@@ -1,5 +1,8 @@
 # Live Anthropic run, 2026-11-04, second run (r2)
 
+> **Status check of 2026-11-07.** The client these runs used is still in `cns_interop/providers.py`
+> (`anthropic_complete`, standard library, no SDK). It is a different client from the SDK-based adapter in
+> `cns_composition/providers/anthropic.py`. The run itself was not repeated.
 The second run of the UAI-1 provider client against the real Anthropic API, after `render_prompt` was changed to
 state the strict reader's whole answer contract (Step 1 of branch `claude/uai1-live-anthropic-r2`). The strict reader,
 `parse_recommendation`, was not changed. Every request went to `https://api.anthropic.com` through
