@@ -1,5 +1,6 @@
 # Self-hosting record: the full circuit over each of its own eight repositories
 
+> **Note of 2026-11-07.** The two test-file line numbers cited here belong to other repositories. They were not checked and will drift.
 Date of runs: 2026-10-22 to 2026-10-23. Everything below is read from the run records in
 `scratchpad/selfhost/records/` on the run machine, now copied unaltered into this repository at
 [selfhosting-records-2026-10-23/](selfhosting-records-2026-10-23/) (JSON, stderr log, exit code, receipt, start and end stamps per run).
