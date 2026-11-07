@@ -1,5 +1,9 @@
 # CNS Model Provider Adapters
 
+> Two Anthropic clients exist in this repository. This document describes the SDK-based adapter in
+> `cns_composition/providers/anthropic.py`. The standard-library client `anthropic_complete` in `cns_interop/providers.py`
+> is the one the UAI-1 live runs of 2026-11-04 used, and it is covered by the UAI-1 documents, not this one.
+
 ## Purpose
 
 CNS provides a provider-neutral contract for model requests and responses.

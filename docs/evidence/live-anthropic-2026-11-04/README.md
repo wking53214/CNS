@@ -1,5 +1,8 @@
 # Live Anthropic run, 2026-11-04
 
+> **Status check of 2026-11-07.** The client these runs used is still in `cns_interop/providers.py`
+> (`anthropic_complete`, standard library, no SDK). It is a different client from the SDK-based adapter in
+> `cns_composition/providers/anthropic.py`. The run itself was not repeated.
 The first time a UAI-1 provider client was run against a real provider. Branch `claude/uai1-live-anthropic`. Every request
 went to `https://api.anthropic.com` through `cns_interop.providers.anthropic_complete` (standard library, no SDK). The key
 was read from `UAI_ANTHROPIC_API_KEY` and is in no file here. The scored reading is in
