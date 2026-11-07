@@ -6,6 +6,11 @@
 > record of what was built and describes the state before that removal. The
 > core chain is now SWIZZLE, ghost_tools and WIZZLE, with no core translation
 > rules. See `docs/history/LIBRARY_COMPOSITION_GUIDE.md` for the current shape.
+>
+> **Note (November 2026):** `LibraryComposer` is retired (CNS-011). Building one warns and points to
+> `SuperGate` over `gate_chain.run_chain`, which is the composition path now. The phase plans and next
+> steps below describe the retired API and are kept as history. The translation-rule function named in
+> section 3 registers no rules.
 
 ## Completed Work
 
