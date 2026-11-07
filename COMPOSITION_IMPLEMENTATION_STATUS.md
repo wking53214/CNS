@@ -126,7 +126,7 @@ Support any system composition across 67 repos
 
 ## Scaling Path to 67 Repos
 
-### Phase 1: Adapter Creation (Next)
+### Phase 1: Adapter Creation (superseded: planned against LibraryComposer)
 Create SystemAdapter for each repo in the library. Pattern:
 ```python
 class RepoNAdapter(SystemAdapter):
@@ -142,7 +142,7 @@ class RepoNAdapter(SystemAdapter):
         pass
 ```
 
-### Phase 2: Model and Rule Registration (Next)
+### Phase 2: Model and Rule Registration (superseded: planned against LibraryComposer)
 For each incompatible system pair, define translation rule. For example:
 ```python
 def translate_repo1_to_repo2(outcome):
@@ -158,7 +158,7 @@ composer.register_translation(
 
 Estimate: ~30-40 translation rules depending on outcome model diversity.
 
-### Phase 3: Orchestration at Scale (Next)
+### Phase 3: Orchestration at Scale (superseded: planned against LibraryComposer)
 5-cycle loop with alternative path selection:
 ```python
 composer = LibraryComposer()
@@ -232,7 +232,7 @@ if not converged:
 | "No failure recovery" | ❌ Skipped | ✅ RETRY enables alternative paths |
 | "No universal translator" | ❌ Required | ✅ Targeted translation rules only |
 
-## Next Steps
+## Next Steps (superseded: the list predates the retirement of LibraryComposer)
 
 1. **Create adapters for core repos** (SWIZZLE, ghost_tools, WIZZLE, Innovation OS already done)
 2. **Implement adapters for additional repos** in the 67-repo library
