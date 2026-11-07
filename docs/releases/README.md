@@ -8,7 +8,8 @@ first line.
 Before 2026-10-30 GitHub had two Releases: `v1.5.1`, published 2026-10-11 with no title and no notes, and `v2.2.0`,
 a draft with no title and no notes. On 2026-10-30 the owner published `v2.2.0` as the latest release, gave `v1.5.1`
 its title and text, and created Releases for `v2.0.0` and `v2.1.0`, each with the text of its file here; the tags did
-not move. The other nine tags have no Release, by the owner's decision. Publishing or editing a Release is done by
+not move. The other ten tags (v2.3.0 included) have no Release: the owner decided that for the older nine, and v2.3.0 is
+awaiting its text. Checked on 2026-11-07: four Releases exist on GitHub, and the repository has fourteen tags. Publishing or editing a Release is done by
 the owner on GitHub; these files do not do it.
 
 | tag | type | package | GitHub Release |
