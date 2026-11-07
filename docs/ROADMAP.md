@@ -11,9 +11,9 @@ already own. `ghost-buster <repo> --kernel <path-to-cns>` reports two
 findings that are exactly the scorecard's weakest dimensions, as counts that
 fall to zero as the work completes:
 
-- `kernel_shadow` — a repository carries a byte-identical copy of a class
+- `kernel_shadow`: a repository carries a byte-identical copy of a class
   that is already in CNS. Pure waste; delete it and import.
-- `drifted_contract` — same name, most members shared, structurally
+- `drifted_contract`: same name, most members shared, structurally
   different. A real decision.
 
 Measured across ten repositories against the 24 classes CNS carries today:
@@ -90,7 +90,7 @@ to an unverified package multiplies the blast radius of every defect the
 scorecard found. Growth is the reward for having process, not a substitute
 for it.
 
-## Phase 0 — Safety rails (days, no behaviour change)
+## Phase 0: Safety rails (days, no behaviour change)
 
 Nothing here can break a consumer, and everything after it depends on one of
 these existing.
@@ -160,7 +160,7 @@ enforcement test fails if someone adds I/O or a third-party import.
 
 **Moves:** Release engineering F to B. Packaging D to A. Rule integrity C to A.
 
-## Phase 1 — Free adoption (days, zero shape change)
+## Phase 1: Free adoption (days, zero shape change)
 
 **Status: done.** The one patch Phase 1 turned out to consist of is applied
 and pushed to `wking53214/gsa-815` on branch `claude/cns-governance-adoption`
@@ -226,7 +226,7 @@ with a live consumer; all four modules with a live consumer.
 
 **Moves:** Adoption C+ to B+.
 
-## Phase 2 — The breaking change (a week, now safe)
+## Phase 2: The breaking change (a week, now safe)
 
 Only now is it safe to break something, because Phase 0 gives you tags to pin
 before and after, CI to prove the change, and a snapshot test to show exactly
@@ -246,7 +246,7 @@ class, with a rollback tag sitting right there.
 
 **Moves:** API consistency D to A. Tests C to B.
 
-## Phase 3 — The hard divergence (weeks)
+## Phase 3: The hard divergence (weeks)
 
 What remains is the work that needs judgement rather than mechanism.
 
@@ -268,7 +268,7 @@ any name CNS carries or intends to carry.
 
 **Moves:** Extraction fidelity B to A. Adoption B+ to A.
 
-## Phase 4 — Grow coverage (ongoing)
+## Phase 4: Grow coverage (ongoing)
 
 Only here. The map identifies 118 spine contract classes; CNS carries 24.
 With CI, tags, a snapshot test, a serialization test, a working major-version
