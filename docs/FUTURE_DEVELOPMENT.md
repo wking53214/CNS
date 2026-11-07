@@ -10,6 +10,8 @@ No survey was found that measures how many teams want any of this or what they w
 vendor blogs and secondary write-ups, so every figure below is a lead to verify against the primary paper before it
 is quoted anywhere.
 
+The 2026-11-06 pass checked only what this repository contains. Facts about the sibling repositories (Warden, JUDGE, Burnish, ghost_tools) and the citations below were not re-verified here. `docs/STATUS.md` records the sibling defects that this file names.
+
 ## What the published material says the circuit could address
 
 | Documented need | What the circuit does today | Gap |
