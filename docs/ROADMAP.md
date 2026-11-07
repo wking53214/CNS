@@ -119,21 +119,21 @@ The three consumer pin changes and the GSA-815 governance migration are
 prepared as patches under `docs/migrations/` and need applying in their own
 repositories.
 
-1. **Add `py.typed`** plus the `package-data` entry. One line of real change.
+1. **Add `py.typed`** (done: `cns/py.typed` and the package-data entry exist) plus the `package-data` entry. One line of real change.
    Turns every annotation in the package from invisible to enforced in three
    consumers' type checkers. Largest single gain available.
-2. **Add CI** on push and pull request: run the 12 tests on 3.10 through
+2. **Add CI** (done: `.github/workflows/ci.yml`) on push and pull request: run the 12 tests on 3.10 through
    3.13. The version matrix is not optional, because the package's enum
    mixins are exactly the construct whose string behaviour has shifted across
    those releases.
-3. **Add a shape-snapshot test.** CNS cannot import its private consumers in
+3. **Add a shape-snapshot test** (done: `tests/test_public_shape.py` and `tests/public_shape.json`). CNS cannot import its private consumers in
    CI, so it cannot test them directly. Instead, assert the full public
    surface, every class with its field names, order, types and defaults,
    against a checked-in golden file. Any shape change then shows up as a
    deliberate diff in review rather than as a consumer's failure next week.
    This is the structural answer to "nothing verifies a commit before three
    repositories pin it."
-4. **Tag `0.1.0` and `0.2.0`.** They exist as commit messages already. Move
+4. **Tag `0.1.0` and `0.2.0`** (done: both tags exist). They exist as commit messages already. Move
    GRAPH, sentinel_os and GSA-815 from raw SHAs onto tags. The graph module
    between `9f8f3fe` and HEAD differs only by a docstring header, so this is
    free. Run these from a **full, non-shallow clone of `wking53214/CNS`**;
@@ -157,11 +157,11 @@ repositories.
    succeed, but the git proxy returns HTTP 403 on tag refs, and the GitHub
    MCP server exposes only read tools for tags and releases. It is a local
    or web-UI step.
-5. **Amend the rule** in `cns/__init__.py` and the README to "pure functions
+5. **Amend the rule** (`default_likelihoods` is removed as of `v1.0.0`; the rule wording and the extended test were not checked here) in `cns/__init__.py` and the README to "pure functions
    of the row, no I/O, no state, no dependencies", delete
    `default_likelihoods()`, and extend the enforcement test to check it.
 
-**Exit criteria:** CI required on `main`; three consumers on tags; the
+**Exit criteria:** CI required on `main` (the required-check setting was not verified here); three consumers on tags (not checked here); the
 enforcement test fails if someone adds I/O or a third-party import.
 
 **Moves:** Release engineering F to B. Packaging D to A. Rule integrity C to A.
@@ -233,6 +233,8 @@ with a live consumer; all four modules with a live consumer.
 **Moves:** Adoption C+ to B+.
 
 ## Phase 2: The breaking change (a week, now safe)
+
+**Status: done in `v1.0.0`.** The enums are string-based `RowEnum`s (`cns/rowenum.py`), and `CallerState.default_likelihoods` is removed. The round-trip test and the GSA-815 move are in other places and were not checked here.
 
 Only now is it safe to break something, because Phase 0 gives you tags to pin
 before and after, CI to prove the change, and a snapshot test to show exactly
