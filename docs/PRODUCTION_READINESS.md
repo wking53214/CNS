@@ -25,7 +25,7 @@ before three repositories pin it.
 | 9 | Confidentiality posture | C | A public repository names CNS, the kernel convention, and nine private repos. |
 | 10 | Operational risk | D | One human author, nine commits, one day, no second maintainer. |
 
-## 1. Extraction fidelity — B
+## 1. Extraction fidelity: B
 
 Every top-level class in `cns` was compared against every same-named class
 in the ten repositories, using the same docstring-stripped AST hash the map
@@ -50,7 +50,7 @@ the migration having succeeded rather than a false claim, but a provenance
 note that reads as false on inspection costs the reader the trust the rest
 of the evidence earns.
 
-## 2. API consistency — D
+## 2. API consistency: D
 
 The package's one job is that two repositories mean the same thing by the
 same name. It is internally inconsistent about this:
@@ -75,7 +75,7 @@ Fixing it is a major version under this repo's own rule: GSA-815 imports
 `CallOutcome`, and changing its base changes both equality and
 serialization.
 
-## 3. Rule integrity — C
+## 3. Rule integrity: C
 
 `cns/__init__.py` states the package "carries no behaviour, no I/O, no
 business logic". Five functions have real bodies:
@@ -100,7 +100,7 @@ moved out, or the rule should be amended to permit pure, dependency-free
 row helpers and say so. Both are defensible. Silently doing one while
 documenting the other is not.
 
-## 4. Tests — C
+## 4. Tests: C
 
 12 tests, all passing, and they assert genuinely useful things: field order,
 both pre-extraction constructor shapes, enum value sets, frozen-ness, the
@@ -111,7 +111,7 @@ behaviour-free, any test that a consumer's import still resolves, and any
 run on more than one Python version despite `requires-python = ">=3.10"`
 and an enum mixin whose string behaviour has changed across recent releases.
 
-## 5. Adoption — C+
+## 5. Adoption: C+
 
 Four real import sites in three repositories:
 
@@ -132,7 +132,7 @@ never been exercised by anything but its own tests.
 
 Of roughly 30 repositories in the library, 3 consume CNS.
 
-## 6. Release engineering — F
+## 6. Release engineering: F
 
 No CI. No tags. No release process. No branch protection evident. Consumers
 pin raw commit SHAs, which works, but nothing runs the test suite before a
@@ -144,7 +144,7 @@ contract is invisible until a consumer's own tests fail, and the README
 correctly notes those consumer tests are "the check that can fail". That is
 an acceptable design only when the package itself is also checked.
 
-## 7. Packaging and typing — D
+## 7. Packaging and typing: D
 
 **No `py.typed` marker.** Under PEP 561, a package without it is treated as
 untyped: `mypy` and `pyright` in every consumer silently ignore every
@@ -156,7 +156,7 @@ No `LICENSE` file, only `NOTICE`. (Resolved 2026-10-06: Apache-2.0 `LICENSE`, `N
 field. For proprietary code that is a defensible choice, but it should be
 deliberate and stated rather than absent.
 
-## 8. Evidence reproducibility — B-
+## 8. Evidence reproducibility: B-
 
 The methodology is genuinely good: structural hashing, a held-out
 prediction test with a third-party control, mechanical vocabulary
@@ -169,7 +169,7 @@ run is exactly reproducible; and `GSA-815/vendor/sentinel_os` is a git
 submodule whose absence silently removes eight collisions from any scan
 (now documented in `docs/evidence/README.md`).
 
-## 9. Confidentiality posture — C
+## 9. Confidentiality posture: C
 
 > **Superseded 2026-10-06.** The owner decided to make CNS public under the
 > Apache License 2.0; the confidentiality notice and NOTICE terms were
@@ -194,7 +194,7 @@ the owner, not a defect to fix unilaterally: either the public references
 come out, or the notice is narrowed to the shapes and evidence it can
 actually defend.
 
-## 10. Operational risk — D
+## 10. Operational risk: D
 
 Nine commits, all on 2026-09-11, one human author and one agent. No second
 maintainer, no runbook, no documented process for cutting a version or
