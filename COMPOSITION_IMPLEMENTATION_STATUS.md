@@ -6,6 +6,11 @@
 > record of what was built and describes the state before that removal. The
 > core chain is now SWIZZLE, ghost_tools and WIZZLE, with no core translation
 > rules. See `docs/history/LIBRARY_COMPOSITION_GUIDE.md` for the current shape.
+>
+> **Note (November 2026):** `LibraryComposer` is retired (CNS-011). Building one warns and points to
+> `SuperGate` over `gate_chain.run_chain`, which is the composition path now. The phase plans and next
+> steps below describe the retired API and are kept as history. The translation-rule function named in
+> section 3 registers no rules.
 
 ## Completed Work
 
@@ -72,17 +77,16 @@ All translation rules registered via `register_core_translation_rules()`:
 ## Test Results
 
 ```
-Tests/test_herald_composition.py
-  ✅ 16 passed (from previous implementation)
-  ⏭️  5 skipped (gaps that are now addressed by composition orchestrator)
+cns_composition/tests/test_herald_composition.py
+  ✅ 19 passed, 0 skipped
 
-Tests/test_library_composition.py
-  ✅ 21 passed (new library orchestrator tests)
+cns_composition/tests/test_library_composition.py
+  ✅ 20 passed (library orchestrator tests)
 
-Total: 37 passed, 5 skipped
+Total: 39 passed, 0 skipped (checked 2026-11-06 at commit 032ed5a)
 ```
 
-The 5 skipped tests are integration gaps from earlier that are now addressed:
+The five tests skipped earlier track gaps that are now addressed:
 1. "SWIZZLE needs Innovation OS adapter interface" → ✅ SwizzleAdapter now declared
 2. "Innovation OS needs decision export interface" → ✅ InnovationOSAdapter now producing Decision outcomes
 3. "ghost_tools needs Innovation OS semantic interface" → ✅ GhostToolsAdapter connected via translation rules
@@ -122,7 +126,7 @@ Support any system composition across 67 repos
 
 ## Scaling Path to 67 Repos
 
-### Phase 1: Adapter Creation (Next)
+### Phase 1: Adapter Creation (superseded: planned against LibraryComposer)
 Create SystemAdapter for each repo in the library. Pattern:
 ```python
 class RepoNAdapter(SystemAdapter):
@@ -138,7 +142,7 @@ class RepoNAdapter(SystemAdapter):
         pass
 ```
 
-### Phase 2: Model and Rule Registration (Next)
+### Phase 2: Model and Rule Registration (superseded: planned against LibraryComposer)
 For each incompatible system pair, define translation rule. For example:
 ```python
 def translate_repo1_to_repo2(outcome):
@@ -154,7 +158,7 @@ composer.register_translation(
 
 Estimate: ~30-40 translation rules depending on outcome model diversity.
 
-### Phase 3: Orchestration at Scale (Next)
+### Phase 3: Orchestration at Scale (superseded: planned against LibraryComposer)
 5-cycle loop with alternative path selection:
 ```python
 composer = LibraryComposer()
@@ -228,7 +232,7 @@ if not converged:
 | "No failure recovery" | ❌ Skipped | ✅ RETRY enables alternative paths |
 | "No universal translator" | ❌ Required | ✅ Targeted translation rules only |
 
-## Next Steps
+## Next Steps (superseded: the list predates the retirement of LibraryComposer)
 
 1. **Create adapters for core repos** (SWIZZLE, ghost_tools, WIZZLE, Innovation OS already done)
 2. **Implement adapters for additional repos** in the 67-repo library
@@ -241,15 +245,15 @@ if not converged:
 
 | File | Lines | Status | Purpose |
 |------|-------|--------|---------|
-| `cns_composition/compose_library.py` | 343 | ✅ Committed | Generic orchestration engine |
-| `cns_composition/adapters.py` | 270 | ✅ Committed | Core system adapter implementations |
-| `Tests/test_library_composition.py` | 421 | ✅ Committed | Comprehensive test suite (21 passing) |
-| `docs/history/LIBRARY_COMPOSITION_GUIDE.md` | 380 | ✅ Committed | Usage guide and scaling patterns |
+| `cns_composition/compose_library.py` | 373 | ✅ Committed | Generic orchestration engine |
+| `cns_composition/adapters.py` | 173 | ✅ Committed | Core system adapter implementations |
+| `cns_composition/tests/test_library_composition.py` | 292 | ✅ Committed | Test suite (20 passing) |
+| `docs/history/LIBRARY_COMPOSITION_GUIDE.md` | 375 | ✅ Committed | Usage guide and scaling patterns |
 | `COMPOSITION_IMPLEMENTATION_STATUS.md` | This file | Documentation | Current status and roadmap |
 
-**Total new code**: 1,414 lines across 4 files
-**Test coverage**: 21 new tests, all passing
-**Previous tests**: 16 tests still passing, 5 gaps now addressed
+**Total new code**: 1,213 lines across 4 files (counts checked 2026-11-06)
+**Test coverage**: 20 new tests, all passing
+**Previous tests**: 19 tests still passing, none skipped
 
 ## Key Insights
 
@@ -291,4 +295,4 @@ All implementations validated by:
 - ✅ Convergence detection tests
 - ✅ Fluent API tests
 
-All 37 existing tests still passing.
+All 39 tests in the two suites pass (checked 2026-11-06).
