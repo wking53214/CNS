@@ -1,5 +1,6 @@
 # cns
 
+> **Check of 2026-11-07.** Confirmed in this repository and on GitHub and PyPI: the 2.3.0 tag and its install pin, the four GitHub Releases (latest `v2.2.0`), and that PyPI has a `cns` release 2.3.50. The sibling repository rows and the description of that PyPI package were not re-checked.
 The central nervous system of the library: one package holding
 the contracts every repo joins on.
 
