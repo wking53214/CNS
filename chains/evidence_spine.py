@@ -104,13 +104,15 @@ ZTS (it ships no gate CNS can seat), sentinel_os and GSA-815 (they need PostgreS
 run). Their seams are not exercised here and nothing below speaks for them.
 
 CCC is covered as far as its gate goes and as far as its write permission goes. The gate judges an attempted `ingest`.
-CCC built with the roster's guard as its `write_permission` asks that guard before every write, since CCC #51 made them
-one funnel: `ingest` and `record`, which carry a document, and the rest, which do not. An approved decision opens
-`ingest` and `record` once, for the one document it judged. Every other door carries a conclusion, a finding, an
-observation, or acts on a record that already exists or is a person's act, none of which any seat judges, so those stay
-refused after any decision: under this permission a person's act is not let through by a machine's roster. The doors CCC
-gates are read off CCC itself and compared with the reader's two lists, so a door CCC starts gating later turns this
-script red until the reader names it, which is how CCC #51's seventeen new doors were found. A CCC built without a
+CCC built with the roster's guard as its `write_permission` asks that guard before each write that can carry a document
+or a conclusion: `ingest` and `record`, which carry a document, and the doors that add a conclusion, finding, observation,
+or link (`derive`, `infer`, `interpret`, `record_external_finding`, `discover`, `detect_road_sign`, `record_road_sign`,
+`attach_evidence`, `relate`). An approved decision opens `ingest` and `record` once, for the one document it judged. The
+other doors carry no document the roster judged, so they stay refused after any decision. CCC does not ask the roster
+about operations on existing records or a person's own acts (`accept`, `reject`, `decide`, and the rest): they use CCC's
+human verifier instead, so a machine's roster does not hold up a person's decision. The doors CCC gates are read off CCC
+itself and compared with the reader's two lists, so a door that CCC gates and the reader does not name, or the reverse,
+turns this script red. A CCC built without a
 permission is not stopped, and nothing here can see that. `ingest` takes the document in as UNKNOWN: CCC refuses to
 ingest a conclusion and a model may not enter material as evidence. Methods CCC still leaves open (`detect_conflict`,
 `ask`) are not spoken for here.
@@ -420,21 +422,16 @@ def reads_attempt(att: Attempt) -> Judged:
 WRITES_A_DOCUMENT = ("ingest", "record")
 
 #: The direct writes to CCC that carry something no seat of the roster judges: a conclusion (`derive`, `infer`,
-#: `interpret`), a finding (`record_external_finding`, `discover`) or an observation (`detect_road_sign`,
-#: `record_road_sign`). None carries the text the roster compared, only a claim about it, so no decision opens them.
-#: Policy, like READERS: reviewed with it, and held by `ccc_doors_all_named` against the doors CCC really gates.
+#: `interpret`), a finding (`record_external_finding`, `discover`), an observation (`detect_road_sign`,
+#: `record_road_sign`) or a link between records (`attach_evidence`, `relate`). None carries the text the roster
+#: compared, so no roster decision opens them. Policy, like READERS: held by `ccc_doors_all_named` against the doors
+#: CCC really gates.
 #:
-#: Since CCC #51 every write goes through one funnel, so CCC also asks about the doors that act on a record that ALREADY
-#: EXISTS or that a person performs: `accept`, `adopt_discovery`, `advance_discovery`, `amend`, `attach_evidence`,
-#: `classify`, `correct`, `decide`, `erase`, `establish_provenance`, `ratify`, `record_resolution`, `redact`, `reject`,
-#: `relate`, `resolve_uncertainty` and `supersede`. None of them brings in the text the roster compared, so no roster
-#: decision can read a document from one: under THIS permission they stay shut, and that is the stated policy, not an
-#: oversight. A deployment that wants a person's act to pass supplies CCC's human verifier (`ccc.human_auth`) for it; a
-#: machine's roster is never what lets a human's decision through.
+#: CCC does not ask the roster about the operations that act on an existing record or that a person performs
+#: (`accept`, `reject`, `decide`, `correct`, `amend`, `supersede`, `redact`, `erase`, and the rest). They ask CCC's
+#: human verifier (`ccc.human_auth`) instead, so they are not listed here.
 WRITES_NO_DOCUMENT = ("derive", "infer", "interpret", "record_external_finding", "discover", "detect_road_sign",
-                      "record_road_sign", "accept", "adopt_discovery", "advance_discovery", "amend", "attach_evidence",
-                      "classify", "correct", "decide", "erase", "establish_provenance", "ratify", "record_resolution",
-                      "redact", "reject", "relate", "resolve_uncertainty", "supersede")
+                      "record_road_sign", "attach_evidence", "relate")
 
 
 def reads_write(request: WriteRequest) -> Judged:
@@ -455,12 +452,18 @@ def reads_write(request: WriteRequest) -> Judged:
 def ccc_gated_doors() -> Tuple[str, ...]:
     """Every public method of CCC that asks its write permission, found on CCC itself, sorted.
 
-    CCC wraps each of them so that it asks first, and the wrapper keeps the method's own name and a pointer to the
-    method it wraps. That is how they are found here, so the list is CCC's own and is not copied into this script."""
+    CCC wraps each of them with its permission decorator, which keeps the method's own name and a pointer to the
+    method it wraps. Human-only methods are wrapped by a different decorator (the human verifier), so the wrapper's
+    code is checked too: only the permission decorator's wrapper counts. The list is CCC's own, not copied here."""
+    def asks_permission(method) -> bool:
+        wrapper = getattr(method, "__code__", None)
+        return wrapper is not None and wrapper.co_qualname.startswith("_asks_permission.")
+
     return tuple(sorted(name for name in dir(CCCSystem)
                         if callable(getattr(CCCSystem, name))
                         and hasattr(getattr(CCCSystem, name), "__wrapped__")
-                        and getattr(CCCSystem, name).__qualname__ == f"CCCSystem.{name}"))
+                        and getattr(CCCSystem, name).__qualname__ == f"CCCSystem.{name}"
+                        and asks_permission(getattr(CCCSystem, name))))
 
 
 def ccc_doors_all_named() -> str:

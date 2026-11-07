@@ -715,8 +715,8 @@ What this means, plainly:
   its guard and called directly), which is an assertion and not a skip. That run was before #64, which added a second
   recorded GAP (a kernel built without its evidence guard takes any evidence); the spine has not been re-run here
   since.
-- Where a repository writes records, who may call each door is its own README's business. CCC gates nine
-  record-creating doors with a caller's permission. Conservation_Kernel guards its roots and lists the doors that are
+- Where a repository writes records, who may call each door is its own README's business. CCC gates eleven
+  doors with a caller's permission: the two that write a document, and nine that write a conclusion, finding, observation, or link. Conservation_Kernel guards its roots and lists the doors that are
   not yet protected. HERALD, TIE and Governance_Gateway create no governed record.
 
 ## What works
