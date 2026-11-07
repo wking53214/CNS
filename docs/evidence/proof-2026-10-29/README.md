@@ -1,5 +1,6 @@
 # Proof run, 2026-10-29
 
+> **Check of 2026-11-07.** The test and tool paths named here (`Tests/`, `tools/`, the workflow file) belong to the repository the run was made on, not to this one. The run was not repeated.
 ## What this folder is
 
 The records of a run that put three real AI co-authored commits of ghost_tools through the branch code of the circuit

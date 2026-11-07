@@ -1,5 +1,7 @@
 # UAI-1 revision 4: assessment and scorecard
 
+> **Check of 2026-11-07.** The test file named in the Conservation_Kernel finding (`tests/test_cns_connector.py`) belongs to that repository, not this one. Every other test name and file cited here was confirmed in this repository. The run results were not re-run.
+
 > **Note of 2026-11-07.** The line numbers cited below point into other repositories' code as it stood when this was written. None of those files is in this repository, so the numbers were not checked and will drift. Use the file names to find the code.
 Written after the work and the retest, 2026-10-31, against baseline `069d0a4` (revision 3, PR #75). Scores are reasoned from
 what was executed, not from file counts. Planned functionality and unrun tests earn nothing.
