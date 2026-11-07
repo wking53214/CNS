@@ -1,5 +1,6 @@
 # CNS connection integrity campaign: report of 2026-11-04
 
+> **Note of 2026-11-07.** The line numbers cited below point into other repositories' code as it stood when this was written. None of those files is in this repository, so the numbers were not checked and will drift. Use the file names to find the code.
 > **Status check of 2026-11-07.** The CNS changes in section B were committed later (PR #84 and follow-up branches), so
 > "uncommitted" below describes the state on 2026-11-04 only. On `main` today: the roster and context options (C1, C2),
 > the verdict-per-seat and partial checks (C3, C4), strict binding (C5), the fail-closed `resolve` (C6), the 36-repository
