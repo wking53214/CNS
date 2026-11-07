@@ -83,8 +83,12 @@ The current adapter does not implement:
 - Provider-specific thinking configuration.
 - Stop-sequence arrays.
 
-Unsupported generation settings must be rejected rather than silently
+The generation settings it accepts are `temperature`, `top_p` and `top_k`
+(numeric; `top_k` must be an integer). Any other setting is rejected rather than silently
 ignored.
+
+> Checked against `cns_composition/providers/anthropic.py` and `pyproject.toml` on 2026-11-07: the optional extra
+> pins `anthropic` at 0.116.0 or later and below 1.0, and the base dependency list is empty.
 
 ## Security and responsibility boundaries
 
