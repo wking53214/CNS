@@ -1,6 +1,7 @@
 """evidence_trace: the four hops of the evidence spine must describe one document."""
 
 import hashlib
+from typing import Any
 
 import pytest
 from cns.gate import subject_digest
@@ -17,7 +18,7 @@ ROOT = subject_digest({"root": "one"})
 
 
 def trace(**over) -> EvidenceTrace:
-    base = dict(
+    base: dict[str, Any] = dict(
         herald_source_id="doc-1", herald_text_sha256=TEXT, claim_source_hashes=(TEXT, TEXT),
         tie_source_id="doc-1", tie_text_sha256=TEXT, tie_evidence_ids=("ev-1", "ev-2"),
         tie_evidence_source_ids=("doc-1", "doc-1"),
