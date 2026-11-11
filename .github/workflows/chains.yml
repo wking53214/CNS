@@ -20,6 +20,9 @@
 #                        each seam. Fifty-two scenarios: forty-four seams that hold, three gaps stated as facts, four that cross
 #                        the process boundary as a signed decision, and the clean run. Four more checks follow them (three
 #                        dropped-gate refusals and the CCC door-naming check), for fifty-six results in all.
+# chains/node_digest_agreement.py  UAI-2's Node digest (written without CNS code) read through its own strict reader and
+#                        held to contracts/digest-vectors.json: every restricted_v1 vector the same, nothing digested
+#                        differently. The cross-language half of contracts/DIGEST.md's conformance; Node is on the runner.
 #
 # spine-pinned           the same decision spine, but on the four commits contracts/spine-manifest.json names and nothing else.
 #                        The `chains` job above runs each repository's floating default branch, which is the drift detector;
@@ -54,6 +57,7 @@ on:
       - cns_composition/delivery.py
       - cns_composition/spine_manifest.py
       - contracts/spine-manifest.json
+      - contracts/digest-vectors.json
       - cns_composition/super_gate.py
       - .github/workflows/chains.yml
 
@@ -163,6 +167,8 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD:${{ github.workspace }}/stack/TIE/src:${{ github.workspace }}/stack/Conservation_Kernel/src:${{ github.workspace }}/stack/Governance_Gateway/src:${{ github.workspace }}/stack/ccc:${{ github.workspace }}/stack/UAI-2
         run: python hub/chains/evidence_spine.py
+      - name: A second-language digest agrees with the vectors
+        run: python hub/chains/node_digest_agreement.py stack/UAI-2/interop/node/uai.mjs hub/contracts/digest-vectors.json
 
   spine-pinned:
     name: spine-pinned

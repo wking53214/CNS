@@ -8,8 +8,9 @@ and nothing from `cns` or `cns_composition`. `tests/test_independent_consumer.py
 What this proves: the written contract and the vectors are enough to reproduce every digest without CNS code.
 What it does not prove: that another team, in another language, reading only `DIGEST.md`, gets the same answers. It
 was written in this repository by the same tooling, in the same language. Two other implementations exist outside this
-repository, each for the `restricted_v1` profile only: STACK-Kernel's Rust `stack-trident` (`cns_digest.rs`), which
-vendors the vectors, and UAI-2's Node `interop/node/uai.mjs`.
+repository, each for an integer-only profile: STACK-Kernel's Rust `stack-trident` (`cns_digest.rs`), which
+vendors the vectors, and UAI-2's Node `interop/node/uai.mjs`; the `chains` workflow holds the Node one to the
+vectors through UAI-2's own strict reader (`chains/node_digest_agreement.py`).
 
 Two refusals (`non_text_key`, `bytes`) cannot arrive as JSON text, so a JSON consumer never receives them; the
 consumer reports them as not receivable rather than as refused.

@@ -58,6 +58,10 @@ Positive and negative zero both render as `0.0`. For any other finite value `x`:
    - otherwise, if `e >= 0`: `d1...d(e+1)`, `.`, then the remaining digits (`1.5`, `2.25`);
    - otherwise (`-4 <= e < 0`): `0.`, then `-e - 1` zeros, then the digits (`0.1`, `0.0001`).
 
+Read numbers from the JSON text yourself. A reader that turns `1.0` into the integer `1` (JavaScript's `JSON.parse`
+does) renders `i:1:` where the digest needs `f:1.0:`, and gets a different digest from the same text. UAI-2's Node
+reader refuses a float token instead, which is a correct profile.
+
 This is the text CPython's `repr(float)` produces; `tests/test_independent_consumer.py` checks the rule against
 `repr` on a large sample of doubles. A JavaScript `String(x)` is not this text (`1e-7`, `100`); format the digits
 yourself.
