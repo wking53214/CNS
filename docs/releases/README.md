@@ -14,6 +14,7 @@ the owner on GitHub; these files do not do it.
 
 | tag | type | package | GitHub Release |
 |---|---|---|---|
+| [`v3.0.0`](v3.0.0.md) | annotated | 3.0.0 | not tagged yet; the text is a draft |
 | [`v2.4.0`](v2.4.0.md) | annotated | 2.4.0 | none yet; the text is ready for the owner to publish |
 | [`v2.3.0`](v2.3.0.md) | annotated | 2.3.0 | none yet; the text is ready for the owner to publish |
 | [`v2.2.0`](v2.2.0.md) | lightweight | 2.2.0 | published 2026-10-30, latest |
