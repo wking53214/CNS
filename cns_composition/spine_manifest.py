@@ -26,7 +26,9 @@ WHAT IT CHECKS (`check`)
     imported (an edited tracked file, or a planted untracked one, is named);
   - the pyproject is read as TOML. With Python 3.11 and later that is `tomllib`; on 3.10, the floor of this repository,
     a strict fallback reads only the two tables the check needs and REFUSES (a named problem) a pyproject it cannot read
-    completely: a multi-line string, a repeated section or key, a bracket in a comment inside a list. A file the check
+    completely: a multi-line string, a repeated section or key, a bracket in a comment inside a list, a character Python's splitlines
+    treats as a line break but TOML does not (U+2028, U+2029, U+0085, CR alone, VT, FF, FS, GS, RS) or any other control
+    character, and a key it cannot split exactly. A file the check
     cannot see is never a file it passes. Messages name whole 40 character commits.
 
 pip refuses two different commit URLs for the same package, so "alpha, beta and delta pin one zeta" is not a style
@@ -179,7 +181,7 @@ def _skip_inline_table(lines: List[str], i: int, col: int) -> int:
         elif ch == "}":
             braces -= 1
             if braces == 0:
-                rest = line[col + 1:].strip()
+                rest = line[col + 1:].strip(_WS)
                 if rest and not rest.startswith("#"):
                     raise ValueError(f"line {i + 1}: text after an inline table")
                 return i + 1
@@ -232,7 +234,7 @@ def _scan_value(lines: List[str], index: int, start: int, bracket_comments_refus
                 if depth == 0:
                     raise ValueError(f"line {i + 1}: an unexpected ]")
                 depth = 0
-                rest = line[col + 1:].strip()
+                rest = line[col + 1:].strip(_WS)
                 if rest and not rest.startswith("#"):
                     raise ValueError(f"line {i + 1}: text after the end of a list")
                 return items, i + 1
@@ -252,9 +254,25 @@ def _scan_value(lines: List[str], index: int, start: int, bracket_comments_refus
     raise ValueError(f"line {index + 1}: a list that is never closed")
 
 
+#: Every character that str.splitlines() (or str.strip()) would treat as a break or a space but TOML does not: TOML breaks
+#: lines on LF and CRLF only, so CR alone, VT, FF, FS, GS, RS, NEL, LS and PS are ordinary characters to tomllib (inside a
+#: comment or a string) while a splitlines-based reader would start a new line there and read what follows as live text.
+#: The other control characters are listed too: TOML forbids them, so a reader that accepts them reads a different file.
+_NOT_A_TOML_LINE = re.compile("[\x00-\x08\x0b-\x1f\x7f\x85\u2028\u2029]")
+#: The whitespace TOML knows. str.strip() with no argument also strips NBSP and the other Unicode spaces.
+_WS = " \t"
+#: One key, bare or a plain quoted string with no escape, then `=`. Anything else (dotted, escaped) is not split by this reader.
+_KEY = re.compile(r"[ \t]*(?:[A-Za-z0-9_-]+|\"[^\"\\]*\"|'[^']*')[ \t]*=")
+
+
 def _fallback_view(text: str) -> Dict[str, Any]:
     """The part of a pyproject.toml the checks use, read without tomllib. Anything it cannot read completely raises."""
-    lines = text.splitlines()
+    text = text.replace("\r\n", "\n")  # tomllib does the same; a lone CR is refused below
+    bad = _NOT_A_TOML_LINE.search(text)
+    if bad is not None:
+        raise ValueError(f"line {text.count(chr(10), 0, bad.start()) + 1}: the character U+{ord(bad.group()):04X} is a line "
+                         "break or a control character to Python's str.splitlines() but not to TOML, so a decoy could hide behind it")
+    lines = text.split("\n")
     section = ""
     seen: List[str] = []
     project: Dict[str, Any] = {}
@@ -263,29 +281,32 @@ def _fallback_view(text: str) -> Dict[str, Any]:
     i = 0
     while i < len(lines):
         line = lines[i]
-        stripped = line.strip()
+        stripped = line.strip(_WS)
         if not stripped or stripped.startswith("#"):
             i += 1
             continue
         if stripped.startswith("["):
-            m = re.fullmatch(r"\[\s*([A-Za-z0-9_.-]+)\s*\]\s*(?:#.*)?", stripped)
+            m = re.fullmatch(r"\[[ \t]*([A-Za-z0-9_.-]+)[ \t]*\][ \t]*(?:#.*)?", stripped)
             if not m:
                 if stripped.startswith("[["):
                     section = "[[" + stripped + "]]"
                     i += 1
                     continue
                 raise ValueError(f"line {i + 1}: a table header this reader does not understand")
-            section = re.sub(r"\s+", "", m.group(1))
+            section = m.group(1)
             if section in seen:
                 raise ValueError(f"line {i + 1}: the section [{section}] appears twice")
             seen.append(section)
             keys[section] = set()
             i += 1
             continue
-        eq = line.find("=")
-        if eq < 0:
-            raise ValueError(f"line {i + 1}: a line that is neither a header nor a key")
-        key = line[:eq].strip()
+        found_key = _KEY.match(line)
+        if found_key is None:
+            raise ValueError(f"line {i + 1}: a line that is neither a header nor a key this reader can split exactly")
+        eq = found_key.end() - 1
+        key = line[:eq].strip(_WS)
+        if key[:1] in "\"'":
+            key = key[1:-1]
         watched = section in ("project", "project.optional-dependencies")
         if section == "":
             raise ValueError(f"line {i + 1}: a key before any section header")

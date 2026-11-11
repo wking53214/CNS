@@ -566,3 +566,90 @@ def test_the_command_reads_the_installed_distributions_and_needs_no_network(tmp_
     assert f"zeta is installed from commit {'e' * 40} but the manifest names {Z}" in capsys.readouterr().err
     (site / "zeta-0.1.0.dist-info" / "direct_url.json").write_text(json.dumps(_vcs("interconnected_zeta", Z)), encoding="utf-8")
     assert sm.main(["--manifest", str(man), "--releases", str(rel), "--installed"]) == 0
+
+
+# --- Step 7a (N2): the fallback and tomllib must split lines the same way ------------------------------------------------
+
+#: Characters Python's str.splitlines() treats as a line break and TOML does not (TOML breaks on LF and CRLF only).
+LINE_SEPARATORS = [" ", " ", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\r"]
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "spine_pyprojects"
+
+
+def _decoy_text(sep):
+    """The reviewer's pyproject: a comment hides a decoy header and the good pins behind `sep`; the real list is the attacker's."""
+    good = pyproject([("zeta", Z), ("beta", B)])
+    evil = '    "zeta @ git+https://github.com/attacker/interconnected_zeta@main",\n'
+    hidden = (f'# a{sep}dependencies = ["zeta @ git+https://github.com/wking53214/interconnected_zeta@{Z}", '
+              f'"beta @ git+https://github.com/wking53214/interconnected_beta@{B}"]\n# b{sep}[tool.decoy]\n')
+    text = good.replace('[project]\nname = "x"\n', '[project]\nname = "x"\n' + hidden, 1)
+    return text.replace(f'    "zeta @ git+https://github.com/wking53214/interconnected_zeta@{Z}",\n', evil, 1)
+
+
+@pytest.mark.parametrize("sep", LINE_SEPARATORS, ids=lambda s: f"U+{ord(s):04X}")
+def test_n2_a_line_separator_toml_does_not_know_cannot_hide_a_decoy_from_either_reader(sep, parser):
+    texts = good_texts()
+    texts["interconnected_delta"] = _decoy_text(sep)
+    found = sm.check(manifest(), texts, heads(), RELEASES)
+    assert found, "the decoy pyproject was accepted"
+    assert any("attacker" in p or "cannot be read completely" in p for p in found), found
+    if parser == "fallback":
+        has(found, f"U+{ord(sep):04X}")
+
+
+def test_n2_the_probe_text_is_what_the_reviewer_reproduced(monkeypatch):
+    tomllib = pytest.importorskip("tomllib")
+    text = _decoy_text(" ")
+    assert "attacker" in tomllib.loads(text)["project"]["dependencies"][0]
+    monkeypatch.setattr(sm, "_tomllib", None)
+    with pytest.raises(ValueError, match="U\\+2028"):
+        sm.declared(text)
+
+
+@pytest.mark.parametrize("bad", ["\x00", "\x01", "\x7f"], ids=lambda s: f"U+{ord(s):04X}")
+def test_n2_a_control_character_in_a_comment_is_refused_by_the_fallback(bad, monkeypatch):
+    monkeypatch.setattr(sm, "_tomllib", None)
+    text = pyproject([("zeta", Z)]).replace('name = "x"\n', f'name = "x"\n# c{bad}d\n', 1)
+    with pytest.raises(ValueError, match="U\\+"):
+        sm.declared(text)
+
+
+def test_n2_a_non_toml_space_is_not_whitespace_to_the_fallback(monkeypatch):
+    # tomllib calls a header behind a no-break space invalid; the fallback must not read it as a header.
+    monkeypatch.setattr(sm, "_tomllib", None)
+    text = pyproject([("zeta", Z)]).replace("\n[tool.pytest.ini_options]", "\n [tool.pytest.ini_options]", 1)
+    with pytest.raises(ValueError):
+        sm.declared(text)
+
+
+def test_n2_a_key_the_fallback_cannot_split_exactly_is_refused_even_outside_the_watched_tables(monkeypatch):
+    monkeypatch.setattr(sm, "_tomllib", None)
+    base = pyproject([("zeta", Z)])
+    for line in ("a.b = 1", '"a\\"b" = 1', "x y = 1"):
+        with pytest.raises(ValueError):
+            sm.declared(base.replace('testpaths = ["tests"]', line, 1))
+    # a plain quoted key that holds `=` and `[` is split at its closing quote, not at the first `=` in it
+    ok = base.replace('testpaths = ["tests"]', '"x = [" = 1', 1)
+    assert sm.declared(ok)["runtime"] == {"zeta": ("interconnected_zeta", Z)}
+
+
+@pytest.mark.parametrize("repo", list(SPINE))
+def test_n2_the_real_pyprojects_read_the_same_through_both_readers(repo, monkeypatch):
+    pytest.importorskip("tomllib")
+    text = (FIXTURES / f"{repo}.toml").read_text(encoding="utf-8")
+    real = sm._view(text)
+    assert sm.declared(text) == {"runtime": sm._pins(real["dependencies"] or []), "optional": sm._pins(sm._flat_optional(real))}
+    monkeypatch.setattr(sm, "_tomllib", None)
+    assert sm._view(text) == real
+    assert sm._view(text)["dependencies"] is not None
+
+
+def test_n2_this_repositorys_own_pyproject_is_never_read_differently_by_the_fallback(monkeypatch):
+    # The fallback may refuse a file it cannot read completely; it must never return a different answer.
+    pytest.importorskip("tomllib")
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    real = sm._view(text)
+    monkeypatch.setattr(sm, "_tomllib", None)
+    try:
+        assert sm._view(text) == real
+    except ValueError:
+        pass

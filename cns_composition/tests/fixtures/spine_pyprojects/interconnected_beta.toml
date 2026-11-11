@@ -1,0 +1,24 @@
+[project]
+name = "beta"
+version = "0.1.0"
+description = "Lock states + Keys -> a governed Decision with narrative (reasoning, reversals, instructions)."
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "zeta @ git+https://github.com/wking53214/interconnected_zeta@57623483ec51b09601a32cc44a41c2bc097e88db",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+# Optional: lets a Decision be bound to a CNS verdict (beta.cns_connector). Nothing in beta imports CNS otherwise.
+cns = ["cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["beta"]
