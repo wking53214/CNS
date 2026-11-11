@@ -347,6 +347,30 @@ Parked by the owner's research guardrail and not touched: Judge's `_is_baseline`
 same-length rewrite of a claimed code file; a claimed change that breaks code but passes weak tests; `--authorize` names such as
 claude, ci or bot; the Watcher oath denylist; other-language test recognition in the Judge.
 
+## Round 9 (2026-11-11): an independent decision-path review, the merges, the tags, and proof 5
+
+- **Review.** One independent pass (a different model from the builders, given no earlier finding) over WARDEN 0.16.5 (`84cb89b`) and JUDGE 0.5.6 (`b20c76c`), installed from `contracts/install-stack.txt`.
+  Exit codes, five claimed-commit scenarios (code only, code and test, red suite, deletion, line endings), 77 hand-edited Judge records and about ten refusals behaved as documented; the claim row's
+  `after_sha256` equalled the landed bytes every time and every held or rejected run left the tree clean at the base.
+- **One real defect, fixed.** A `git replace` ref made a stack checkout report the pinned commit and a clean status while holding other content, so a tampered Judge could ride along and a claim ended ACCEPT.
+  Warden 0.16.6 sets `GIT_NO_REPLACE_OBJECTS=1` in its one git environment helper (`tests/test_replace_refs.py` failed before and passes after); `repin._git_env` here does the same
+  (`circuit_canary`, `circuit_refusals` and `release` have their own git helpers, unchanged). Five false README sentences in WARDEN and JUDGE were corrected.
+- **Not fixed, recorded.** Look-alike (Cyrillic) folder names are not seen as test folders by the Judge; `text_only: true` beside `exit_code: 0` and a space-padded `unmeasured` entry are ACCEPTed; Warden has no hold
+  of its own for protected-path edits (the hold is the Judge's ruling). These touch the anti-gaming research and are parked, not built.
+- **Merged by the owner on 2026-11-11** (merge commits, not fast-forwards): WARDEN #47, JUDGE #21, DRAFTER #19, BURNISH #25 (with a CI workaround: `cpp23` failed at `apt-get install` on the runner from 2026-11-11 with
+  no change in the repository; the install is now a fallback because the image ships g++-13 and cmake), WATCHER_MCU #6, CNS #133. Earlier the same day-range: ghost_tools #118 (banner now "FFF: Founders' Favorite
+  Fumbles") and CNS #99 (release floor 1.9.0 to 2.0.0; `FUTURE_DEVELOPMENT.md` marked as leads for the research run, not a work order).
+- **Tags.** `v1.10.14` (ghost_tools), `v0.8.13` (SWIZZLE), `v0.11.10` (ASSAY), `v0.16.5` (WARDEN), `v0.5.6` (JUDGE), `v0.2.19` (DRAFTER), `v0.3.20` (BURNISH), `v0.3.16` (WATCHER_MCU) were pushed by the owner on 2026-11-05;
+  the BURNISH tag was created in the GitHub release page after the push was rejected by GitHub (`fatal error in commit_refs_rules`). CNS has `v2.3.0` and a `v2.4.0` tag. Tags exist for the versions named; later
+  versions (WARDEN 0.16.6, JUDGE 0.5.7, DRAFTER 0.2.20, BURNISH 0.3.22, WATCHER_MCU 0.3.17) are merged and not tagged.
+- **Proof 5.** See `docs/evidence/proof-2026-11-11/README.md`: three real ghost_tools commits held (exit 3) by the circuit as merged on 2026-11-05, diff fingerprints matching, trees put back, then kept by a named person on
+  throwaway clones; the chronicle settled the `suite_green` promises HELD.
+- **Open.**
+  - `stack` is red on CNS main: `contracts/install-stack.txt` pins CNS `v2.4.0` while every repository pins `v2.3.0`, and `release --check` reports that `v2.4.0` has no row in `contracts/cns-releases.json`
+    (`python -m cns_composition.release --record v2.4.0`); both are the owner's release step.
+  - Merge commits cannot be named by a pin inside their own repository; the manifest names the commits the repositories pin (ancestors of each main). Fast-forward merges would remove the gap.
+  - The trust limits in "What code cannot fix" are unchanged.
+
 ## What code cannot fix
 
 One human maintainer. Repositories under three months old. No outside users. Release tags are the owner's to create,

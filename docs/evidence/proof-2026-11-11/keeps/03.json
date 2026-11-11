@@ -1,0 +1,11 @@
+{
+  "decision": "KEPT",
+  "digest": "de730f74a89181fc04544f218cf8ac7bf739bf0864a9348dfa8fd3fe9c700674",
+  "reason": "The reviewed unverified result was kept under a human grant for this exact digest. The checks it lacked (ghost_partial) were NOT run and nothing here says they would have passed.",
+  "approved_by": "William N King",
+  "contract": "1",
+  "notes": [
+    "The reviewed unverified result was kept under a human grant for this exact digest. The checks it lacked (ghost_partial) were NOT run and nothing here says they would have passed.",
+    "Chronicle: the keep was written to chronicleA/tmp-claude-0--home-user-f6a28526-97bd-5e48-a511-1959d5dd9622-scratchpad-falsifie-399c1728.jsonl."
+  ]
+}
