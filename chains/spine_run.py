@@ -21,12 +21,23 @@ swapped under a copied fingerprint) and state, as an `Expect` (see
 A scenario fails if a required problem is missing, if an unlisted problem appears, if it returns nothing when it
 should be refused, if it crashes without declaring it (a SystemExit or KeyboardInterrupt is a crash of that scenario and
 never ends the run), if a refusal's text came back without a refusal having been recorded, or if a refusal changed the
-state it guarded (the whole content of every entry, not only its hash). Eight scenarios, marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
+state it guarded (the whole content of every entry, not only its hash). Thirteen scenarios, marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
 recomputes every digest and fingerprint and writes a consistent receipt), a receipt written by hand over real contents
 with no ledger behind it, a narrative forged by someone who also recomputes the keyless content fingerprint, a Decision
 citing a closed lock, a legacy lock result with no entity id, a KeySet swapped under a copied fingerprint when no
 recomputation is supplied, a sink whose own store keeps a write the ledger does not have (delta's idempotency
-contract), and a rewritten ledger given a fresh checkpoint when no checkpoint is held outside it (`held_checkpoint`). They go red the day the gap closes and are then updated on purpose.
+contract), and a rewritten ledger given a fresh checkpoint when no checkpoint is held outside it (`held_checkpoint`), and, with the
+signed receipts and the durable store, a holder of a trusted key signing a forged receipt, an older signed checkpoint (a signature
+carries no freshness) and a ledger rolled back to an older complete signed package. They go red the day the gap closes and are then
+updated on purpose.
+
+Three groups were added with the signing hook, delta's file store and the verify command. `signed:` signs the receipt through
+delta's `sign_receipt` with the reference keys of `receipt_keys.py` (a trust list, a revocation set, rotation) and asks CNS's
+`strict_problems` with `receipt_signature`, `verify_receipt_signature` and `require_signed_receipt`; one scenario holds CNS's
+`receipt_signing_input` byte-equal to delta's. `store:` runs a producer and a fresh consumer as separate processes
+(`store_worker.py`) through `FileLedgerStore`, with the checkpoint in a directory of its own, signed. `package:` runs
+`make_package.py` and `verify_package.py` as separate processes, end to end. Their refusals carry the named reason of the
+process that refused, and the files they guard are compared byte for byte before and after.
 
 The run also attacks the receipt itself (zeroed heads, an index beyond the ledger or the checkpoint, another entry's
 hashes, a lying str-subclass digest or head, a key that only prints like a field name) starting from the receipt delta
@@ -38,15 +49,24 @@ the checkpoint does not cover). Delta's refusal of a checkpoint is one sentence 
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+import hashlib
 import json
+import os
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
+import unicodedata
 import threading
 import warnings
 from collections.abc import Mapping
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import receipt_keys
 from spine_oracle import Expect, attempts, check_table, entries_digest, judge
 from spine_oracle import refused as _refused
 
@@ -54,6 +74,7 @@ import alpha.cns_connector as alpha_cns
 import beta.cns_connector as beta_cns
 import delta.cns_connector as delta_cns
 import delta as delta_pkg
+import delta.signing as delta_signing
 import delta.context as delta_context
 import zeta.cns_connector as zeta_cns
 from alpha import VitalsObservation, observe
@@ -62,7 +83,9 @@ from beta import (
     StaleLockResultError, decision_fingerprint)
 from beta.fingerprint import content_fingerprint
 from cns.gate import subject_digest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cns_composition import spine_manifest
+from cns_composition import spine_trace
 from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, SpineRecord, context_problems, problems, root, strict_problems, strict_root)
 from delta import DecisionLedger
@@ -157,19 +180,21 @@ CTX = {"schema": CONTEXT_SCHEMA, "entity_id": "patient_1", "event_id": "event_1"
 SICK_ELSEWHERE = VitalsObservation(heart_rate=149, oxygen_saturation=90.0, respiratory_rate=36, temperature=39.6, age_months=14)
 
 
-def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None, origin=None) -> Dict[str, Any]:
-    """Run the four stages for real, binding each to the context and to the digest of the stage before it."""
+def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None, origin=None,
+           ledger=None, at=T0) -> Dict[str, Any]:
+    """Run the four stages for real, binding each to the context and to the digest of the stage before it. `ledger` (default a
+    new one that requires a context) and `at` (the Decision's time) let a caller record several runs into one ledger."""
     locks, engine = build()
-    ledger = DecisionLedger(require_context=True)
+    ledger = DecisionLedger(require_context=True) if ledger is None else ledger
     entity = ctx["entity_id"]
     keys = observe(vitals)
     alpha = alpha_cns.keyset_content(keys, context=ctx, origin=origin)
     # zeta and beta are told which KeySet digest to name; nothing in either can check it against what they evaluated.
     da = subject_digest(alpha if bind_keyset_of is None else alpha_cns.keyset_content(observe(bind_keyset_of), context=ctx))
-    results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
+    results = LockEvaluator(locks).evaluate_all(entity, keys, at)
     zeta = {lid: zeta_cns.lock_result_content(r, context=ctx, keyset_digest=da) for lid, r in results.items()}
     decided_on = results if results_from is None else results_from
-    decision = engine.decide(entity, keys if keys_for_decision is None else keys_for_decision, decided_on, T0)
+    decision = engine.decide(entity, keys if keys_for_decision is None else keys_for_decision, decided_on, at)
     beta = beta_cns.decision_content(
         decision, context=ctx, keyset_digest=da,
         lock_result_digests={lid: zeta_cns.lock_result_digest(r, context=ctx, keyset_digest=da) for lid, r in decided_on.items()})
@@ -1631,6 +1656,989 @@ def an_older_zeta_installed_beside_the_others() -> List[str]:
     return spine_manifest.installed_problems(_M_MANIFEST, installed)
 
 
+def the_reference_keys_sign_verify_rotate_and_revoke() -> List[str]:
+    """Step 1. The deployer's reference keys (chains/receipt_keys.py), held to what they document: a signature verifies under
+    its own trusted key and no other, an unknown or revoked key id never verifies, rotation keeps the old key verifying until it
+    is retired, and a verifier answers False (never raises) for input that is not a signature."""
+    old, new, other = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+    data = b"some bytes to vouch for"
+    sign_old, sign_new = receipt_keys.make_signer(old, "k1"), receipt_keys.make_signer(new, "k2")
+    trust_old = {"k1": old.public_key()}
+    trust_both = {"k1": old.public_key(), "k2": new.public_key()}
+    out: List[str] = []
+
+    def expect(label: str, got: Any, want: bool) -> None:
+        if got is not want:
+            out.append(f"{label}: expected {want}, got {got!r}")
+
+    expect("a signature under its trusted key", receipt_keys.make_verifier(trust_old)(data, sign_old(data)), True)
+    expect("the same signature over other bytes", receipt_keys.make_verifier(trust_old)(data + b"!", sign_old(data)), False)
+    expect("a key id the trust list does not hold", receipt_keys.make_verifier(trust_old)(data, sign_new(data)), False)
+    expect("a trusted id signed by another key", receipt_keys.make_verifier(trust_old)(data, receipt_keys.make_signer(other, "k1")(data)), False)
+    expect("a revoked key that is still listed", receipt_keys.make_verifier(trust_old, revoked={"k1"})(data, sign_old(data)), False)
+    expect("rotation: the old key while both are trusted", receipt_keys.make_verifier(trust_both)(data, sign_old(data)), True)
+    expect("rotation: the new key", receipt_keys.make_verifier(trust_both)(data, sign_new(data)), True)
+    expect("rotation: the old key once retired", receipt_keys.make_verifier({"k2": new.public_key()})(data, sign_old(data)), False)
+    expect("rotation: the new key once the old is revoked", receipt_keys.make_verifier(trust_both, revoked={"k1"})(data, sign_new(data)), True)
+    verify = receipt_keys.make_verifier(trust_both)
+    for label, junk in (("no key id", b"nocolon"), ("an empty envelope", b""), ("a str", "k1:sig"), ("an empty signature", b"k1:"),
+                        ("a key id that is not UTF-8", b"\xff\xfe:sig")):
+        expect(f"input that is not a signature ({label})", verify(data, junk), False)
+    expect("data that is not bytes", verify("text", sign_old(data)), False)
+    for bad in ("", "a:b", 7, None):
+        if not refused(lambda bad=bad: receipt_keys.make_signer(old, bad)):
+            out.append(f"a key id {bad!r} was accepted by make_signer")
+    trust_both["k1"] = other.public_key()  # the verifier took a snapshot: editing the dict afterwards changes nothing
+    expect("a trust dict edited after make_verifier", verify(data, sign_old(data)), True)
+    return out
+
+
+def a_trust_list_that_is_ambiguous_is_refused() -> List[str]:
+    """The trust list is the deployer's whole authority, so a list that can be read two ways is refused rather than guessed:
+    one public key under two ids (revoking one id would leave the other), a revoked id that names no trusted id (a typo, a
+    case or Unicode-normalisation difference revokes nothing), one id twice in the JSON (the last would win silently), and an
+    id outside ASCII (NFC and NFD spell the same id differently). Each is a ValueError from the file reader AND from the verifier
+    builder, and a valid list is still accepted."""
+    a, b = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+    ha, hb = receipt_keys.public_key_hex(a.public_key()), receipt_keys.public_key_hex(b.public_key())
+    nfc = unicodedata.normalize("NFC", "k\u00e9")
+    nfd = unicodedata.normalize("NFD", nfc)
+    out: List[str] = []
+
+    def both_refuse(label: str, text: str, trust: Dict[str, Any], revoked: Tuple[str, ...]) -> None:
+        if not refused(lambda: receipt_keys.trust_from_json(text)):
+            out.append(f"{label}: trust_from_json accepted it")
+        if not refused(lambda: receipt_keys.make_verifier(trust, revoked)):
+            out.append(f"{label}: make_verifier accepted it")
+
+    def doc(keys: str, revoked: str = "[]") -> str:
+        return '{"keys": {' + keys + '}, "revoked": ' + revoked + '}'
+
+    both_refuse("one public key under two ids", doc(f'"old": "{ha}", "new": "{ha}"', '["old"]'),
+                {"old": a.public_key(), "new": a.public_key()}, ("old",))
+    both_refuse("a revoked id that matches no trusted id", doc(f'"k1": "{ha}"', '["k2"]'), {"k1": a.public_key()}, ("k2",))
+    both_refuse("a revoked id that differs from the trusted one only in case", doc(f'"k1": "{ha}"', '["K1"]'),
+                {"k1": a.public_key()}, ("K1",))
+    both_refuse("a non-ASCII id (NFC)", doc(f'"{nfc}": "{ha}"'), {nfc: a.public_key()}, ())
+    both_refuse("a non-ASCII id (NFD)", doc(f'"{nfd}": "{ha}"'), {nfd: a.public_key()}, ())
+    both_refuse("a revoked NFD spelling of an NFC id", doc(f'"{nfc}": "{ha}"', json.dumps([nfd])), {nfc: a.public_key()}, (nfd,))
+    if not refused(lambda: receipt_keys.trust_from_json(doc(f'"k1": "{hb}", "k1": "{ha}"'))):
+        out.append("one id twice in the JSON: the last silently won")
+    if not refused(lambda: receipt_keys.make_signer(a, nfc)):
+        out.append("make_signer accepted a non-ASCII id")
+    trust, revoked = receipt_keys.trust_from_json(doc(f'"k1": "{ha}", "k2": "{hb}"', '["k1"]'))
+    if sorted(trust) != ["k1", "k2"] or revoked != frozenset({"k1"}):
+        out.append("a valid trust list with one revoked id was not read back as written")
+    with packages(()) as (pkg,):  # the command: an ambiguous trust file is an input that cannot be read, exit 2
+        for label, text in (("a key under two ids", doc(f'"old": "{ha}", "new": "{ha}"', '["old"]')),
+                            ("a revoked id that names nothing", doc(f'"k1": "{ha}"', '["k2"]')),
+                            ("an id twice", doc(f'"k1": "{hb}", "k1": "{ha}"'))):
+            with open(os.path.join(pkg.root, "ambiguous.json"), "w", encoding="utf-8") as fh:
+                fh.write(text)
+            done = pkg.verify(trust=os.path.join(pkg.root, "ambiguous.json"))
+            if done.returncode != 2 or "Traceback" in done.stderr:
+                out.append(f"verify_package with a trust file with {label}: exit {done.returncode}, stderr {done.stderr.strip()[-160:]!r}")
+    return out
+
+
+# --- signed receipts: the deployer's keys, Delta's signing hook, CNS's verification (Step 2) -----------------------------
+
+#: Fresh keys for each run of the script; nothing is hard-coded. The deployer's key is the one the verifier trusts.
+DEPLOYER_KEY, NEW_KEY, STRANGER_KEY = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+BAD_SIGNATURE = spine_trace.RECEIPT_SIGNATURE_BAD
+SIGNATURE_REQUIRED = spine_trace.RECEIPT_SIGNATURE_REQUIRED
+VERIFIER_NO_SIGNATURE = spine_trace.RECEIPT_SIGNATURE_VERIFIER_NO_SIGNATURE
+
+
+def deployer_verifier(*, also=(), revoked=()):
+    """The verifier a deployer builds from the keys it trusts: key id k1 (the deployer's), plus any `(id, key)` in `also`."""
+    trust = {"k1": DEPLOYER_KEY.public_key(), **{kid: key.public_key() for kid, key in also}}
+    return receipt_keys.make_verifier(trust, revoked)
+
+
+def signed_run(vitals=SICK, ctx=CTX, key=None, key_id="k1"):
+    """A real run, the receipt Delta issues for it, and the signature Delta's hook makes with the deployer's `sign`."""
+    p = stages(vitals, ctx)
+    receipt, why = chain_receipt(p)
+    if receipt is None:
+        raise ValueError(f"delta issued no receipt: {why}")
+    return p, receipt, delta_signing.sign_receipt(receipt, receipt_keys.make_signer(key or DEPLOYER_KEY, key_id))
+
+
+def signed_check(p, receipt, signature, verifier, *, required=True, held=True) -> List[str]:
+    """CNS's strict check with the signature arguments, then the root asked the same way: a root is issued exactly when no
+    problem is named. The check is run as a deployer runs it (the zeta recomputation, the checkpoint held outside)."""
+    kw: Dict[str, Any] = dict(chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint, receipt_signature=signature,
+                              verify_receipt_signature=verifier, require_signed_receipt=required)
+    if held:
+        kw["held_checkpoint"] = (p["checkpoint"].length, p["checkpoint"].head)
+    found = strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"], **kw)
+    try:
+        issued = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], **kw)
+    except ValueError:
+        issued = None
+    if found and issued is not None:
+        found.append("a root was issued although problems were named")
+    if not found and issued is None:
+        found.append("no root was issued although no problem was named")
+    return found
+
+
+def a_receipt_signed_by_the_deployer_is_verified_and_a_root_issued() -> List[str]:
+    p, receipt, signature = signed_run()
+    verifier = deployer_verifier()
+    out = signed_check(p, receipt, signature, verifier)
+    kw: Dict[str, Any] = dict(chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint,
+                              held_checkpoint=(p["checkpoint"].length, p["checkpoint"].head))
+    unsigned = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], **kw)
+    signed = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], receipt_signature=signature,
+                         verify_receipt_signature=verifier, require_signed_receipt=True, **kw)
+    return out + ([] if signed != unsigned else ["a root issued with a verified signature equals the unsigned root"])
+
+
+def an_unsigned_receipt_is_refused_when_a_signature_is_required() -> List[str]:
+    p, receipt, _ = signed_run()
+    return signed_check(p, receipt, None, deployer_verifier())
+
+
+def a_verifier_without_a_signature_is_refused_without_the_requirement() -> List[str]:
+    """Supplying the verifier says the receipt is meant to be authentic: stripping the signature is not a downgrade."""
+    p, receipt, _ = signed_run()
+    return signed_check(p, receipt, None, deployer_verifier(), required=False)
+
+
+def a_requirement_with_no_verifier_and_no_signature_is_refused() -> List[str]:
+    p, receipt, _ = signed_run()
+    return signed_check(p, receipt, None, None, required=True)
+
+
+def a_hand_built_consistent_receipt_with_no_delta_call_and_no_key_is_refused() -> List[str]:
+    """The receipt of GAP_a_fully_hand_built_consistent_receipt_is_accepted, which the unsigned check accepts: every field
+    fits the others, nothing behind it. Asked for a signature, its author has none to give."""
+    p = stages(SICK)
+    head = "1" * 64
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(p["delta"]), "index": 4,
+               "entry_hash": p["delta"]["immutable_hash"], "previous_hash": p["delta"]["previous_hash"], "ledger_length": 9,
+               "ledger_head": head, "checkpoint_length": 9, "checkpoint_head": head, "context": dict(CTX)}
+    return signed_check(p, receipt, None, deployer_verifier(), held=False)
+
+
+def a_receipt_signed_by_an_untrusted_key() -> List[str]:
+    p, receipt, signature = signed_run(key=STRANGER_KEY, key_id="stranger")
+    return signed_check(p, receipt, signature, deployer_verifier())
+
+
+def a_receipt_signed_by_a_key_claiming_the_deployers_id() -> List[str]:
+    p, receipt, signature = signed_run(key=STRANGER_KEY, key_id="k1")
+    return signed_check(p, receipt, signature, deployer_verifier())
+
+
+def a_receipt_signed_by_a_revoked_key() -> List[str]:
+    p, receipt, signature = signed_run()
+    return signed_check(p, receipt, signature, deployer_verifier(revoked={"k1"}))
+
+
+def a_signature_over_another_receipt() -> List[str]:
+    p, receipt, _ = signed_run()
+    _, _, other = signed_run(SICK, ctx={**CTX, "run_id": "run_2"})
+    return signed_check(p, receipt, other, deployer_verifier())
+
+
+def a_receipt_edited_after_signing() -> List[str]:
+    """Each of several fields of the signed receipt is changed alone; the signature must name every one of them. The other
+    problems an edit also causes (the receipt no longer fits the contents) are not what this asks, so only the signature's
+    verdict is kept, and a root must not be issued."""
+    p, receipt, signature = signed_run()
+    verifier = deployer_verifier()
+    flip = lambda h: ("0" if h[0] != "0" else "1") + h[1:]  # noqa: E731
+    edits = {"entry_digest": lambda r: r.update(entry_digest=flip(r["entry_digest"])),
+             "entry_hash": lambda r: r.update(entry_hash=flip(r["entry_hash"])),
+             "previous_hash": lambda r: r.update(previous_hash=flip(r["previous_hash"])),
+             "ledger_head": lambda r: r.update(ledger_head=flip(r["ledger_head"])),
+             "checkpoint_head": lambda r: r.update(checkpoint_head=flip(r["checkpoint_head"])),
+             "ledger_length": lambda r: r.update(ledger_length=r["ledger_length"] + 1),
+             "checkpoint_length": lambda r: r.update(checkpoint_length=r["checkpoint_length"] + 1),
+             "index": lambda r: r.update(index=r["index"] + 1),
+             "schema": lambda r: r.update(schema="ledger-receipt/2"),
+             "context.run_id": lambda r: r["context"].update(run_id="run_2")}
+    out: List[str] = []
+    for name, edit in edits.items():
+        edited = {**receipt, "context": dict(receipt["context"])}
+        edit(edited)
+        found = signed_check(p, edited, signature, verifier)
+        if BAD_SIGNATURE not in "; ".join(found):
+            out.append(f"{name}: the edit was not caught by the signature")
+        elif not any("a root was issued" in f for f in found):
+            out.append(f"{name}: {BAD_SIGNATURE}")
+        else:
+            out.append(f"{name}: a root was issued for an edited receipt")
+    return out
+
+
+def rotation_keeps_the_old_key_verifying_until_it_is_retired() -> List[str]:
+    p_old, receipt_old, sig_old = signed_run()
+    p_new, receipt_new, sig_new = signed_run(ctx={**CTX, "run_id": "run_2"}, key=NEW_KEY, key_id="k2")
+    both = deployer_verifier(also=[("k2", NEW_KEY)])
+    return signed_check(p_old, receipt_old, sig_old, both) + signed_check(p_new, receipt_new, sig_new, both)
+
+
+def a_receipt_of_a_retired_key_is_refused_after_rotation() -> List[str]:
+    p, receipt, signature = signed_run()
+    retired = receipt_keys.make_verifier({"k2": NEW_KEY.public_key()})
+    return signed_check(p, receipt, signature, retired)
+
+
+def the_two_receipt_signing_inputs_do_not_drift() -> List[str]:
+    """DRIFT. CNS carries its own `receipt_signing_input` (it imports no repository) and Delta its own. A signature made over
+    one and checked over the other only works while they are byte-equal, so this holds them equal over valid receipts and
+    equal in refusal over invalid ones: whatever one refuses, the other refuses (the exception class may differ)."""
+    import copy
+    real = signed_run()[1]
+    other = signed_run(WELL, ctx={**CTX, "run_id": "run_2", "event_id": "event_2"})[1]
+    astral, pair = chr(0x1F600), chr(0xD83D) + chr(0xDE00)
+
+    def variant(base, **over):
+        r = copy.deepcopy(base)
+        for k, v in over.items():
+            if k.startswith("ctx."):
+                r["context"][k[4:]] = v
+            else:
+                r[k] = v
+        return r
+
+    class S(str):
+        pass
+
+    class I(int):  # noqa: E742
+        pass
+
+    class D(dict):
+        pass
+
+    valid = {"a real receipt": real, "another run's": other, "non-ASCII ids": variant(real, **{"ctx.entity_id": "patient_\u00e9\u4e2d"}),
+             "an astral character": variant(real, **{"ctx.run_id": "run_" + astral}), "empty strings": variant(real, **{"ctx.run_id": ""}),
+             "a huge int": variant(real, index=10 ** 30), "zero lengths": variant(real, index=0, ledger_length=0, checkpoint_length=0),
+             "an escaped quote": variant(real, **{"ctx.event_id": 'e"\\\n'})}
+    broken = {"a lone surrogate": variant(real, entry_hash=chr(0xD83D)), "a surrogate pair": variant(real, **{"ctx.run_id": pair}),
+              "a lone surrogate in the context": variant(real, **{"ctx.entity_id": chr(0xDE00)}),
+              "an extra key": {**real, "extra": 1}, "a missing key": {k: v for k, v in real.items() if k != "index"},
+              "a bool index": variant(real, index=True), "a bool length": variant(real, ledger_length=False),
+              "a negative index": variant(real, index=-1), "a negative length": variant(real, checkpoint_length=-5),
+              "a float index": variant(real, index=0.0), "a str-subclass hash": variant(real, ledger_head=S(real["ledger_head"])),
+              "an int-subclass index": variant(real, index=I(0)), "a dict subclass": D(real),
+              "a context with an extra key": variant(real, context={**real["context"], "extra": "x"}),
+              "a context that is a list": variant(real, context=list(real["context"].values())),
+              "a non-str key": {**real, 1: 2}, "None": None, "a list": list(real.items()),
+              "a NaN where an int belongs": variant(real, index=float("nan")), "bytes where a str belongs": variant(real, entry_hash=b"x")}
+
+    def ask(fn, receipt):
+        try:
+            return "ok", fn(receipt)
+        except (TypeError, ValueError):
+            return "refused", None
+
+    out: List[str] = []
+    for label, receipt in valid.items():
+        mine, theirs = ask(spine_trace.receipt_signing_input, receipt), ask(delta_signing.receipt_signing_input, receipt)
+        if mine[0] != "ok" or theirs[0] != "ok" or mine[1] != theirs[1]:
+            out.append(f"valid receipt ({label}): CNS {mine[0]}, delta {theirs[0]}, bytes {'equal' if mine[1] == theirs[1] else 'differ'}")
+    for label, receipt in broken.items():
+        mine, theirs = ask(spine_trace.receipt_signing_input, receipt), ask(delta_signing.receipt_signing_input, receipt)
+        if mine[0] != "refused" or theirs[0] != "refused":
+            out.append(f"invalid receipt ({label}): CNS {mine[0]}, delta {theirs[0]}")
+    if spine_trace.RECEIPT_SIGNATURE_DOMAIN != delta_signing.RECEIPT_SIGNATURE_DOMAIN:
+        out.append("the signature domain tags differ")
+    return out
+
+
+def GAP_a_holder_of_a_trusted_key_signs_a_forged_receipt() -> List[str]:
+    """KNOWN GAP, stated as a fact and a recorded limit. Signing closes the forged-receipt gap only for a verifier that trusts
+    only real keys. Whoever holds a trusted key can sign a hand-built receipt for a ledger that does not exist (index 4 of 9,
+    a head that names no ledger), and CNS, which sees a verifying signature and a receipt that fits the contents, names no
+    problem and issues a root. The signature says who vouched, not that the ledger is real. Only a held checkpoint taken from
+    a real ledger (`held_checkpoint`) or the key holder's honesty tells it from an honest one, and neither is in CNS."""
+    p = stages(SICK)
+    head = "1" * 64
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(p["delta"]), "index": 4,
+               "entry_hash": p["delta"]["immutable_hash"], "previous_hash": p["delta"]["previous_hash"], "ledger_length": 9,
+               "ledger_head": head, "checkpoint_length": 9, "checkpoint_head": head, "context": dict(CTX)}
+    signature = delta_signing.sign_receipt(receipt, receipt_keys.make_signer(DEPLOYER_KEY, "k1"))
+    return signed_check(p, receipt, signature, deployer_verifier(), held=False)
+
+
+# --- the durable store across processes (Step 3) ----------------------------------------------------------------------
+#
+# Each scenario runs SEPARATE python processes (`store_worker.py`, with this interpreter and this PYTHONPATH). The producer
+# records Decisions through FileLedgerStore, writes a signed checkpoint into a directory of its own and hands over the three
+# upstream contents and a signature over Delta's receipt. A fresh consumer reconciles the store with the checkpoint, rebuilds
+# the receipt itself and asks CNS for the strict root. Every refusal is judged by the consumer's own named reason, and the
+# store files must be byte-identical afterwards.
+
+WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_worker.py")
+
+
+def record(ledger, i, vitals=None) -> Dict[str, Any]:
+    """The i-th run recorded into `ledger`: alternating readings, a minute later each, its own run and event."""
+    return stages((SICK, WELL)[i % 2] if vitals is None else vitals, ctx={**CTX, "run_id": f"run_{i}", "event_id": f"event_{i}"},
+                  ledger=ledger, at=T0 + timedelta(minutes=i))
+
+
+def worker(*args: str, **kw: Any) -> "subprocess.CompletedProcess[str]":
+    return subprocess.run([sys.executable, WORKER, *args], capture_output=True, text=True, timeout=180, env=dict(os.environ), **kw)
+
+
+class World:
+    """Three places that do not share a directory: the ledger store, the checkpoint (separate storage) and the hand-off."""
+
+    def __init__(self, root: str) -> None:
+        self.root = root
+        self.ledger = os.path.join(root, "ledger")
+        self.checkpoint = os.path.join(root, "checkpoint-storage", "checkpoint.json")
+        self.handoff = os.path.join(root, "handoff")
+        self.file = os.path.join(self.ledger, "ledger.jsonl")
+
+    def produce(self, entries: int, *more: str) -> List[str]:
+        """Run a producer process to completion; the audit ids it acknowledged."""
+        done = worker("producer", "--ledger", self.ledger, "--checkpoint", self.checkpoint, "--handoff", self.handoff,
+                      "--entries", str(entries), *more)
+        if done.returncode != 0:
+            raise RuntimeError(f"the producer exited {done.returncode}: {done.stderr.strip()[-400:]}")
+        return [line.split()[1] for line in done.stdout.splitlines() if line.startswith("ACK ")]
+
+    def consume(self, *more: str) -> "subprocess.CompletedProcess[str]":
+        return worker("consumer", "--ledger", self.ledger, "--checkpoint", self.checkpoint, "--handoff", self.handoff, *more)
+
+    def state(self) -> Dict[str, str]:
+        """Every byte of the ledger store and of the checkpoint storage: a refused load must leave both as they were."""
+        found: Dict[str, str] = {}
+        for base in (self.ledger, os.path.dirname(self.checkpoint)):
+            for folder, _, names in os.walk(base):
+                for name in names:
+                    path = os.path.join(folder, name)
+                    with open(path, "rb") as fh:
+                        found[os.path.relpath(path, self.root)] = hashlib.sha256(fh.read()).hexdigest()
+        return found
+
+    def lines(self) -> List[bytes]:
+        with open(self.file, "rb") as fh:
+            return fh.read().splitlines(keepends=True)
+
+    def write_lines(self, lines: List[bytes]) -> None:
+        with open(self.file, "wb") as fh:
+            fh.write(b"".join(lines))
+
+
+@contextlib.contextmanager
+def world():
+    with tempfile.TemporaryDirectory() as root:
+        yield World(root)
+
+
+def consumer_refusal(w: World, *more: str) -> Callable[[], None]:
+    """The consumer as a thunk that raises ValueError carrying its own named reason when it exits non-zero."""
+    def thunk() -> None:
+        done = w.consume(*more)
+        if done.returncode != 0:
+            raise ValueError(f"the consumer exited {done.returncode}: {done.stderr.strip()}")
+    return thunk
+
+
+def consumer_answer(done: "subprocess.CompletedProcess[str]") -> Dict[str, Any]:
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def expected_root(w: World, *, signed: bool = True) -> str:
+    """The strict root computed IN THIS PROCESS from the same inputs the consumer was given (the store, the signed checkpoint,
+    the hand-off and its trust list), by this runner's own code and not by the worker's. `signed=False` leaves the signature
+    arguments out, which is the root a consumer that dropped them would print."""
+    with open(os.path.join(w.handoff, "trust.json"), encoding="utf-8") as fh:
+        trust, revoked = receipt_keys.trust_from_json(fh.read())
+    verify = receipt_keys.make_verifier(trust, revoked)
+    ledger, _ = delta_pkg.FileLedgerStore(w.ledger).load(require_context=True)
+    checkpoint = delta_pkg.CheckpointStore(w.checkpoint).read(verify=verify)
+    with open(os.path.join(w.handoff, "contents.json"), encoding="utf-8") as fh:
+        contents = json.load(fh)
+    with open(os.path.join(w.handoff, "receipt_signature.hex"), encoding="utf-8") as fh:
+        signature = bytes.fromhex(fh.read().strip())
+    beta = contents["beta"]
+    delta = delta_cns.entry_content(ledger.entries[checkpoint.length - 1], context=beta["context"], decision_digest=subject_digest(beta))
+    receipt = delta_cns.verification_receipt(ledger, checkpoint, context=beta["context"], decision_digest=subject_digest(beta))
+    kw: Dict[str, Any] = dict(receipt_signature=signature, verify_receipt_signature=verify, require_signed_receipt=True) if signed else {}
+    return strict_root(contents["alpha"], contents["zeta"], beta, delta, chain=receipt, held_checkpoint=(checkpoint.length, checkpoint.head),
+                       keyset_fingerprint_of=zeta_keyset_fingerprint, **kw)
+
+
+def a_producer_and_a_fresh_consumer_agree() -> List[str]:
+    with world() as w:
+        acked = w.produce(4)
+        before = w.state()
+        done = w.consume()
+        if done.returncode != 0:
+            return [f"the consumer refused an honest store: {done.stderr.strip()}"]
+        answer = consumer_answer(done)
+        out: List[str] = []
+        if len(acked) != 4 or len(w.lines()) != 4:
+            out.append(f"the producer acknowledged {len(acked)} entries and the file holds {len(w.lines())}, not 4")
+        if os.path.dirname(w.checkpoint) == w.ledger or w.checkpoint.startswith(w.ledger):
+            out.append("the checkpoint is in the ledger's directory, which is not independent")
+        if answer.get("status") != "OK" or answer.get("entries") != 4 or answer.get("checkpoint_length") != 4:
+            out.append(f"the consumer reported {answer}")
+        if not (isinstance(answer.get("root"), str) and len(answer["root"]) == 64):
+            out.append("the consumer issued no root")
+        else:
+            want, unsigned = expected_root(w), expected_root(w, signed=False)
+            if want == unsigned:
+                out.append("the root with a verified signature equals the root without one, so the signature proves nothing here")
+            if answer["root"] != want:
+                out.append(f"the consumer's root {answer['root']} is not the strict_root {want} computed in-process from the same "
+                           f"inputs (the unsigned root would be {unsigned})")
+        if w.state() != before:
+            out.append("the consumer changed the store or the checkpoint")
+        return out
+
+
+def a_tampered_handoff_is_refused_by_cns(change: Callable[[World], None]) -> List[str]:
+    """The store and the checkpoint are honest and the consumer is given a damaged hand-off. Every store check passes, so
+    the refusal can only be the consumer's CNS step (`strict check:`), and its named problem must be the one asked for."""
+    with world() as w:
+        w.produce(4)
+        change(w)
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def _edit_handoff(w: World, name: str, change: Callable[[str], str]) -> None:
+    path = os.path.join(w.handoff, name)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(change(text))
+
+
+def _flip_last_hex_digit(text: str) -> str:
+    text = text.rstrip("\n")
+    return text[:-1] + ("0" if text[-1] != "0" else "1") + "\n"
+
+
+def _another_decision(text: str) -> str:
+    contents = json.loads(text)
+    contents["beta"]["instructions"] = "Send home."
+    return json.dumps(contents, sort_keys=True)
+
+
+def _another_keyset(text: str) -> str:
+    contents = json.loads(text)
+    contents["alpha"]["min_confidence"] = 0.5
+    return json.dumps(contents, sort_keys=True)
+
+
+def a_ledger_file_truncated_below_the_checkpoint() -> List[str]:
+    with world() as w:
+        w.produce(4)
+        w.write_lines(w.lines()[:2])
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def an_entry_rewritten_and_the_file_rechained() -> List[str]:
+    """Entry 1 is a different Decision, recorded afresh so that every later hash, sum and the chain are consistent: the file
+    verifies on its own. Only the checkpoint held elsewhere says the history was different."""
+    with world() as w:
+        w.produce(4)
+        with tempfile.TemporaryDirectory() as other:
+            ledger = DecisionLedger(require_context=True, sink=delta_pkg.FileLedgerStore(other).sink)
+            for i in range(4):
+                record(ledger, i, SICK_ELSEWHERE if i == 1 else None)
+            with open(os.path.join(other, "ledger.jsonl"), "rb") as fh:
+                rewritten = fh.read()
+        if rewritten == b"".join(w.lines()):
+            return ["the rewrite equals the honest file, so nothing was rewritten"]
+        with open(w.file, "wb") as fh:
+            fh.write(rewritten)
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def a_torn_final_line_is_recovered_and_reported() -> List[str]:
+    """A fifth entry past the checkpoint is cut off mid-line, as a crash would. The checkpoint covers four: the load drops the
+    torn line, says so, and the strict root is issued for the witnessed entry. Nothing is written by the load."""
+    with world() as w:
+        acked = w.produce(5, "--checkpoint-at", "4")
+        lines = w.lines()
+        w.write_lines(lines[:4] + [lines[4][: len(lines[4]) // 2]])
+        before = w.state()
+        done = w.consume()
+        if done.returncode != 0:
+            return [f"the consumer refused a torn final line past the checkpoint: {done.stderr.strip()}"]
+        answer = consumer_answer(done)
+        out: List[str] = []
+        if answer["recovered_tail"].get("count") != 1 or answer["status"] != "OK" or answer["entries"] != 4 or not answer.get("root"):
+            out.append(f"the torn line was not recovered and reported: {answer} ({len(acked)} acknowledged)")
+        if w.state() != before:
+            out.append("the load wrote to the store")
+        return out
+
+
+def mid_file_damage_is_refused() -> List[str]:
+    with world() as w:
+        w.produce(4)
+        lines = w.lines()
+        if b"patient_1" not in lines[1]:
+            return ["the damage could not be made"]
+        lines[1] = lines[1].replace(b"patient_1", b"patient_2", 1)
+        w.write_lines(lines)
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def a_checkpoint_replaced_by_an_older_signed_one(*more: str, expect_refusal: bool = True) -> List[str]:
+    with world() as w:
+        with tempfile.TemporaryDirectory() as old:
+            snapshot = (os.path.join(old, "checkpoint.json"), os.path.join(old, "handoff"))
+            w.produce(4, "--snapshot-at", "2", "--snapshot-checkpoint", snapshot[0], "--snapshot-handoff", snapshot[1])
+            os.replace(snapshot[0], w.checkpoint)
+        if expect_refusal:
+            return refused(consumer_refusal(w, *more), state=w.state)
+        before = w.state()
+        done = w.consume(*more)
+        if done.returncode != 0:
+            return [f"the consumer refused: {done.stderr.strip()}"]
+        answer = consumer_answer(done)
+        out = [] if answer.get("status") == "UNWITNESSED_TAIL" and answer.get("unwitnessed") == 2 else [f"the consumer reported {answer}"]
+        return out + ([] if w.state() == before else ["the consumer changed the store or the checkpoint"])
+
+
+def GAP_an_older_signed_checkpoint_is_accepted_as_an_unwitnessed_tail() -> List[str]:
+    """KNOWN GAP, a recorded limit. A signature carries no freshness: the checkpoint at two entries, validly signed by the
+    deployer's key and put back over the one at four, verifies. `reconcile` reports UNWITNESSED_TAIL (two entries nothing
+    independent vouches for) and does not refuse. A consumer that insists on OK refuses it (the scenario above); one that
+    accepts a tail is told, and gets no root, but nothing in the store or the signature says the checkpoint is old."""
+    return a_checkpoint_replaced_by_an_older_signed_one("--accept-unwitnessed", expect_refusal=False)
+
+
+def GAP_a_ledger_rolled_back_to_an_older_signed_package_is_accepted() -> List[str]:
+    """KNOWN GAP, a recorded limit and the sharp end of the one above. The attacker has an older, complete, validly signed
+    package (checkpoint at two entries, the hand-off for entry two) and cuts the ledger file back to two lines. Every check
+    passes and a root is issued for the older state; the two later, acknowledged entries are gone and nothing here says so.
+    Freshness (a counter, a clock or a monitor that remembers the newest checkpoint) is the deployer's, outside CNS."""
+    with world() as w:
+        with tempfile.TemporaryDirectory() as old:
+            snapshot = (os.path.join(old, "checkpoint.json"), os.path.join(old, "handoff"))
+            w.produce(4, "--snapshot-at", "2", "--snapshot-checkpoint", snapshot[0], "--snapshot-handoff", snapshot[1])
+            os.replace(snapshot[0], w.checkpoint)
+            for name in ("contents.json", "receipt_signature.hex"):
+                shutil.copy(os.path.join(snapshot[1], name), os.path.join(w.handoff, name))
+        w.write_lines(w.lines()[:2])
+        done = w.consume()
+        if done.returncode != 0:
+            return [f"the rollback was refused, so the gap has closed: {done.stderr.strip()}"]
+        answer = consumer_answer(done)
+        return [] if answer.get("entries") == 2 and answer.get("root") else [f"the consumer reported {answer}"]
+
+
+def a_checkpoint_with_no_signature_when_one_is_required() -> List[str]:
+    with world() as w:
+        w.produce(4)
+        store = delta_pkg.CheckpointStore(w.checkpoint)
+        store.write(store.read())  # the same value, written without a signature
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def a_producer_killed_mid_run_loses_no_acknowledged_entry() -> List[str]:
+    """SIGKILL of a producer that is recording as fast as it can. A fresh process loads the store: every entry the producer had
+    acknowledged is there, in order, with at most one more (appended, not yet reported), and the chain verifies on load."""
+    with world() as w:
+        proc = subprocess.Popen([sys.executable, WORKER, "producer", "--ledger", w.ledger, "--checkpoint", w.checkpoint,
+                                 "--handoff", w.handoff, "--forever"], stdout=subprocess.PIPE, text=True, env=dict(os.environ))
+        timer = threading.Timer(120, proc.kill)
+        timer.start()
+        acked: List[str] = []
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if line.startswith("ACK ") and line.endswith("\n"):
+                    acked.append(line.split()[1])
+                if len(acked) >= 15:
+                    break
+            proc.kill()  # SIGKILL: no handler runs, nothing is flushed that was not already
+            proc.wait()
+            for line in proc.stdout:  # what was written before the kill and not yet read
+                if line.startswith("ACK ") and line.endswith("\n"):
+                    acked.append(line.split()[1])
+        finally:
+            timer.cancel()
+            if proc.stdout is not None:
+                proc.stdout.close()
+        out: List[str] = []
+        if proc.returncode != -9:
+            out.append(f"the producer was not killed by SIGKILL (exit {proc.returncode})")
+        done = worker("load", "--ledger", w.ledger)
+        if done.returncode != 0:
+            return out + [f"the consumer could not load the killed store: {done.stderr.strip()[-300:]}"]
+        loaded = consumer_answer(done)["ids"]
+        if loaded[: len(acked)] != acked:
+            out.append(f"{len(acked)} entries were acknowledged and the store does not begin with them ({len(loaded)} loaded)")
+        if len(loaded) - len(acked) not in (0, 1):
+            out.append(f"{len(loaded)} entries loaded for {len(acked)} acknowledged")
+        return out
+
+
+# --- the verify command, end to end as two commands in two processes (Step 4) ----------------------------------------------
+
+CHAINS = os.path.dirname(os.path.abspath(__file__))
+MAKE_PACKAGE, VERIFY_PACKAGE = os.path.join(CHAINS, "make_package.py"), os.path.join(CHAINS, "verify_package.py")
+
+
+def run_script(path: str, *args: str) -> "subprocess.CompletedProcess[str]":
+    return subprocess.run([sys.executable, path, *args], capture_output=True, text=True, timeout=180, env=dict(os.environ))
+
+
+class Package:
+    """A package made by `make_package.py` in a temporary place: the package directory, the checkpoint directory (a different
+    one) and the trust list, and the commands to verify it."""
+
+    def __init__(self, root: str, name: str = "a", *make_args: str) -> None:
+        self.root = root
+        self.dir = os.path.join(root, name, "package")
+        self.checkpoint_dir = os.path.join(root, name, "checkpoint-storage")
+        self.checkpoint = os.path.join(self.checkpoint_dir, "checkpoint.json")
+        self.trust = os.path.join(root, name, "trust.json")
+        made = run_script(MAKE_PACKAGE, self.dir, "--checkpoint-dir", self.checkpoint_dir, "--trust-out", self.trust, *make_args)
+        if made.returncode != 0:
+            raise RuntimeError(f"make_package exited {made.returncode}: {made.stderr.strip()[-400:]}")
+
+    def verify(self, *more: str, package: Optional[str] = None, checkpoint: Optional[str] = None,
+               trust: Optional[str] = None) -> "subprocess.CompletedProcess[str]":
+        return run_script(VERIFY_PACKAGE, package or self.dir, "--checkpoint", checkpoint or self.checkpoint,
+                          "--public-keys", trust or self.trust, *more)
+
+    def state(self) -> Dict[str, str]:
+        """Every byte of the package, the checkpoint storage and the trust list: a refusal must change none of them."""
+        found: Dict[str, str] = {}
+        for base in (self.dir, self.checkpoint_dir, os.path.dirname(self.trust)):
+            for folder, _, names in os.walk(base):
+                for name in names:
+                    with open(os.path.join(folder, name), "rb") as fh:
+                        found[os.path.relpath(os.path.join(folder, name), self.root)] = hashlib.sha256(fh.read()).hexdigest()
+        return found
+
+    def edit(self, name: str, change: Callable[[Any], Any]) -> None:
+        path = os.path.join(self.dir, name)
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        change(data)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, sort_keys=True)
+
+    def edit_trust(self, change: Callable[[Dict[str, Any], set], Any]) -> None:
+        with open(self.trust, encoding="utf-8") as fh:
+            trust, revoked = receipt_keys.trust_from_json(fh.read())
+        revoked = set(revoked)
+        change(trust, revoked)
+        with open(self.trust, "w", encoding="utf-8") as fh:
+            fh.write(receipt_keys.trust_to_json(trust, revoked))
+
+
+@contextlib.contextmanager
+def packages(*makes: Tuple[str, ...]):
+    """One or more packages in one temporary place; each `makes` entry is the extra arguments for one `make_package.py`."""
+    with tempfile.TemporaryDirectory() as root:
+        yield [Package(root, "abcdefgh"[i], *args) for i, args in enumerate(makes)]
+
+
+def verify_refusal(pkg: Package, *more: str, **where: str) -> Callable[[], None]:
+    """The verify command as a thunk: ValueError carrying everything it printed to stderr when it refuses (exit 1); anything
+    else that is not a pass (a usage error, an unreadable input) is a RuntimeError, which no scenario here declares."""
+    def thunk() -> None:
+        done = pkg.verify(*more, **where)
+        if done.returncode == 1:
+            raise ValueError(f"verify_package refused (exit 1): {done.stderr.strip()}")
+        if done.returncode != 0:
+            raise RuntimeError(f"verify_package exited {done.returncode}, not 1: {done.stderr.strip()[-300:]}")
+    return thunk
+
+
+def refused_package(*makes: Tuple[str, ...], attack: Callable[..., Tuple[Tuple[str, ...], Dict[str, str]]]) -> List[str]:
+    """Make the packages, let `attack(*packages)` damage them and say how to verify (extra arguments, replacement paths), and
+    return what the verify command refused, with the state of every file checked before and after."""
+    with packages(*makes) as made:
+        more, where = attack(*made)
+        return refused(verify_refusal(made[0], *more, **where), state=made[0].state)
+
+
+SIGNED = ("--require-signed",)
+SUMMARY = re.compile(r"verified: root=[0-9a-f]{64} entries=3 checkpoint=3 entry=2 run_id=run_2 event_id=event_2 receipt_signature=(verified|absent \(allowed\))")
+
+
+def an_honest_package_verifies_in_another_process() -> List[str]:
+    out: List[str] = []
+    with packages((), ("--no-receipt-signature", "--no-checkpoint-signature")) as (signed, unsigned):
+        before = signed.state()
+        done = signed.verify(*SIGNED)
+        line = done.stdout.strip()
+        if done.returncode != 0 or not SUMMARY.fullmatch(line) or not line.endswith("receipt_signature=verified"):
+            out.append(f"an honest signed package did not verify with --require-signed: exit {done.returncode} {line!r} {done.stderr.strip()}")
+        if signed.verify().stdout.strip() != line:
+            out.append("the same package verified without --require-signed gives a different root or summary")
+        if signed.verify("--allow-unsigned").stdout.strip() != line:
+            out.append("--allow-unsigned changed the verdict on a package whose receipt IS signed")
+        if signed.verify("--allow-unsigned", "--require-signed").returncode != 2:
+            out.append("--allow-unsigned together with --require-signed was not a usage error (exit 2)")
+        if signed.state() != before:
+            out.append("verifying changed a file")
+        default = unsigned.verify()
+        if default.returncode != 1 or "no signature.json" not in default.stderr or default.stdout.strip():
+            out.append(f"an unsigned package was not refused by default, naming why: exit {default.returncode} {default.stderr.strip()!r}")
+        weaker = unsigned.verify("--allow-unsigned")
+        if weaker.returncode != 0 or not SUMMARY.fullmatch(weaker.stdout.strip()) \
+                or not weaker.stdout.strip().endswith("receipt_signature=absent (allowed)"):
+            out.append(f"an unsigned package did not verify with --allow-unsigned, saying so: exit {weaker.returncode} {weaker.stdout!r}")
+        if unsigned.verify(*SIGNED).returncode != 1:
+            out.append("an unsigned package was accepted under --require-signed")
+    return out
+
+
+def altered_contents(pkg: Package):
+    pkg.edit("contents.json", lambda d: d["beta"].update(instructions="Send home."))
+    return SIGNED, {}
+
+
+def an_altered_export(pkg: Package):
+    pkg.edit("export.json", lambda d: d["entries"][1]["decision"].update(instructions="Send home."))
+    return SIGNED, {}
+
+
+def a_substituted_receipt(a: Package, b: Package):
+    with open(os.path.join(b.dir, "receipt.json"), encoding="utf-8") as fh:
+        other = json.load(fh)
+    a.edit("receipt.json", lambda d: (d.clear(), d.update(other)))
+    return SIGNED, {}
+
+
+def a_substituted_receipt_with_its_own_signature(a: Package, b: Package):
+    for name in ("receipt.json", "signature.json"):
+        shutil.copy(os.path.join(b.dir, name), os.path.join(a.dir, name))
+    return SIGNED, {}
+
+
+def a_substituted_older_checkpoint(a: Package):
+    return SIGNED, {"checkpoint": os.path.join(a.checkpoint_dir, "older.json")}
+
+
+def a_substituted_empty_checkpoint(a: Package):
+    path = os.path.join(a.root, "empty.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"v": 1, "length": 0, "head": "0" * 64}, fh)
+    return SIGNED, {"checkpoint": path}
+
+
+def a_substituted_checkpoint_of_another_ledger(a: Package, b: Package):
+    """The checkpoint is genuinely signed, by a key the trust list holds (both keys are trusted here), and is for another
+    ledger of the same length: only the history it names tells."""
+    def both(trust: Dict[str, Any], revoked: set) -> None:
+        with open(b.trust, encoding="utf-8") as fh:
+            trust.update(receipt_keys.trust_from_json(fh.read())[0])
+    a.edit_trust(both)
+    return SIGNED, {"checkpoint": b.checkpoint}
+
+
+def a_receipt_signature_that_is_missing(a: Package):
+    return SIGNED, {}
+
+
+def a_receipt_signature_that_is_missing_with_no_flag(a: Package):
+    return (), {}
+
+
+def a_bad_receipt_signature_under_allow_unsigned(a: Package):
+    a.edit_trust(lambda trust, revoked: trust.update(k2=Ed25519PrivateKey.generate().public_key()))
+    return ("--allow-unsigned",), {}
+
+
+def a_checkpoint_signature_that_is_missing(a: Package):
+    return SIGNED, {}
+
+
+def a_receipt_key_that_is_the_wrong_key(a: Package):
+    a.edit_trust(lambda trust, revoked: trust.update(k2=Ed25519PrivateKey.generate().public_key()))
+    return SIGNED, {}
+
+
+def a_receipt_key_that_is_untrusted(a: Package):
+    a.edit_trust(lambda trust, revoked: trust.pop("k2"))
+    return SIGNED, {}
+
+
+def a_receipt_key_that_is_revoked(a: Package):
+    a.edit_trust(lambda trust, revoked: revoked.add("k2"))
+    return SIGNED, {}
+
+
+def a_checkpoint_key_that_is_untrusted(a: Package):
+    a.edit_trust(lambda trust, revoked: trust.pop("k1"))
+    return SIGNED, {}
+
+
+def inputs_that_cannot_be_read_exit_two_not_one() -> List[str]:
+    out: List[str] = []
+    with packages(()) as (pkg,):
+        def expect2(label: str, done: "subprocess.CompletedProcess[str]") -> None:
+            if done.returncode != 2:
+                out.append(f"{label}: exit {done.returncode}, not 2")
+
+        expect2("a missing checkpoint file", pkg.verify(checkpoint=os.path.join(pkg.root, "nowhere.json")))
+        expect2("a missing package directory", pkg.verify(package=os.path.join(pkg.root, "nowhere")))
+        expect2("a missing trust file", pkg.verify(trust=os.path.join(pkg.root, "nowhere.json")))
+        with open(os.path.join(pkg.root, "bad.json"), "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        expect2("a trust file that is not JSON", pkg.verify(trust=os.path.join(pkg.root, "bad.json")))
+        with open(os.path.join(pkg.root, "shape.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"keys": []}')
+        expect2("a trust file of the wrong shape", pkg.verify(trust=os.path.join(pkg.root, "shape.json")))
+        with open(os.path.join(pkg.dir, "export.json"), "w", encoding="utf-8") as fh:
+            fh.write("[1, 2")
+        expect2("an export that is not JSON", pkg.verify())
+        expect2("no arguments at all", run_script(VERIFY_PACKAGE))
+        expect2("no checkpoint given", run_script(VERIFY_PACKAGE, pkg.dir, "--public-keys", pkg.trust))
+        inside = run_script(MAKE_PACKAGE, os.path.join(pkg.root, "q"), "--checkpoint-dir", os.path.join(pkg.root, "q"),
+                            "--trust-out", os.path.join(pkg.root, "q.json"))
+        expect2("a producer told to put the checkpoint in the package", inside)
+    return out
+
+
+def a_duplicate_key_in_any_package_file_is_refused_naming_the_file_and_key() -> List[str]:
+    """A JSON object with a key twice is read by Python as its last value; a reader that takes the first sees another file.
+    The command refuses it: exit 1, the file and the key named, nothing else said."""
+    out: List[str] = []
+    with packages(()) as (pkg,):
+        for name, key in (("export.json", "entries"), ("receipt.json", "index"), ("contents.json", "alpha"),
+                          ("signature.json", "receipt_signature")):
+            path = os.path.join(pkg.dir, name)
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            first = text.index("{") + 1
+            with open(path, "w", encoding="utf-8") as fh:  # the real object, with a decoy first value for the same key
+                fh.write("{" + json.dumps(key) + ": null, " + text[first:].lstrip())
+            done = pkg.verify()
+            if done.returncode != 1 or name not in done.stderr or f"'{key}'" not in done.stderr or "duplicate" not in done.stderr:
+                out.append(f"{name} with {key} twice: exit {done.returncode}, stderr {done.stderr.strip()[-200:]!r}")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        with open(pkg.checkpoint, encoding="utf-8") as fh:
+            cp_text = fh.read()
+        with open(pkg.checkpoint, "w", encoding="utf-8") as fh:
+            fh.write('{"length": 0, ' + cp_text.lstrip()[1:])
+        done = pkg.verify()
+        if done.returncode != 1 or "checkpoint.json" not in done.stderr or "'length'" not in done.stderr or "duplicate" not in done.stderr:
+            out.append(f"checkpoint.json with length twice: exit {done.returncode}, stderr {done.stderr.strip()[-200:]!r}")
+        with open(pkg.checkpoint, "w", encoding="utf-8") as fh:
+            fh.write(cp_text)
+        if pkg.verify().returncode != 0:
+            out.append("the package no longer verifies once the files are put back")
+    return out
+
+
+def a_validly_signed_receipt_for_an_older_entry_is_refused_unless_entry_names_it() -> List[str]:
+    out: List[str] = []
+    with packages(("--package-entry", "0")) as (pkg,):
+        done = pkg.verify()
+        if done.returncode != 1 or "receipt is for entry 0" not in done.stderr or "entry 2" not in done.stderr:
+            out.append(f"an older entry's receipt, no --entry: exit {done.returncode}, stderr {done.stderr.strip()[-250:]!r}")
+        done = pkg.verify("--entry", "0")
+        if done.returncode != 0 or not done.stdout.startswith("verified:") or " entry=0 run_id=run_0 event_id=event_0 " not in done.stdout:
+            out.append(f"the same package with --entry 0: exit {done.returncode}, {done.stdout.strip()!r} {done.stderr.strip()[-200:]!r}")
+        for wrong in ("1", "2"):
+            done = pkg.verify("--entry", wrong)
+            if done.returncode != 1 or "receipt is for entry 0" not in done.stderr or f"entry {wrong}" not in done.stderr:
+                out.append(f"--entry {wrong} on an entry 0 package: exit {done.returncode}, stderr {done.stderr.strip()[-250:]!r}")
+        for outside in ("3", "-1"):
+            done = pkg.verify("--entry", outside)
+            if done.returncode != 1 or "no entry" not in done.stderr:
+                out.append(f"--entry {outside} is outside the ledger: exit {done.returncode}, stderr {done.stderr.strip()[-250:]!r}")
+    with packages(()) as (last,):
+        done = last.verify("--entry", "2")
+        if done.returncode != 0 or " entry=2 " not in done.stdout:
+            out.append(f"--entry 2 on the last entry's package: exit {done.returncode}, {done.stdout.strip()!r}")
+        done = last.verify("--entry", "0")
+        if done.returncode != 1:
+            out.append(f"--entry 0 on the last entry's package: exit {done.returncode}, not 1")
+    return out
+
+
+def a_deeply_nested_input_is_exit_two_or_a_named_refusal_never_a_traceback() -> List[str]:
+    """Nesting past the interpreter's recursion limit, in the file being parsed (cannot be read: exit 2) and, at a depth the
+    parser takes, in what the digest steps then walk (a named refusal: exit 1). No traceback either way."""
+    out: List[str] = []
+    deep = "[" * 100000 + "]" * 100000
+    nested = "[" * 600 + "]" * 600
+
+    def judge(label: str, done: "subprocess.CompletedProcess[str]", code: int) -> None:
+        if done.returncode != code or "Traceback" in done.stderr or not done.stderr.strip() or done.stdout.strip():
+            out.append(f"{label}: exit {done.returncode} (wanted {code}), stderr {done.stderr.strip()[-200:]!r}")
+
+    def put(pkg: Package, name: str, change: Callable[[str], str]) -> None:
+        path = os.path.join(pkg.dir, name)
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(change(text))
+
+    for name, key in (("contents.json", "x"), ("export.json", "x"), ("receipt.json", "x"), ("signature.json", "x")):
+        with packages(()) as (pkg,):
+            put(pkg, name, lambda t: t.rstrip()[:-1] + ', "' + key + '": ' + deep + "}")
+            judge(f"{name} nested 100000 deep", pkg.verify(), 2)
+    with packages(()) as (pkg,):
+        with open(pkg.trust, "w", encoding="utf-8") as fh:
+            fh.write(deep)
+        judge("a trust list nested 100000 deep", pkg.verify(), 2)
+    with packages(()) as (pkg,):
+        with open(pkg.checkpoint, "w", encoding="utf-8") as fh:
+            fh.write(deep)
+        judge("a checkpoint nested 100000 deep", pkg.verify(), 1)
+    for where in ("beta", "alpha", "delta"):
+        with packages(()) as (pkg,):
+            def plant(d: Dict[str, Any], where: str = where) -> None:
+                d[where]["deep"] = json.loads(nested)
+            pkg.edit("contents.json", plant)
+            judge(f"contents.json with {where} holding a list nested 600 deep", pkg.verify(), 1)
+    with packages(()) as (pkg,):
+        pkg.edit("export.json", lambda d: d.update(deep=json.loads(nested)))
+        judge("export.json with a list nested 600 deep", pkg.verify(), 1)
+    return out
+
+
+def the_checkpoint_and_the_trust_list_must_live_outside_the_package() -> List[str]:
+    """The checkpoint is independent only if the package's author cannot write it. Given a path whose REAL location is inside
+    the package directory (a copy, a symlink in the package to a file outside, a symlink outside to a file inside, a hard
+    link), the command exits 2 and says so; the same files from outside the package still verify."""
+    out: List[str] = []
+    with packages((), ()) as (pkg, clean):
+        def expect2(label: str, done: "subprocess.CompletedProcess[str]") -> None:
+            if done.returncode != 2 or "inside the package" not in done.stderr or done.stdout.strip():
+                out.append(f"{label}: exit {done.returncode}, stderr {done.stderr.strip()[-200:]!r}, stdout {done.stdout.strip()!r}")
+
+        for flag, source, name in (("checkpoint", pkg.checkpoint, "cp.json"), ("trust", pkg.trust, "trust.json")):
+            def use(path: str) -> "subprocess.CompletedProcess[str]":
+                return pkg.verify("--require-signed", **{flag: path})  # type: ignore[arg-type]
+            label = "the checkpoint" if flag == "checkpoint" else "the trust list"
+            inside = os.path.join(pkg.dir, name)
+            shutil.copy(source, inside)
+            expect2(f"{label} copied into the package", use(inside))
+            via_link = os.path.join(pkg.dir, "link-" + name)
+            os.symlink(source, via_link)  # a name in the package, the file outside
+            expect2(f"{label} reached through a symlink inside the package", use(via_link))
+            outside_link = os.path.join(pkg.root, "outside-link-" + name)
+            os.symlink(inside, outside_link)  # a name outside, the file inside
+            expect2(f"{label} reached through a symlink outside that points into the package", use(outside_link))
+            hard = os.path.join(pkg.dir, "hard-" + name)
+            os.link(source, hard)
+            expect2(f"{label} hard-linked into the package", use(hard))
+            expect2(f"{label} reached by a path through ..", use(os.path.join(pkg.dir, "..", "package", name)))
+        os.symlink(pkg.dir, os.path.join(pkg.root, "pkg-link"))  # the package itself named through a link
+        expect2("the package given through a symlink and the checkpoint inside it",
+                run_script(VERIFY_PACKAGE, os.path.join(pkg.root, "pkg-link"), "--checkpoint", os.path.join(pkg.dir, "cp.json"),
+                           "--public-keys", pkg.trust))
+        if clean.verify("--require-signed").returncode != 0:
+            out.append("an untouched package no longer verifies with the checkpoint and trust list from outside")
+    return out
+
+
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
@@ -1912,6 +2920,106 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: GAP, a sink keeps a write the ledger does not have", GAP_a_sink_keeps_a_write_the_ledger_does_not_have, GAP),
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
+    ("keys: the reference deployer signs, verifies, rotates and revokes", the_reference_keys_sign_verify_rotate_and_revoke, CLEAN),
+    ("keys: an ambiguous trust list is refused (one key under two ids, a revocation naming nothing, a duplicate id, a non-ASCII id)",
+     a_trust_list_that_is_ambiguous_is_refused, CLEAN),
+    # --- signed receipts: Delta signs through its hook, the deployer's keys decide, CNS asks one verifier once ---
+    ("signed: an honest receipt is verified and a root is issued, different from the unsigned root",
+     a_receipt_signed_by_the_deployer_is_verified_and_a_root_issued, CLEAN),
+    ("signed: an unsigned receipt is refused when a signature is required", an_unsigned_receipt_is_refused_when_a_signature_is_required,
+     Expect("problems", required=(VERIFIER_NO_SIGNATURE,))),
+    ("signed: a verifier without a signature is refused even without the requirement",
+     a_verifier_without_a_signature_is_refused_without_the_requirement, Expect("problems", required=(VERIFIER_NO_SIGNATURE,))),
+    ("signed: the requirement with no verifier and no signature is refused",
+     a_requirement_with_no_verifier_and_no_signature_is_refused, Expect("problems", required=(SIGNATURE_REQUIRED,))),
+    ("signed: a hand-built consistent receipt with no delta call and no key is refused",
+     a_hand_built_consistent_receipt_with_no_delta_call_and_no_key_is_refused, Expect("problems", required=(VERIFIER_NO_SIGNATURE,))),
+    ("signed: a receipt signed by an untrusted key", a_receipt_signed_by_an_untrusted_key, Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: a receipt signed by a key that claims the deployer's id", a_receipt_signed_by_a_key_claiming_the_deployers_id,
+     Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: a receipt signed by a revoked key", a_receipt_signed_by_a_revoked_key, Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: a signature over another receipt", a_signature_over_another_receipt, Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: a receipt edited after signing, each of ten fields", a_receipt_edited_after_signing,
+     Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: rotation, the old key and the new key both verify while both are trusted",
+     rotation_keeps_the_old_key_verifying_until_it_is_retired, CLEAN),
+    ("signed: rotation, a receipt of the retired key is refused", a_receipt_of_a_retired_key_is_refused_after_rotation,
+     Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: DRIFT, CNS's and delta's receipt signing inputs are byte-equal and refuse alike",
+     the_two_receipt_signing_inputs_do_not_drift, CLEAN),
+    ("signed: GAP, a holder of a trusted key signs a forged receipt", GAP_a_holder_of_a_trusted_key_signs_a_forged_receipt, GAP),
+    # --- the durable store across separate processes: a producer, then a fresh consumer ---
+    ("store: a producer's store, checkpoint and signature are accepted by a fresh consumer, which issues a root",
+     a_producer_and_a_fresh_consumer_agree, CLEAN),
+    ("store: a hand-off signature with one digit changed",
+     lambda: a_tampered_handoff_is_refused_by_cns(lambda w: _edit_handoff(w, "receipt_signature.hex", _flip_last_hex_digit)),
+     Expect("refused", required=("the consumer exited 1", "strict check:", BAD_SIGNATURE), raises=("ValueError",))),
+    ("store: a hand-off signature that is empty",
+     lambda: a_tampered_handoff_is_refused_by_cns(lambda w: _edit_handoff(w, "receipt_signature.hex", lambda t: "\n")),
+     Expect("refused", required=("the consumer exited 1", "strict check:", "receipt_signature must be a non-empty bytes"), raises=("ValueError",))),
+    ("store: hand-off contents with another Decision",
+     lambda: a_tampered_handoff_is_refused_by_cns(lambda w: _edit_handoff(w, "contents.json", _another_decision)),
+     Expect("refused", required=("the consumer exited 1", "strict check:", "differs"), raises=("ValueError",))),
+    ("store: hand-off contents with another KeySet",
+     lambda: a_tampered_handoff_is_refused_by_cns(lambda w: _edit_handoff(w, "contents.json", _another_keyset)),
+     Expect("refused", required=("the consumer exited 1", "strict check:", "fingerprint"), raises=("ValueError",))),
+    ("store: a ledger file truncated below the checkpoint", a_ledger_file_truncated_below_the_checkpoint,
+     Expect("refused", required=("reconcile LOST",), raises=("ValueError",))),
+    ("store: an entry rewritten and the file rechained", an_entry_rewritten_and_the_file_rechained,
+     Expect("refused", required=("reconcile DIVERGED",), raises=("ValueError",))),
+    ("store: a torn final line is recovered, reported, and the root is issued", a_torn_final_line_is_recovered_and_reported, CLEAN),
+    ("store: damage in the middle of the file", mid_file_damage_is_refused,
+     Expect("refused", required=("StoreCorruptError", "damaged before the end of the file"), raises=("ValueError",))),
+    ("store: a checkpoint replaced by an older signed one is refused by a consumer that requires OK",
+     a_checkpoint_replaced_by_an_older_signed_one,
+     Expect("refused", required=("reconcile UNWITNESSED_TAIL",), raises=("ValueError",))),
+    ("store: a checkpoint with no signature when one is required", a_checkpoint_with_no_signature_when_one_is_required,
+     Expect("refused", required=("the checkpoint is not signed but a signature check was asked for",), raises=("ValueError",))),
+    ("store: a producer killed with SIGKILL loses no acknowledged entry", a_producer_killed_mid_run_loses_no_acknowledged_entry, CLEAN),
+    ("store: GAP, an older signed checkpoint carries no freshness", GAP_an_older_signed_checkpoint_is_accepted_as_an_unwitnessed_tail, GAP),
+    ("store: GAP, a ledger rolled back to an older signed package", GAP_a_ledger_rolled_back_to_an_older_signed_package_is_accepted, GAP),
+    # --- the verify command: make_package.py and verify_package.py as two processes, files only between them ---
+    ("package: an honest package verifies in another process; an unsigned one only with --allow-unsigned",
+     an_honest_package_verifies_in_another_process, CLEAN),
+    ("package: altered contents", lambda: refused_package((), attack=altered_contents),
+     Expect("refused", required=("verify_package refused (exit 1)", "the Decision delta recorded differs from beta's in: instructions"), raises=("ValueError",))),
+    ("package: altered export", lambda: refused_package((), attack=an_altered_export),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the ledger export is refused:'), raises=("ValueError",))),
+    ("package: a substituted receipt", lambda: refused_package((), ("--run-offset", "10"), attack=a_substituted_receipt),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the receipt in the package is not the one Delta issues for this export and checkpoint'), raises=("ValueError",))),
+    ("package: a substituted receipt with its own signature", lambda: refused_package((), ("--run-offset", "10"), attack=a_substituted_receipt_with_its_own_signature),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the receipt in the package is not the one Delta issues for this export and checkpoint', 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: a substituted checkpoint, older and genuinely signed", lambda: refused_package(("--older-checkpoint-length", "1"), attack=a_substituted_older_checkpoint),
+     Expect("refused", required=("verify_package refused (exit 1)", 'is not covered by the checkpoint (length 1)', "is not the held checkpoint's length 1"), raises=("ValueError",))),
+    ("package: a substituted checkpoint, empty", lambda: refused_package((), attack=a_substituted_empty_checkpoint),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint is refused:', 'names no entry (length 0)'), raises=("ValueError",))),
+    ("package: a substituted checkpoint, of another ledger", lambda: refused_package((), ("--run-offset", "10"), attack=a_substituted_checkpoint_of_another_ledger),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the ledger export is refused:', 'does not contain the history the held checkpoint recorded'), raises=("ValueError",))),
+    ("package: no receipt signature under --require-signed", lambda: refused_package(("--no-receipt-signature",), attack=a_receipt_signature_that_is_missing),
+     Expect("refused", required=("verify_package refused (exit 1)", 'a verifier was supplied but the receipt has no signature'), raises=("ValueError",))),
+    ("package: no receipt signature and no flag is refused, naming why", lambda: refused_package(("--no-receipt-signature",), attack=a_receipt_signature_that_is_missing_with_no_flag),
+     Expect("refused", required=("verify_package refused (exit 1)", 'no signature.json', '--allow-unsigned'), raises=("ValueError",))),
+    ("package: --allow-unsigned does not excuse a signature that is there and wrong", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_bad_receipt_signature_under_allow_unsigned),
+     Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: no checkpoint signature under --require-signed", lambda: refused_package(("--no-checkpoint-signature",), attack=a_checkpoint_signature_that_is_missing),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint is not signed but a signature check was asked for'), raises=("ValueError",))),
+    ("package: a receipt signed by the wrong key under a trusted id", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_receipt_key_that_is_the_wrong_key),
+     Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: a receipt signed by an untrusted key", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_receipt_key_that_is_untrusted),
+     Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: a receipt signed by a revoked key", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_receipt_key_that_is_revoked),
+     Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: a checkpoint signed by an untrusted key", lambda: refused_package((), attack=a_checkpoint_key_that_is_untrusted),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint signature does not verify'), raises=("ValueError",))),
+    ("package: a checkpoint or trust list whose real path is inside the package exits 2",
+     the_checkpoint_and_the_trust_list_must_live_outside_the_package, CLEAN),
+    ("package: a duplicate key in any package file is refused naming the file and the key",
+     a_duplicate_key_in_any_package_file_is_refused_naming_the_file_and_key, CLEAN),
+    ("package: a validly signed receipt for an older entry is refused unless --entry names it",
+     a_validly_signed_receipt_for_an_older_entry_is_refused_unless_entry_names_it, CLEAN),
+    ("package: a deeply nested input is exit 2 or a named refusal, never a traceback",
+     a_deeply_nested_input_is_exit_two_or_a_named_refusal_never_a_traceback, CLEAN),
+    ("package: inputs that cannot be read, and usage errors, exit 2 and not 1", inputs_that_cannot_be_read_exit_two_not_one, CLEAN),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),
     ("oracle: a refusal that edited an entry's content is a state change", the_oracle_flags_a_refusal_that_edited_an_entrys_content, CLEAN),

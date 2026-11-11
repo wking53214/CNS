@@ -94,10 +94,13 @@ present, which Lock should open, or whether the Decision is right. `strict_root`
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import re
 import warnings
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from cns.gate import subject_digest
@@ -214,9 +217,20 @@ BARE_ASSERTION = "chain_verified is a bare assertion and is not evidence; pass c
 LEGACY_DECISION = ("{who} carries no content_fingerprint (a full lowercase SHA-256): strict verification refuses a legacy "
                    "Decision, because a blanked fingerprint is a downgrade that removes the integrity claim")
 FINGERPRINT_NOT_RECOMPUTED = "alpha's KeySet fingerprint does not match a recomputation from alpha's keys"
+# Step 1: the receipt signature. The domain string and the signing input are delta's (delta/signing.py), duplicated here
+# on purpose: CNS imports no repository. A scenario in chains/spine_run.py holds the two equal.
+RECEIPT_SIGNATURE_DOMAIN = b"delta-ledger-receipt-signature/1\n"
+RECEIPT_SIGNATURE_BAD = "receipt signature does not verify"
+RECEIPT_SIGNATURE_NO_VERIFIER = ("a receipt signature was given without a verify_receipt_signature, so it was not verified")
+RECEIPT_SIGNATURE_VERIFIER_NO_SIGNATURE = "a verifier was supplied but the receipt has no signature"
+RECEIPT_SIGNATURE_REQUIRED = "require_signed_receipt is set and no receipt signature was given"
+RECEIPT_SIGNATURE_NOT_BYTES = "receipt_signature must be a non-empty bytes (exact type); got {got}"
+RECEIPT_SIGNATURE_VERIFIER_NOT_CALLABLE = "verify_receipt_signature must be callable; got {got}"
+RECEIPT_SIGNATURE_NO_RECEIPT = "a receipt signature was given but there is no ledger receipt (chain=) for it to sign"
 _ORIGIN_FIELDS = ("source", "producer", "observed_at", "collection_context", "transformation")
 _RECEIPT_FIELDS = ("schema", "entry_digest", "index", "entry_hash", "previous_hash", "ledger_length", "ledger_head",
                    "checkpoint_length", "checkpoint_head", "context")
+_RECEIPT_INTS = ("index", "ledger_length", "checkpoint_length")
 _UNSET: Any = object()
 
 _CONTEXT_FIELDS = ("schema", "entity_id", "event_id", "run_id")
@@ -305,6 +319,9 @@ def strict_problems(
     keyset_fingerprint_of: Optional[Callable[[Mapping[str, Any]], str]] = None,
     held_checkpoint: Any = None,
     require_keyset_verifier: bool = False,
+    receipt_signature: Optional[bytes] = None,
+    verify_receipt_signature: Optional[Callable[[bytes, bytes], bool]] = None,
+    require_signed_receipt: bool = False,
 ) -> List[str]:
     """Everything that does not hold together in four stages' contents. Empty when they describe one run.
 
@@ -324,8 +341,28 @@ def strict_problems(
     `0 <= index < checkpoint_length <= ledger_length`; its heads must be 64 lowercase hex digits; the ledger head must be
     the entry's hash when the entry is the ledger's last, and the checkpoint head the ledger head when the checkpoint
     covers the whole ledger. Every failure is a named problem; without a valid receipt the chain is "not shown to
-    verify" and no root is issued. The receipt is not signed: someone who can build a consistent one can pass this check,
-    so it raises the bar for mistakes and partial forgeries and is not proof of custody.
+    verify" and no root is issued. WITHOUT a signature the receipt is not authentic: someone who can build a consistent
+    one can pass this check, so it raises the bar for mistakes and partial forgeries and is not proof of custody.
+
+    `receipt_signature`, `verify_receipt_signature` and `require_signed_receipt` (all keyword-only, all off by default, so
+    an unsigned run is exactly what it was) are how a deployer makes the receipt authentic. `receipt_signature` is an exact,
+    non-empty `bytes` made over `receipt_signing_input(chain)` (delta's `sign_receipt`, with a key CNS never sees).
+    `verify_receipt_signature` is a callable(signing_input: bytes, signature: bytes) -> bool the deployer builds from the
+    keys it trusts; CNS holds no key, no trust list and no crypto, and calls it ONCE per evaluation (the answer belongs to
+    that evaluation; nothing is remembered, as with `keyset_fingerprint_of`). Only the answer `True` counts: an exception, `False` or any
+    other value is the problem "receipt signature does not verify". Each of these is a named problem: a signature without
+    a verifier, a verifier that is not callable, a signature that is not an exact non-empty `bytes`, a signature with no
+    receipt, a receipt that cannot be put into signing form, a verifier supplied with no signature (with or
+    without `require_signed_receipt`; the verifier is not asked), and `require_signed_receipt=True` with no signature and no
+    verifier. A root issued with a verified signature records the digest
+    of the signing input and of the signature in its domain, so it differs from the root of the same receipt unsigned;
+    an unsigned root is unchanged.
+
+    WHAT THIS CLOSES AND WHAT REMAINS. With `require_signed_receipt=True` and a verifier that trusts only the deployer's
+    real key, a hand-built receipt whose fields all fit the contents is refused, because its author cannot sign it: the
+    forged-receipt gap closes. What remains: whoever holds the key can sign a receipt for a ledger that does not exist (the
+    signature says who vouched, not that the ledger is real); the trust list, the key and its revocation are the
+    deployer's and live outside CNS; and the signature covers the receipt, not the contents of the other stages.
 
     `held_checkpoint`, when given, is the checkpoint the CALLER holds, kept in storage the producer of the ledger cannot
     write (a `(length, head)` pair or a mapping with exactly `length` and `head`; same exact-type rules as the receipt:
@@ -365,12 +402,15 @@ def strict_problems(
         warnings.warn("chain_verified is deprecated and never counts as evidence; pass chain= a delta verification receipt",
                       DeprecationWarning, stacklevel=2)
     _require_bool(require_keyset_verifier)
+    _require_bool(require_signed_receipt, "require_signed_receipt")
     snap, unread = _snapshot(alpha, zeta, beta, delta)
     if unread:
         return unread
-    return _strict_problems(*snap, chain=chain, bare_assertion=chain_verified is not _UNSET,
+    return _strict_problems(*snap, chain=_read_receipt(chain), bare_assertion=chain_verified is not _UNSET,
                             keyset_fingerprint_of=keyset_fingerprint_of, held_snapshot=_resolve_held(held_checkpoint),
-                            require_keyset_verifier=require_keyset_verifier)
+                            require_keyset_verifier=require_keyset_verifier, receipt_signature=receipt_signature,
+                            verify_receipt_signature=verify_receipt_signature,
+                            require_signed_receipt=require_signed_receipt)
 
 
 def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, Any, Any, Any], List[str]]:
@@ -386,11 +426,45 @@ def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, 
     return (copies[0], copies[1], copies[2], copies[3]), unread
 
 
+_ISO_FORM = re.compile(
+    r"(?P<y>[0-9]{4})-(?P<mo>[0-9]{2})-(?P<d>[0-9]{2})"
+    r"(?:[T ](?P<h>[0-9]{2})(?::(?P<mi>[0-9]{2})(?::(?P<s>[0-9]{2})(?:\.(?P<f>[0-9]{1,6}))?)?)?"
+    r"(?:(?P<z>Z)|(?P<sign>[+-])(?P<oh>[0-9]{2}):(?P<om>[0-9]{2})(?::(?P<os>[0-9]{2})(?:\.(?P<of>[0-9]{1,6}))?)?)?)?")
+
+
+def _parse_iso(text: object) -> Optional[datetime]:
+    """An ISO 8601 extended calendar timestamp as a `datetime`, or None if `text` is not one. The same on every Python.
+
+    `datetime.fromisoformat` is not: 3.10 refuses a trailing `Z` and a fraction that is not 3 or 6 digits, while 3.11 and
+    later accept those and also the basic format and week dates, so one origin record was clean on one interpreter and
+    refused on another. This reads exactly: `YYYY-MM-DD`, optionally followed by `T` or a space and `HH`, `HH:MM`,
+    `HH:MM:SS` or `HH:MM:SS.f` (one to six digits), optionally followed by `Z` or `+HH:MM` / `-HH:MM` (with optional
+    `:SS` and `.f`). ASCII digits only; no surrounding whitespace; a calendar or clock value out of range is not a
+    timestamp. A zone-less text gives a naive `datetime`."""
+    if type(text) is not str:
+        return None
+    m = _ISO_FORM.fullmatch(text)
+    if m is None:
+        return None
+    zone: Optional[timezone] = None
+    try:
+        if m["z"]:
+            zone = timezone.utc
+        elif m["sign"]:
+            offset = timedelta(hours=int(m["oh"]), minutes=int(m["om"]), seconds=int(m["os"] or 0),
+                               microseconds=int((m["of"] or "").ljust(6, "0") or 0))
+            zone = timezone(-offset if m["sign"] == "-" else offset)
+        return datetime(int(m["y"]), int(m["mo"]), int(m["d"]), int(m["h"] or 0), int(m["mi"] or 0), int(m["s"] or 0),
+                        int((m["f"] or "").ljust(6, "0") or 0), tzinfo=zone)
+    except ValueError:  # a month, day, hour, minute, second or offset out of range
+        return None
+
+
 def _origin_problems(origin: Any, decided_at: Any) -> List[str]:
     """What is wrong with the origin record alpha carries, or about its ordering against the Decision. Empty if none.
 
     Well-formedness and order only: exactly the five fields, each a non-empty exact str, `observed_at` ISO 8601 text
-    (`datetime.fromisoformat`) that is not later than the Decision's timestamp. These are the producer's own assertions.
+    (`_parse_iso`, one reading on every Python) that is not later than the Decision's timestamp. These are the producer's own assertions.
     Nothing here says who the producer is, that the source is real, that the observation is true, or that anyone was
     authorized: CNS makes no authenticity claim."""
     if not isinstance(origin, Mapping):
@@ -406,15 +480,13 @@ def _origin_problems(origin: Any, decided_at: Any) -> List[str]:
             out.append(f"alpha origin {name} must be non-empty")
     if out:
         return out
-    try:
-        observed = datetime.fromisoformat(origin["observed_at"])
-    except ValueError:
+    observed = _parse_iso(origin["observed_at"])
+    if observed is None:
         return [f"alpha origin observed_at is not ISO 8601 text: {origin['observed_at']!r}"]
     if not isinstance(decided_at, str):
         return ["alpha origin observed_at cannot be ordered against the Decision: beta carries no timestamp text"]
-    try:
-        decided = datetime.fromisoformat(decided_at)
-    except ValueError:
+    decided = _parse_iso(decided_at)
+    if decided is None:
         return [f"alpha origin observed_at cannot be ordered against the Decision: beta's timestamp {decided_at!r} is not ISO 8601 text"]
     if (observed.utcoffset() is None) != (decided.utcoffset() is None):
         return ["alpha origin observed_at and the Decision's timestamp cannot be ordered: one carries a time zone and the other does not"]
@@ -536,9 +608,106 @@ def _receipt_problems(chain: Any, delta: Any, delta_digest: Optional[str], run: 
     return out
 
 
-def _require_bool(value: object) -> None:
+def receipt_signing_input(receipt: Any) -> bytes:
+    """The exact bytes a ledger receipt is signed over: `RECEIPT_SIGNATURE_DOMAIN` then the receipt as canonical JSON.
+
+    The receipt must be an exact `dict` with exactly the ten keys of `ledger-receipt/1`, each value of its exact type
+    (`str`; `int` that is neither a bool nor negative for `index`, `ledger_length` and `checkpoint_length`; `context` an exact `dict` of
+    the four exact `str` fields). Anything else is a `TypeError` or `ValueError` naming the field. This is the same
+    function as delta's `receipt_signing_input`, duplicated because CNS imports no repository."""
+    if type(receipt) is not dict:
+        raise TypeError(f"a receipt must be an exact dict; got {type(receipt).__name__}")
+    keys = set(receipt)
+    if len(keys) != len(receipt) or any(type(k) is not str for k in receipt) or keys != set(_RECEIPT_FIELDS):
+        raise ValueError(f"a receipt has exactly the fields {list(_RECEIPT_FIELDS)}; these differ: "
+                         f"{sorted(map(str, keys ^ set(_RECEIPT_FIELDS)))}")
+    for name in _RECEIPT_FIELDS:
+        value = receipt[name]
+        if name in _RECEIPT_INTS:
+            if type(value) is not int:
+                raise TypeError(f"receipt field {name} must be an int (not a bool, not a subclass); got {type(value).__name__}")
+            if value < 0:
+                raise ValueError(f"receipt field {name} must not be negative")
+        elif name == "context":
+            if type(value) is not dict:
+                raise TypeError(f"receipt field context must be an exact dict; got {type(value).__name__}")
+            if set(value) != set(_CONTEXT_FIELDS) or any(type(k) is not str for k in value):
+                raise ValueError(f"receipt field context has exactly the fields {list(_CONTEXT_FIELDS)}")
+            for field in _CONTEXT_FIELDS:
+                if type(value[field]) is not str:
+                    raise TypeError(f"receipt field context.{field} must be a str; got {type(value[field]).__name__}")
+        elif type(value) is not str:
+            raise TypeError(f"receipt field {name} must be a str; got {type(value).__name__}")
+    # Two different strings must not share a signing input: with ensure_ascii a lone surrogate pair written apart and the
+    # one character it spells render as the same JSON text. A string with no strict UTF-8 encoding is not text; it is refused.
+    texts = [(name, receipt[name]) for name in _RECEIPT_FIELDS if name not in _RECEIPT_INTS and name != "context"]
+    texts += [(f"context.{field}", receipt["context"][field]) for field in _CONTEXT_FIELDS]
+    for label, text in texts:
+        try:
+            text.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ValueError(f"receipt field {label} is not text: it does not encode as strict UTF-8 "
+                             "(a lone surrogate)") from None
+    body = json.dumps(receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+    return RECEIPT_SIGNATURE_DOMAIN + body.encode("ascii")
+
+
+def _read_receipt(chain: Any) -> Any:
+    """The receipt as one plain-dict snapshot when it is a readable mapping; otherwise exactly what was given (the receipt
+    check reports it). Both public entry points call this once, so the receipt checks and the signature see one read."""
+    if isinstance(chain, Mapping):
+        try:
+            snap = dict(chain)
+        except Exception:  # noqa: BLE001 - the receipt check names the failure
+            return chain
+        # The nested context is the caller's own object: copy it too, so nothing a deployer callable does to the caller's
+        # receipt after this read can change what is judged, signed or recorded.
+        context = snap.get("context")
+        if isinstance(context, Mapping):
+            try:
+                snap["context"] = copy.deepcopy(context)
+            except Exception:  # noqa: BLE001 - left as given, the receipt check names it
+                pass
+        return snap
+    return chain
+
+
+def _signature_problems(receipt: Any, signature: Any, verifier: Any, required: bool,
+                        signing: Optional[Dict[str, bytes]] = None) -> List[str]:
+    """What is wrong with the receipt signature, judged against the receipt snapshot. Empty if there is none or it verifies.
+
+    The verifier is asked at most once, with `(signing_input, signature)`, and only when there is a well-formed signature,
+    a callable verifier and a receipt that can be put into signing form. Its answer is `True` or the signature does not
+    verify: an exception, `False`, or any truthy value that is not `True` all mean it did not. The signing input is computed
+    once; when `signing` is given the bytes that were verified are left in it, so a root records exactly those bytes."""
+    if signature is None:
+        if verifier is not None:  # supplying a verifier says the receipt is meant to be authentic: no signature is no downgrade
+            return [RECEIPT_SIGNATURE_VERIFIER_NO_SIGNATURE]
+        return [RECEIPT_SIGNATURE_REQUIRED] if required else []
+    if type(signature) is not bytes or not signature:
+        return [RECEIPT_SIGNATURE_NOT_BYTES.format(got="an empty bytes" if type(signature) is bytes else type(signature).__name__)]
+    if verifier is None:
+        return [RECEIPT_SIGNATURE_NO_VERIFIER]
+    if not callable(verifier):
+        return [RECEIPT_SIGNATURE_VERIFIER_NOT_CALLABLE.format(got=type(verifier).__name__)]
+    if receipt is None:
+        return [RECEIPT_SIGNATURE_NO_RECEIPT]
+    try:
+        signing_input = receipt_signing_input(receipt)
+    except (TypeError, ValueError) as exc:
+        return [f"the ledger receipt cannot be put into signing form, so its signature was not verified: {exc}"]
+    if signing is not None:
+        signing["input"] = signing_input
+    try:
+        answer = verifier(signing_input, signature)
+    except Exception:  # noqa: BLE001 - a verifier that raised has not verified
+        answer = None
+    return [] if answer is True else [RECEIPT_SIGNATURE_BAD]
+
+
+def _require_bool(value: object, name: str = "require_keyset_verifier") -> None:
     if type(value) is not bool:
-        raise TypeError(f"require_keyset_verifier must be a bool; got {type(value).__name__}")
+        raise TypeError(f"{name} must be a bool; got {type(value).__name__}")
 
 
 def _ask_verifier(verifier: Callable[[Mapping[str, Any]], str], alpha: Mapping[str, Any]) -> Optional[str]:
@@ -591,7 +760,9 @@ def _resolve_held(held_checkpoint: Any) -> Tuple[Optional[Tuple[int, str]], List
 
 def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any = None, bare_assertion: bool = False,
                      keyset_fingerprint_of: Any = None, held_snapshot: Tuple[Optional[Tuple[int, str]], List[str]] = (None, []),
-                     require_keyset_verifier: bool = False) -> List[str]:
+                     require_keyset_verifier: bool = False, receipt_signature: Any = None,
+                     verify_receipt_signature: Any = None, require_signed_receipt: bool = False,
+                     signing: Optional[Dict[str, bytes]] = None) -> List[str]:
     out: List[str] = []
     stages = {"alpha": alpha, "beta": beta, "delta": delta}
     for name, content in stages.items():
@@ -767,6 +938,7 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
     held_cp, held_issues = held_snapshot
     receipt_issues = [] if chain is None else _receipt_problems(chain, delta, dd, run, held_cp)
     out += held_issues + receipt_issues
+    out += _signature_problems(chain, receipt_signature, verify_receipt_signature, require_signed_receipt, signing)
     if chain is None or receipt_issues or held_issues:
         out.append(CHAIN_NOT_SHOWN)
     stage_digests = [d for d in (da, db, dd) if d is not None]
@@ -786,20 +958,31 @@ def strict_root(
     keyset_fingerprint_of: Optional[Callable[[Mapping[str, Any]], str]] = None,
     held_checkpoint: Any = None,
     require_keyset_verifier: bool = False,
+    receipt_signature: Optional[bytes] = None,
+    verify_receipt_signature: Optional[Callable[[bytes, bytes], bool]] = None,
+    require_signed_receipt: bool = False,
 ) -> str:
     """One digest over the whole run, from the contents. Raises ValueError if the stages do not hold together.
 
     Without a valid `chain` (a delta verification receipt, see `strict_problems`) no root is issued. The deprecated
-    `chain_verified` never counts: it warns and is always a problem, so it never yields a root."""
+    `chain_verified` never counts: it warns and is always a problem, so it never yields a root. With a receipt signature
+    (see `strict_problems`) the root records that a signature over this receipt was verified; with `require_signed_receipt`
+    no root is issued without one."""
     if chain_verified is not _UNSET:
         warnings.warn("chain_verified is deprecated and never counts as evidence; pass chain= a delta verification receipt",
                       DeprecationWarning, stacklevel=2)
     _require_bool(require_keyset_verifier)
+    _require_bool(require_signed_receipt, "require_signed_receipt")
     (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
+    chain = _read_receipt(chain)  # once: the receipt checks, the signature and the root's record use this one snapshot
     held_snapshot = _resolve_held(held_checkpoint)  # once: the comparison below and the root's record use this one snapshot
+    signing: Dict[str, bytes] = {}  # the signing input that is verified, kept so the root records those same bytes
     found = unread or _strict_problems(alpha, zeta, beta, delta, chain=chain, bare_assertion=chain_verified is not _UNSET,
                                        keyset_fingerprint_of=keyset_fingerprint_of, held_snapshot=held_snapshot,
-                                       require_keyset_verifier=require_keyset_verifier)
+                                       require_keyset_verifier=require_keyset_verifier,
+                                       receipt_signature=receipt_signature,
+                                       verify_receipt_signature=verify_receipt_signature,
+                                       require_signed_receipt=require_signed_receipt, signing=signing)
     if found:
         raise ValueError("the spine run does not hold together: " + "; ".join(found))
     context = alpha["context"]
@@ -810,6 +993,13 @@ def strict_root(
         held_fact = {"held_checkpoint": {"length": held_cp[0], "head": held_cp[1]}}
     if keyset_fingerprint_of is not None:
         held_fact["keyset_verifier"] = "supplied"  # present only when set: a root issued without one is exactly what it was
+    if receipt_signature is not None:
+        # No problem was found, so the signature was well formed and the one verifier call answered True. Present only
+        # when a signature was verified: an unsigned root is exactly what it was.
+        held_fact["receipt_signature"] = {
+            "receipt": hashlib.sha256(signing["input"]).hexdigest(),
+            "signature": hashlib.sha256(receipt_signature).hexdigest(),
+        }
     return subject_digest({
         **held_fact,
         "schema": TRACE_SCHEMA,
