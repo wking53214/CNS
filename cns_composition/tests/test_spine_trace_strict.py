@@ -1277,6 +1277,72 @@ def test_a_held_checkpoint_mapping_is_read_once():
     assert Shifty.reads == 2
 
 
+# --- Step 7b (N1): strict_root validates and snapshots the held checkpoint once, as strict_problems does ----------------
+
+def _shifting_mapping():
+    class Shifty(Mapping):
+        """Honest for the two reads one snapshot needs, then a different head: a second read would see the lie."""
+        reads = 0
+
+        def __getitem__(self, key):
+            Shifty.reads += 1
+            if Shifty.reads > 2:
+                return "f" * 64 if key == "head" else 9
+            return {"length": 1, "head": HONEST_HEAD}[key]
+
+        def __iter__(self):
+            return iter(("length", "head"))
+
+        def __len__(self):
+            return 2
+    return Shifty
+
+
+def _shifting_tuple():
+    class ShiftyPair(tuple):
+        reads = 0
+
+        def __getitem__(self, index):
+            ShiftyPair.reads += 1
+            if ShiftyPair.reads > 2:
+                return ("f" * 64) if index == 1 else 9
+            return (1, HONEST_HEAD)[index]
+    return ShiftyPair((1, HONEST_HEAD))
+
+
+def test_n1_strict_root_reads_a_shifting_held_mapping_once():
+    Shifty = _shifting_mapping()
+    parts = build()
+    chain = receipt_for(parts)
+    root = held_root(parts, chain, Shifty())
+    assert Shifty.reads == 2
+    assert root == held_root(parts, chain, (1, HONEST_HEAD)), "the root binds a held head that was never compared"
+
+
+def test_n1_strict_root_reads_a_shifting_held_tuple_once():
+    parts = build()
+    chain = receipt_for(parts)
+    held = _shifting_tuple()
+    root = held_root(parts, chain, held)
+    assert type(held).reads == 2
+    assert root == held_root(parts, chain, (1, HONEST_HEAD))
+
+
+def test_n1_strict_problems_reads_a_shifting_held_tuple_once():
+    parts = build()
+    held = _shifting_tuple()
+    assert held_problems(parts, receipt_for(parts), held) == []
+    assert type(held).reads == 2
+
+
+def test_n1_a_held_checkpoint_that_fails_validation_is_read_once_by_strict_root_too():
+    Shifty = _shifting_mapping()
+    parts = build()
+    with pytest.raises(ValueError, match="checkpoint held outside the ledger"):
+        held_root(parts, receipt_for(parts, checkpoint_head="e" * 64), Shifty())
+    assert Shifty.reads <= 2
+
+
 def test_the_entry_that_is_the_last_one_the_checkpoint_covers_must_have_that_entrys_hash_as_the_head():
     # the A1 gap: index == checkpoint_length - 1, a checkpoint head that is not the entry's own hash, no held checkpoint
     parts = build()

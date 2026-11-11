@@ -366,7 +366,7 @@ def strict_problems(
     if unread:
         return unread
     return _strict_problems(*snap, chain=chain, bare_assertion=chain_verified is not _UNSET,
-                            keyset_fingerprint_of=keyset_fingerprint_of, held_checkpoint=held_checkpoint,
+                            keyset_fingerprint_of=keyset_fingerprint_of, held_snapshot=_resolve_held(held_checkpoint),
                             require_keyset_verifier=require_keyset_verifier)
 
 
@@ -610,8 +610,17 @@ def _held_checkpoint(held: Any) -> Tuple[Optional[Tuple[int, str]], List[str]]:
     return (None, out) if out else ((length, head), [])
 
 
+def _resolve_held(held_checkpoint: Any) -> Tuple[Optional[Tuple[int, str]], List[str]]:
+    """The caller's held checkpoint, read and validated ONCE: (snapshot, problems). (None, []) when none was given. Both
+    public entry points call this exactly once per evaluation and hand the result down, so the comparison and what a root
+    records are the same value, whatever the object the caller passed does on a second read."""
+    if held_checkpoint is None:
+        return None, []
+    return _held_checkpoint(held_checkpoint)
+
+
 def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any = None, bare_assertion: bool = False,
-                     keyset_fingerprint_of: Any = None, held_checkpoint: Any = None,
+                     keyset_fingerprint_of: Any = None, held_snapshot: Tuple[Optional[Tuple[int, str]], List[str]] = (None, []),
                      require_keyset_verifier: bool = False) -> List[str]:
     out: List[str] = []
     stages = {"alpha": alpha, "beta": beta, "delta": delta}
@@ -785,10 +794,7 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
                    "was not recomputed by the component that owns the rule")
     if bare_assertion:
         out.append(BARE_ASSERTION)
-    held_cp: Optional[Tuple[int, str]] = None
-    held_issues: List[str] = []
-    if held_checkpoint is not None:
-        held_cp, held_issues = _held_checkpoint(held_checkpoint)
+    held_cp, held_issues = held_snapshot
     receipt_issues = [] if chain is None else _receipt_problems(chain, delta, dd, run, held_cp)
     out += held_issues + receipt_issues
     if chain is None or receipt_issues or held_issues:
@@ -820,17 +826,18 @@ def strict_root(
                       DeprecationWarning, stacklevel=2)
     _require_bool(require_keyset_verifier)
     (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
+    held_snapshot = _resolve_held(held_checkpoint)  # once: the comparison below and the root's record use this one snapshot
     found = unread or _strict_problems(alpha, zeta, beta, delta, chain=chain, bare_assertion=chain_verified is not _UNSET,
-                                       keyset_fingerprint_of=keyset_fingerprint_of, held_checkpoint=held_checkpoint,
+                                       keyset_fingerprint_of=keyset_fingerprint_of, held_snapshot=held_snapshot,
                                        require_keyset_verifier=require_keyset_verifier)
     if found:
         raise ValueError("the spine run does not hold together: " + "; ".join(found))
     context = alpha["context"]
     held_fact: Dict[str, Any] = {}
     if held_checkpoint is not None:
-        held, _ = _held_checkpoint(held_checkpoint)
-        assert held is not None  # a held checkpoint that did not read is a problem above, so no root reaches here
-        held_fact = {"held_checkpoint": {"length": held[0], "head": held[1]}}
+        held_cp = held_snapshot[0]
+        assert held_cp is not None  # a held checkpoint that did not read is a problem above, so no root reaches here
+        held_fact = {"held_checkpoint": {"length": held_cp[0], "head": held_cp[1]}}
     if keyset_fingerprint_of is not None:
         held_fact["keyset_verifier"] = "supplied"  # present only when set: a root issued without one is exactly what it was
     return subject_digest({
