@@ -605,7 +605,7 @@ def test_n2_a_line_separator_toml_does_not_know_cannot_hide_a_decoy_from_either_
 
 
 def test_n2_the_probe_text_is_what_the_reviewer_reproduced(monkeypatch):
-    tomllib = pytest.importorskip("tomllib")
+    tomllib = _reference_toml()
     text = _decoy_text(" ")
     assert "attacker" in tomllib.loads(text)["project"]["dependencies"][0]
     monkeypatch.setattr(sm, "_tomllib", None)
@@ -642,7 +642,7 @@ def test_n2_a_key_the_fallback_cannot_split_exactly_is_refused_even_outside_the_
 
 @pytest.mark.parametrize("repo", list(SPINE))
 def test_n2_the_real_pyprojects_read_the_same_through_both_readers(repo, monkeypatch):
-    pytest.importorskip("tomllib")
+    monkeypatch.setattr(sm, "_tomllib", _reference_toml())
     text = (FIXTURES / f"{repo}.toml").read_text(encoding="utf-8")
     real = sm._view(text)
     assert sm.declared(text) == {"runtime": sm._pins(real["dependencies"] or []), "optional": sm._pins(sm._flat_optional(real))}
@@ -653,7 +653,7 @@ def test_n2_the_real_pyprojects_read_the_same_through_both_readers(repo, monkeyp
 
 def test_n2_this_repositorys_own_pyproject_is_never_read_differently_by_the_fallback(monkeypatch):
     # The fallback may refuse a file it cannot read completely; it must never return a different answer.
-    pytest.importorskip("tomllib")
+    monkeypatch.setattr(sm, "_tomllib", _reference_toml())
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     real = sm._view(text)
     monkeypatch.setattr(sm, "_tomllib", None)
