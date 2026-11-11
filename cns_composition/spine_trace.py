@@ -99,7 +99,7 @@ import json
 import re
 import warnings
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from cns.gate import subject_digest
@@ -423,11 +423,45 @@ def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, 
     return (copies[0], copies[1], copies[2], copies[3]), unread
 
 
+_ISO_FORM = re.compile(
+    r"(?P<y>[0-9]{4})-(?P<mo>[0-9]{2})-(?P<d>[0-9]{2})"
+    r"(?:[T ](?P<h>[0-9]{2})(?::(?P<mi>[0-9]{2})(?::(?P<s>[0-9]{2})(?:\.(?P<f>[0-9]{1,6}))?)?)?"
+    r"(?:(?P<z>Z)|(?P<sign>[+-])(?P<oh>[0-9]{2}):(?P<om>[0-9]{2})(?::(?P<os>[0-9]{2})(?:\.(?P<of>[0-9]{1,6}))?)?)?)?")
+
+
+def _parse_iso(text: object) -> Optional[datetime]:
+    """An ISO 8601 extended calendar timestamp as a `datetime`, or None if `text` is not one. The same on every Python.
+
+    `datetime.fromisoformat` is not: 3.10 refuses a trailing `Z` and a fraction that is not 3 or 6 digits, while 3.11 and
+    later accept those and also the basic format and week dates, so one origin record was clean on one interpreter and
+    refused on another. This reads exactly: `YYYY-MM-DD`, optionally followed by `T` or a space and `HH`, `HH:MM`,
+    `HH:MM:SS` or `HH:MM:SS.f` (one to six digits), optionally followed by `Z` or `+HH:MM` / `-HH:MM` (with optional
+    `:SS` and `.f`). ASCII digits only; no surrounding whitespace; a calendar or clock value out of range is not a
+    timestamp. A zone-less text gives a naive `datetime`."""
+    if type(text) is not str:
+        return None
+    m = _ISO_FORM.fullmatch(text)
+    if m is None:
+        return None
+    zone: Optional[timezone] = None
+    try:
+        if m["z"]:
+            zone = timezone.utc
+        elif m["sign"]:
+            offset = timedelta(hours=int(m["oh"]), minutes=int(m["om"]), seconds=int(m["os"] or 0),
+                               microseconds=int((m["of"] or "").ljust(6, "0") or 0))
+            zone = timezone(-offset if m["sign"] == "-" else offset)
+        return datetime(int(m["y"]), int(m["mo"]), int(m["d"]), int(m["h"] or 0), int(m["mi"] or 0), int(m["s"] or 0),
+                        int((m["f"] or "").ljust(6, "0") or 0), tzinfo=zone)
+    except ValueError:  # a month, day, hour, minute, second or offset out of range
+        return None
+
+
 def _origin_problems(origin: Any, decided_at: Any) -> List[str]:
     """What is wrong with the origin record alpha carries, or about its ordering against the Decision. Empty if none.
 
     Well-formedness and order only: exactly the five fields, each a non-empty exact str, `observed_at` ISO 8601 text
-    (`datetime.fromisoformat`) that is not later than the Decision's timestamp. These are the producer's own assertions.
+    (`_parse_iso`, one reading on every Python) that is not later than the Decision's timestamp. These are the producer's own assertions.
     Nothing here says who the producer is, that the source is real, that the observation is true, or that anyone was
     authorized: CNS makes no authenticity claim."""
     if not isinstance(origin, Mapping):
@@ -443,15 +477,13 @@ def _origin_problems(origin: Any, decided_at: Any) -> List[str]:
             out.append(f"alpha origin {name} must be non-empty")
     if out:
         return out
-    try:
-        observed = datetime.fromisoformat(origin["observed_at"])
-    except ValueError:
+    observed = _parse_iso(origin["observed_at"])
+    if observed is None:
         return [f"alpha origin observed_at is not ISO 8601 text: {origin['observed_at']!r}"]
     if not isinstance(decided_at, str):
         return ["alpha origin observed_at cannot be ordered against the Decision: beta carries no timestamp text"]
-    try:
-        decided = datetime.fromisoformat(decided_at)
-    except ValueError:
+    decided = _parse_iso(decided_at)
+    if decided is None:
         return [f"alpha origin observed_at cannot be ordered against the Decision: beta's timestamp {decided_at!r} is not ISO 8601 text"]
     if (observed.utcoffset() is None) != (decided.utcoffset() is None):
         return ["alpha origin observed_at and the Decision's timestamp cannot be ordered: one carries a time zone and the other does not"]
