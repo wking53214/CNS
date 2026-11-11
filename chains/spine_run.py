@@ -47,6 +47,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
 
+import receipt_keys
 from spine_oracle import Expect, attempts, check_table, entries_digest, judge
 from spine_oracle import refused as _refused
 
@@ -1631,6 +1632,44 @@ def an_older_zeta_installed_beside_the_others() -> List[str]:
     return spine_manifest.installed_problems(_M_MANIFEST, installed)
 
 
+def the_reference_keys_sign_verify_rotate_and_revoke() -> List[str]:
+    """Step 1. The deployer's reference keys (chains/receipt_keys.py), held to what they document: a signature verifies under
+    its own trusted key and no other, an unknown or revoked key id never verifies, rotation keeps the old key verifying until it
+    is retired, and a verifier answers False (never raises) for input that is not a signature."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    old, new, other = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+    data = b"some bytes to vouch for"
+    sign_old, sign_new = receipt_keys.make_signer(old, "k1"), receipt_keys.make_signer(new, "k2")
+    trust_old = {"k1": old.public_key()}
+    trust_both = {"k1": old.public_key(), "k2": new.public_key()}
+    out: List[str] = []
+
+    def expect(label: str, got: Any, want: bool) -> None:
+        if got is not want:
+            out.append(f"{label}: expected {want}, got {got!r}")
+
+    expect("a signature under its trusted key", receipt_keys.make_verifier(trust_old)(data, sign_old(data)), True)
+    expect("the same signature over other bytes", receipt_keys.make_verifier(trust_old)(data + b"!", sign_old(data)), False)
+    expect("a key id the trust list does not hold", receipt_keys.make_verifier(trust_old)(data, sign_new(data)), False)
+    expect("a trusted id signed by another key", receipt_keys.make_verifier(trust_old)(data, receipt_keys.make_signer(other, "k1")(data)), False)
+    expect("a revoked key that is still listed", receipt_keys.make_verifier(trust_old, revoked={"k1"})(data, sign_old(data)), False)
+    expect("rotation: the old key while both are trusted", receipt_keys.make_verifier(trust_both)(data, sign_old(data)), True)
+    expect("rotation: the new key", receipt_keys.make_verifier(trust_both)(data, sign_new(data)), True)
+    expect("rotation: the old key once retired", receipt_keys.make_verifier({"k2": new.public_key()})(data, sign_old(data)), False)
+    expect("rotation: the new key once the old is revoked", receipt_keys.make_verifier(trust_both, revoked={"k1"})(data, sign_new(data)), True)
+    verify = receipt_keys.make_verifier(trust_both)
+    for label, junk in (("no key id", b"nocolon"), ("an empty envelope", b""), ("a str", "k1:sig"), ("an empty signature", b"k1:"),
+                        ("a key id that is not UTF-8", b"\xff\xfe:sig")):
+        expect(f"input that is not a signature ({label})", verify(data, junk), False)
+    expect("data that is not bytes", verify("text", sign_old(data)), False)
+    for bad in ("", "a:b", 7, None):
+        if not refused(lambda bad=bad: receipt_keys.make_signer(old, bad)):
+            out.append(f"a key id {bad!r} was accepted by make_signer")
+    trust_both["k1"] = other.public_key()  # the verifier took a snapshot: editing the dict afterwards changes nothing
+    expect("a trust dict edited after make_verifier", verify(data, sign_old(data)), True)
+    return out
+
+
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
@@ -1912,6 +1951,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: GAP, a sink keeps a write the ledger does not have", GAP_a_sink_keeps_a_write_the_ledger_does_not_have, GAP),
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
+    ("keys: the reference deployer signs, verifies, rotates and revokes", the_reference_keys_sign_verify_rotate_and_revoke, CLEAN),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),
     ("oracle: a refusal that edited an entry's content is a state change", the_oracle_flags_a_refusal_that_edited_an_entrys_content, CLEAN),
