@@ -78,7 +78,8 @@ def test_the_spine_record_keeps_its_eleven_fields_and_the_strict_check_is_a_sepa
     assert shape(problems) == [("record", POS, False)] and shape(root) == [("record", POS, False)]
     four = [("alpha", POS, False), ("zeta", POS, False), ("beta", POS, False), ("delta", POS, False)]
     # Step 5: the caller hands over delta's verification receipt (chain), chain_verified stays only as a deprecated alias
-    strict_tail = [("chain", KW, True), ("chain_verified", KW, True), ("keyset_fingerprint_of", KW, True)]
+    strict_tail = [("chain", KW, True), ("chain_verified", KW, True), ("keyset_fingerprint_of", KW, True),
+                   ("held_checkpoint", KW, True), ("require_keyset_verifier", KW, True)]
     assert shape(strict_problems) == four + strict_tail
     assert shape(strict_root) == four + strict_tail
 

@@ -95,7 +95,10 @@ present, which Lock should open, or whether the Decision is right. `strict_root`
 from __future__ import annotations
 
 import re
+import threading
+import types
 import warnings
+import weakref
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
@@ -303,6 +306,8 @@ def strict_problems(
     chain: Optional[Mapping[str, Any]] = None,
     chain_verified: Any = _UNSET,
     keyset_fingerprint_of: Optional[Callable[[Mapping[str, Any]], str]] = None,
+    held_checkpoint: Any = None,
+    require_keyset_verifier: bool = False,
 ) -> List[str]:
     """Everything that does not hold together in four stages' contents. Empty when they describe one run.
 
@@ -325,6 +330,18 @@ def strict_problems(
     verify" and no root is issued. The receipt is not signed: someone who can build a consistent one can pass this check,
     so it raises the bar for mistakes and partial forgeries and is not proof of custody.
 
+    `held_checkpoint`, when given, is the checkpoint the CALLER holds, kept in storage the producer of the ledger cannot
+    write (a `(length, head)` pair or a mapping with exactly `length` and `head`; same exact-type rules as the receipt:
+    an int that is not a bool, a 64 character lowercase hex head). The receipt's `checkpoint_length` and
+    `checkpoint_head` must then equal it exactly, each a named problem if not. This is the only thing here that can
+    refuse a ledger that was tampered with, rechained from the tampered entry on, and given a fresh checkpoint: delta
+    issues a receipt for that ledger, and every field of the receipt is consistent with the others. WITHOUT it, such a
+    receipt cannot be told from an honest one by anything CNS holds (behaviour is then exactly as before, and the root
+    is the root it always was). With it, what stays undetectable is a tampering the held checkpoint does not cover
+    (entries after its length), a held checkpoint the attacker could also rewrite, and a caller that supplies a
+    checkpoint taken from the ledger it is checking. CNS holds no ledger and no storage: it compares what it is handed.
+    A root issued against a held checkpoint carries that fact in its domain, so it differs from one issued without.
+
     `chain_verified` is a deprecated alias that is never evidence. Passing it, whatever the value, emits a
     DeprecationWarning and is always the problem "chain_verified is a bare assertion and is not evidence; pass chain= a
     delta verification receipt".
@@ -335,16 +352,22 @@ def strict_problems(
     "alpha's KeySet fingerprint does not match a recomputation from alpha's keys". Left out, CNS only compares the
     fingerprint strings that alpha, zeta and beta carry, so a substituted alpha content that copies the original
     fingerprint string passes (a recorded gap). The callable is itself supplied by the caller, which is one more thing
-    that is trusted.
+    that is trusted. It is asked ONCE per alpha content: the answer is kept against the callable and the content, so a
+    callable that answers differently the second time cannot make `strict_problems` name a problem and `strict_root`
+    issue a root for the same run (hacker1 E55). A root issued with a callable says so in its domain (present only when
+    set, so a root issued without one is unchanged), so the two are never equal. `require_keyset_verifier=True` makes the absence of the callable a
+    named problem instead (default False, so existing callers are unchanged).
     """
     if chain_verified is not _UNSET:
         warnings.warn("chain_verified is deprecated and never counts as evidence; pass chain= a delta verification receipt",
                       DeprecationWarning, stacklevel=2)
+    _require_bool(require_keyset_verifier)
     snap, unread = _snapshot(alpha, zeta, beta, delta)
     if unread:
         return unread
     return _strict_problems(*snap, chain=chain, bare_assertion=chain_verified is not _UNSET,
-                            keyset_fingerprint_of=keyset_fingerprint_of)
+                            keyset_fingerprint_of=keyset_fingerprint_of, held_checkpoint=held_checkpoint,
+                            require_keyset_verifier=require_keyset_verifier)
 
 
 def _snapshot(alpha: Any, zeta: Any, beta: Any, delta: Any) -> Tuple[Tuple[Any, Any, Any, Any], List[str]]:
@@ -413,7 +436,8 @@ def _shown(value: object) -> str:
     return f"<{type(value).__name__}>"
 
 
-def _receipt_problems(chain: Any, delta: Any, delta_digest: Optional[str], run: Optional[Mapping[str, Any]]) -> List[str]:
+def _receipt_problems(chain: Any, delta: Any, delta_digest: Optional[str], run: Optional[Mapping[str, Any]],
+                      held_cp: Optional[Tuple[int, str]] = None) -> List[str]:
     """What is wrong with a ledger receipt, judged against the delta content and the run CNS already holds. Empty if none.
 
     The receipt is read ONCE into a plain dict and everything below is judged from that snapshot, so a mapping that answers
@@ -496,11 +520,99 @@ def _receipt_problems(chain: Any, delta: Any, delta_digest: Optional[str], run: 
                 out.append("the ledger receipt's entry is the ledger's last, but its ledger_head is not the entry's own hash")
             if 1 <= held == length and receipt["checkpoint_head"] != receipt["ledger_head"]:
                 out.append("the ledger receipt's checkpoint covers the whole ledger but its head is not the ledger's head")
+            if index == held - 1 >= 0 and hashes and receipt["checkpoint_head"] != receipt["entry_hash"]:
+                out.append("the ledger receipt's entry is the last one its checkpoint covers, but its checkpoint_head is not "
+                           "the entry's own hash")
+    if held_cp is not None:
+        if ints and receipt["checkpoint_length"] != held_cp[0]:
+            out.append(f"the ledger receipt's checkpoint_length {receipt['checkpoint_length']} is not the held checkpoint's "
+                       f"length {held_cp[0]}: the checkpoint is not the one held outside the ledger")
+        if heads and receipt["checkpoint_head"] != held_cp[1]:
+            out.append("the ledger receipt's checkpoint_head is not the checkpoint held outside the ledger: the ledger was "
+                       "checkpointed afresh, or it is not the ledger that checkpoint was taken from")
     return out
 
 
+def _require_bool(value: object) -> None:
+    if type(value) is not bool:
+        raise TypeError(f"require_keyset_verifier must be a bool; got {type(value).__name__}")
+
+
+#: What each verifier answered, per alpha content: {id(owner): (weak reference to the owner, {(function, digest): answer})}.
+#: Held by identity and weakly, so a collected verifier takes its answers with it and a lookalike cannot borrow them.
+_VERIFIED: Dict[int, Tuple[Any, Dict[Tuple[Any, str], Optional[str]]]] = {}
+_VERIFIED_LOCK = threading.Lock()
+_VERIFIED_LIMIT = 64
+
+
+def _recomputed_once(verifier: Callable[[Mapping[str, Any]], str], alpha: Mapping[str, Any]) -> Optional[str]:
+    """Ask `verifier` for the fingerprint of this alpha content, once. A verifier that raises has answered None. The answer
+    is kept for the pair (verifier, content digest), so a later evaluation of the same run reuses it instead of asking a
+    verifier that may now answer differently. A callable that cannot be held weakly is asked every time."""
+    owner: Any = verifier.__self__ if isinstance(verifier, types.MethodType) else verifier
+    tag: Any = verifier.__func__ if isinstance(verifier, types.MethodType) else None
+    key: Optional[Tuple[Any, str]]
+    memo: Optional[Dict[Tuple[Any, str], Optional[str]]]
+    try:
+        key = (tag, subject_digest(alpha))
+        slot = _VERIFIED.get(id(owner))
+        memo = slot[1] if slot is not None and slot[0]() is owner else None
+    except Exception:  # noqa: BLE001 - nothing to key on: ask the verifier, keep nothing
+        key, memo = None, None
+    if memo is not None and key in memo:
+        return memo[key]
+    try:
+        answer: Optional[str] = verifier(_plain(alpha))
+    except Exception:  # noqa: BLE001 - a verifier that cannot recompute has not verified
+        answer = None
+    if key is not None and (answer is None or type(answer) is str):
+        try:
+            with _VERIFIED_LOCK:
+                slot = _VERIFIED.get(id(owner))
+                if slot is None or slot[0]() is not owner:
+                    ident = id(owner)
+
+                    def forget(_ref: Any, ident: int = ident) -> None:
+                        _VERIFIED.pop(ident, None)
+                    slot = (weakref.ref(owner, forget), {})
+                    _VERIFIED[ident] = slot
+                if len(slot[1]) >= _VERIFIED_LIMIT:
+                    slot[1].pop(next(iter(slot[1])))
+                slot[1][key] = answer
+        except TypeError:  # not weakly referenceable
+            pass
+    return answer
+
+
+def _held_checkpoint(held: Any) -> Tuple[Optional[Tuple[int, str]], List[str]]:
+    """The checkpoint the caller holds, read ONCE and validated as strictly as a receipt's. (None, problems) if it is not
+    well formed. Nothing here raises."""
+    shape = "held_checkpoint must be a (length, head) pair or a mapping with exactly length and head"
+    try:
+        if isinstance(held, Mapping):
+            read = dict(held)
+            if set(read) != {"length", "head"} or any(type(k) is not str for k in read):
+                return None, [shape]
+            length, head = read["length"], read["head"]
+        elif isinstance(held, (tuple, list)) and len(held) == 2:
+            length, head = held[0], held[1]
+        else:
+            return None, [shape]
+    except Exception as exc:  # noqa: BLE001 - a held checkpoint that cannot be read once is not evidence
+        return None, [f"held_checkpoint could not be read: {type(exc).__name__}: {exc}"]
+    out: List[str] = []
+    if not _is_int(length):
+        out.append(f"held_checkpoint length must be an int (not a bool, not a subclass); got {type(length).__name__}")
+    elif length < 1:
+        out.append("held_checkpoint length is below 1: an empty checkpoint carries no evidence")
+    if not _is_hex_str(head):
+        out.append("held_checkpoint head is not a full lowercase SHA-256 (an exact str)")
+    return (None, out) if out else ((length, head), [])
+
+
 def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any = None, bare_assertion: bool = False,
-                     keyset_fingerprint_of: Any = None) -> List[str]:
+                     keyset_fingerprint_of: Any = None, held_checkpoint: Any = None,
+                     require_keyset_verifier: bool = False) -> List[str]:
     out: List[str] = []
     stages = {"alpha": alpha, "beta": beta, "delta": delta}
     for name, content in stages.items():
@@ -659,10 +771,7 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
             # Zeta owns the fingerprint rule; the caller hands CNS a function built from it. CNS only compares. A copy of
             # alpha is handed over so the function cannot alter what is judged, and a function that raises or answers
             # anything but alpha's own fingerprint is the same problem.
-            try:
-                recomputed = keyset_fingerprint_of(_plain(alpha))
-            except Exception:  # noqa: BLE001 - a verifier that cannot recompute has not verified
-                recomputed = None
+            recomputed = _recomputed_once(keyset_fingerprint_of, alpha)
             if type(recomputed) is not str or recomputed != fa:
                 out.append(FINGERPRINT_NOT_RECOMPUTED)
         fb = beta.get("keyset_fingerprint")
@@ -671,11 +780,18 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
         elif fb != fa:
             out.append("beta's Decision was made from a different KeySet than alpha produced "
                        "(its recorded KeySet fingerprint differs from alpha's)")
+    if keyset_fingerprint_of is None and require_keyset_verifier:
+        out.append("no keyset_fingerprint_of was supplied, and require_keyset_verifier is set: alpha's KeySet fingerprint "
+                   "was not recomputed by the component that owns the rule")
     if bare_assertion:
         out.append(BARE_ASSERTION)
-    receipt_issues = [] if chain is None else _receipt_problems(chain, delta, dd, run)
-    out += receipt_issues
-    if chain is None or receipt_issues:
+    held_cp: Optional[Tuple[int, str]] = None
+    held_issues: List[str] = []
+    if held_checkpoint is not None:
+        held_cp, held_issues = _held_checkpoint(held_checkpoint)
+    receipt_issues = [] if chain is None else _receipt_problems(chain, delta, dd, run, held_cp)
+    out += held_issues + receipt_issues
+    if chain is None or receipt_issues or held_issues:
         out.append(CHAIN_NOT_SHOWN)
     stage_digests = [d for d in (da, db, dd) if d is not None]
     if len(set(stage_digests)) != len(stage_digests):
@@ -692,6 +808,8 @@ def strict_root(
     chain: Optional[Mapping[str, Any]] = None,
     chain_verified: Any = _UNSET,
     keyset_fingerprint_of: Optional[Callable[[Mapping[str, Any]], str]] = None,
+    held_checkpoint: Any = None,
+    require_keyset_verifier: bool = False,
 ) -> str:
     """One digest over the whole run, from the contents. Raises ValueError if the stages do not hold together.
 
@@ -700,13 +818,23 @@ def strict_root(
     if chain_verified is not _UNSET:
         warnings.warn("chain_verified is deprecated and never counts as evidence; pass chain= a delta verification receipt",
                       DeprecationWarning, stacklevel=2)
+    _require_bool(require_keyset_verifier)
     (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
     found = unread or _strict_problems(alpha, zeta, beta, delta, chain=chain, bare_assertion=chain_verified is not _UNSET,
-                                       keyset_fingerprint_of=keyset_fingerprint_of)
+                                       keyset_fingerprint_of=keyset_fingerprint_of, held_checkpoint=held_checkpoint,
+                                       require_keyset_verifier=require_keyset_verifier)
     if found:
         raise ValueError("the spine run does not hold together: " + "; ".join(found))
     context = alpha["context"]
+    held_fact: Dict[str, Any] = {}
+    if held_checkpoint is not None:
+        held, _ = _held_checkpoint(held_checkpoint)
+        assert held is not None  # a held checkpoint that did not read is a problem above, so no root reaches here
+        held_fact = {"held_checkpoint": {"length": held[0], "head": held[1]}}
+    if keyset_fingerprint_of is not None:
+        held_fact["keyset_verifier"] = "supplied"  # present only when set: a root issued without one is exactly what it was
     return subject_digest({
+        **held_fact,
         "schema": TRACE_SCHEMA,
         "context": {f: context[f] for f in _CONTEXT_FIELDS},
         "alpha": subject_digest(alpha),
