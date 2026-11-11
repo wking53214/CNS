@@ -17,11 +17,25 @@ entry says so.
 
 ## [Unreleased]
 
-Work after the `v2.3.0` tag (`41592fb`). It adds a package, strengthens the strict decision-spine check, fixes one
+Work after the `v2.3.0` tag (`41592fb`). It added a package (UAI-1) that has since moved to its own repository (see
+Moved), strengthens the strict decision-spine check, fixes one
 command that failed its own test, and tightens a few checks for input that was already wrong (see Changed; no
 signature, root or outcome meaning moved); which version it
 ships in is the owner's decision, so `pyproject.toml` still says 2.3.0 and `release --check` reads this heading as
 not a release.
+
+### Moved
+
+- UAI-1 left this repository for github.com/wking53214/UAI-2, unchanged, from commit `03eca66`: `cns_interop/`,
+  `interop/`, `contracts/uai1/`, `contracts/uai-vectors.json`, `contracts/uai-interop-vectors.json`, `docs/interop/`
+  and the three `docs/migrations/uai-1-revision-*.md` notes. It was never in a tagged release, so no pin of this
+  repository could import it. `docs/interop/README.md` is the pointer left behind. The wheel is `cns` and
+  `cns_composition` again; the `postgres` extra and the `psycopg` and `jsonschema` development dependencies, which
+  only UAI-1 used, are gone. Entries below that describe `cns_interop` or `interop/` describe that code as it was
+  developed here; it is now maintained there.
+- `chains/evidence_spine.py` still signs its roster decision with UAI-1. It imports `cns_interop` from a UAI-2 checkout,
+  which the chains workflow now makes, and finds `interop/act.py` beside it.
+- `cns_composition.consumers` no longer counts `cns_interop` as a package this repository provides.
 
 ### Added
 

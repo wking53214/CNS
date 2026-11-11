@@ -70,8 +70,9 @@ Validation is not judgment. Integrity is not truth. Identity is not permission. 
 
 ### How it relates to UAI-1, and how AI providers and agents connect
 
-`cns` holds the shared shapes. **UAI-1** (`docs/interop/UAI-1.md`) is the signed-message protocol built on those
-shapes so a system outside the process, in any language, can exchange requests, terms, selective disclosures and
+`cns` holds the shared shapes. **UAI-1** is the signed-message protocol built on those
+shapes. It was developed here and now lives in its own repository, github.com/wking53214/UAI-2 (`docs/interop/README.md`
+says what moved); its specification is `docs/interop/UAI-1.md` there. It exists so a system outside the process, in any language, can exchange requests, terms, selective disclosures and
 decisions. AI models and independent agents connect through **adapters**: an adapter turns a provider's answer into a
 `recommendation`, read by a strict parser that refuses anything beyond verdict, reasons, evidence and an escalation flag.
 The decider's own policy may lower the recommendation, a grant decides whether anything may be done, and a person may have to approve. UAI-1 provider clients exist for Anthropic, Google Gemini, OpenAI (ChatGPT models) and Copilot (through GitHub Models or Azure OpenAI). Their local wire-format tests do not establish live interoperability. The separate Anthropic composition-layer adapter documented below has been exercised with one explicitly authorized live request. That result does not establish live interoperability for the UAI-1 clients or other providers.
@@ -93,7 +94,9 @@ CNS is shared infrastructure that several systems use, not a stage in one pipeli
 
 ### Implemented today, and what is not
 
-| Implemented and tested here | Experimental, partial or absent |
+The rows about UAI-1 and provider clients describe code that now lives, and is tested, in github.com/wking53214/UAI-2.
+
+| Implemented and tested (here, or for UAI-1 in UAI-2) | Experimental, partial or absent |
 |---|---|
 | UAI-1 envelope, strict wire reading, canonical digest, Ed25519 (pure Python, or OpenSSL with a frozen production profile) | No second, independently written implementation by another team has been run against the suite |
 | Python and Node implementations that agree on shared vectors and on a conformance suite | Node shares the PostgreSQL ledger but not the PostgreSQL policy store or audit chain, and has no quorum-commit mode |
@@ -104,7 +107,7 @@ CNS is shared infrastructure that several systems use, not a stage in one pipeli
 | JSON Schema, a versioned error registry and a stand-alone conformance runner (`contracts/uai1/`) | Provider interoperability is untested against any live provider |
 | Provider clients for Anthropic, Gemini, OpenAI and Copilot, behind the adapter boundary | Authenticated transport is not required for same-host use (`local-process` profile) |
 
-The honest summary and the scored assessment are in `docs/interop/UAI1_R4_ASSESSMENT.md`.
+The honest summary and the scored assessment are in `docs/interop/UAI1_R4_ASSESSMENT.md` in UAI-2.
 
 ### Starting your own implementation
 
@@ -342,7 +345,9 @@ name the source and the agreement.
 
 ### Talking to systems outside CNS: UAI-1
 
-`cns_interop` is a third sibling package: the universal AI interface layer. Everything above works inside one
+`cns_interop` is the universal AI interface layer. It was a third sibling package here and has moved, unchanged, to
+github.com/wking53214/UAI-2; **every path in the table below is a path in that repository** (`docs/interop/README.md`
+here says what moved). Everything above works inside one
 process. UAI-1 is how a system that does not import CNS, in any language, exchanges a request, agrees terms,
 discloses only the agreed fields, and receives a decision it can verify on its own, without either side giving up its
 own identity, rules or authority. Decisions are Ed25519-signed envelopes over the CNS subject digest, so a SuperGate

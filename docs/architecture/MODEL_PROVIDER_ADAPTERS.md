@@ -1,8 +1,9 @@
 # CNS Model Provider Adapters
 
-> Two Anthropic clients exist in this repository. This document describes the SDK-based adapter in
-> `cns_composition/providers/anthropic.py`. The standard-library client `anthropic_complete` in `cns_interop/providers.py`
-> is the one the UAI-1 live runs of 2026-11-04 used, and it is covered by the UAI-1 documents, not this one.
+> This document describes the SDK-based adapter in `cns_composition/providers/anthropic.py`, the one Anthropic client in
+> this repository. The standard-library client `anthropic_complete`, which the UAI-1 live runs of 2026-11-04 used, moved
+> with UAI-1 to github.com/wking53214/UAI-2 (`cns_interop/providers.py` there) and is covered by the documents there.
+> That repository also carries its own copy of the typed contract in `protocol.py` (as `uai/protocol.py`).
 
 ## Purpose
 
