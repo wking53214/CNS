@@ -61,7 +61,7 @@ system stay itself.
 
 A model's recommendation is not a decision. A signed decision is not permission. A valid signature proves who made an
 object and that it was not changed; it does not prove the content is true or that anyone may act on it. The receiver
-keeps authority: in the reference receiver (`interop/act.py`, `interop/node/act.mjs`) an action happens only if the
+keeps authority: in the reference receiver (`interop/act.py`, `interop/node/act.mjs`, both in UAI-2) an action happens only if the
 receiver's **own** grant allows it, and a person's approval is bound to one decision, one action and one document.
 
 ### What CNS validates, and what it deliberately does not decide
