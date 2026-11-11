@@ -55,6 +55,7 @@ import alpha.cns_connector as alpha_cns
 import beta.cns_connector as beta_cns
 import delta.cns_connector as delta_cns
 import delta as delta_pkg
+import delta.signing as delta_signing
 import delta.context as delta_context
 import zeta.cns_connector as zeta_cns
 from alpha import VitalsObservation, observe
@@ -63,7 +64,9 @@ from beta import (
     StaleLockResultError, decision_fingerprint)
 from beta.fingerprint import content_fingerprint
 from cns.gate import subject_digest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cns_composition import spine_manifest
+from cns_composition import spine_trace
 from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, SpineRecord, context_problems, problems, root, strict_problems, strict_root)
 from delta import DecisionLedger
@@ -1636,7 +1639,6 @@ def the_reference_keys_sign_verify_rotate_and_revoke() -> List[str]:
     """Step 1. The deployer's reference keys (chains/receipt_keys.py), held to what they document: a signature verifies under
     its own trusted key and no other, an unknown or revoked key id never verifies, rotation keeps the old key verifying until it
     is retired, and a verifier answers False (never raises) for input that is not a signature."""
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     old, new, other = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
     data = b"some bytes to vouch for"
     sign_old, sign_new = receipt_keys.make_signer(old, "k1"), receipt_keys.make_signer(new, "k2")
@@ -1668,6 +1670,219 @@ def the_reference_keys_sign_verify_rotate_and_revoke() -> List[str]:
     trust_both["k1"] = other.public_key()  # the verifier took a snapshot: editing the dict afterwards changes nothing
     expect("a trust dict edited after make_verifier", verify(data, sign_old(data)), True)
     return out
+
+
+# --- signed receipts: the deployer's keys, Delta's signing hook, CNS's verification (Step 2) -----------------------------
+
+#: Fresh keys for each run of the script; nothing is hard-coded. The deployer's key is the one the verifier trusts.
+DEPLOYER_KEY, NEW_KEY, STRANGER_KEY = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+BAD_SIGNATURE = spine_trace.RECEIPT_SIGNATURE_BAD
+SIGNATURE_REQUIRED = spine_trace.RECEIPT_SIGNATURE_REQUIRED
+
+
+def deployer_verifier(*, also=(), revoked=()):
+    """The verifier a deployer builds from the keys it trusts: key id k1 (the deployer's), plus any `(id, key)` in `also`."""
+    trust = {"k1": DEPLOYER_KEY.public_key(), **{kid: key.public_key() for kid, key in also}}
+    return receipt_keys.make_verifier(trust, revoked)
+
+
+def signed_run(vitals=SICK, ctx=CTX, key=None, key_id="k1"):
+    """A real run, the receipt Delta issues for it, and the signature Delta's hook makes with the deployer's `sign`."""
+    p = stages(vitals, ctx)
+    receipt, why = chain_receipt(p)
+    if receipt is None:
+        raise ValueError(f"delta issued no receipt: {why}")
+    return p, receipt, delta_signing.sign_receipt(receipt, receipt_keys.make_signer(key or DEPLOYER_KEY, key_id))
+
+
+def signed_check(p, receipt, signature, verifier, *, required=True, held=True) -> List[str]:
+    """CNS's strict check with the signature arguments, then the root asked the same way: a root is issued exactly when no
+    problem is named. The check is run as a deployer runs it (the zeta recomputation, the checkpoint held outside)."""
+    kw: Dict[str, Any] = dict(chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint, receipt_signature=signature,
+                              verify_receipt_signature=verifier, require_signed_receipt=required)
+    if held:
+        kw["held_checkpoint"] = (p["checkpoint"].length, p["checkpoint"].head)
+    found = strict_problems(p["alpha"], p["zeta"], p["beta"], p["delta"], **kw)
+    try:
+        issued = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], **kw)
+    except ValueError:
+        issued = None
+    if found and issued is not None:
+        found.append("a root was issued although problems were named")
+    if not found and issued is None:
+        found.append("no root was issued although no problem was named")
+    return found
+
+
+def a_receipt_signed_by_the_deployer_is_verified_and_a_root_issued() -> List[str]:
+    p, receipt, signature = signed_run()
+    verifier = deployer_verifier()
+    out = signed_check(p, receipt, signature, verifier)
+    kw: Dict[str, Any] = dict(chain=receipt, keyset_fingerprint_of=zeta_keyset_fingerprint,
+                              held_checkpoint=(p["checkpoint"].length, p["checkpoint"].head))
+    unsigned = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], **kw)
+    signed = strict_root(p["alpha"], p["zeta"], p["beta"], p["delta"], receipt_signature=signature,
+                         verify_receipt_signature=verifier, require_signed_receipt=True, **kw)
+    return out + ([] if signed != unsigned else ["a root issued with a verified signature equals the unsigned root"])
+
+
+def an_unsigned_receipt_is_refused_when_a_signature_is_required() -> List[str]:
+    p, receipt, _ = signed_run()
+    return signed_check(p, receipt, None, deployer_verifier())
+
+
+def a_hand_built_consistent_receipt_with_no_delta_call_and_no_key_is_refused() -> List[str]:
+    """The receipt of GAP_a_fully_hand_built_consistent_receipt_is_accepted, which the unsigned check accepts: every field
+    fits the others, nothing behind it. Asked for a signature, its author has none to give."""
+    p = stages(SICK)
+    head = "1" * 64
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(p["delta"]), "index": 4,
+               "entry_hash": p["delta"]["immutable_hash"], "previous_hash": p["delta"]["previous_hash"], "ledger_length": 9,
+               "ledger_head": head, "checkpoint_length": 9, "checkpoint_head": head, "context": dict(CTX)}
+    return signed_check(p, receipt, None, deployer_verifier(), held=False)
+
+
+def a_receipt_signed_by_an_untrusted_key() -> List[str]:
+    p, receipt, signature = signed_run(key=STRANGER_KEY, key_id="stranger")
+    return signed_check(p, receipt, signature, deployer_verifier())
+
+
+def a_receipt_signed_by_a_key_claiming_the_deployers_id() -> List[str]:
+    p, receipt, signature = signed_run(key=STRANGER_KEY, key_id="k1")
+    return signed_check(p, receipt, signature, deployer_verifier())
+
+
+def a_receipt_signed_by_a_revoked_key() -> List[str]:
+    p, receipt, signature = signed_run()
+    return signed_check(p, receipt, signature, deployer_verifier(revoked={"k1"}))
+
+
+def a_signature_over_another_receipt() -> List[str]:
+    p, receipt, _ = signed_run()
+    _, _, other = signed_run(SICK, ctx={**CTX, "run_id": "run_2"})
+    return signed_check(p, receipt, other, deployer_verifier())
+
+
+def a_receipt_edited_after_signing() -> List[str]:
+    """Each of several fields of the signed receipt is changed alone; the signature must name every one of them. The other
+    problems an edit also causes (the receipt no longer fits the contents) are not what this asks, so only the signature's
+    verdict is kept, and a root must not be issued."""
+    p, receipt, signature = signed_run()
+    verifier = deployer_verifier()
+    flip = lambda h: ("0" if h[0] != "0" else "1") + h[1:]  # noqa: E731
+    edits = {"entry_digest": lambda r: r.update(entry_digest=flip(r["entry_digest"])),
+             "entry_hash": lambda r: r.update(entry_hash=flip(r["entry_hash"])),
+             "previous_hash": lambda r: r.update(previous_hash=flip(r["previous_hash"])),
+             "ledger_head": lambda r: r.update(ledger_head=flip(r["ledger_head"])),
+             "checkpoint_head": lambda r: r.update(checkpoint_head=flip(r["checkpoint_head"])),
+             "ledger_length": lambda r: r.update(ledger_length=r["ledger_length"] + 1),
+             "checkpoint_length": lambda r: r.update(checkpoint_length=r["checkpoint_length"] + 1),
+             "index": lambda r: r.update(index=r["index"] + 1),
+             "schema": lambda r: r.update(schema="ledger-receipt/2"),
+             "context.run_id": lambda r: r["context"].update(run_id="run_2")}
+    out: List[str] = []
+    for name, edit in edits.items():
+        edited = {**receipt, "context": dict(receipt["context"])}
+        edit(edited)
+        found = signed_check(p, edited, signature, verifier)
+        if BAD_SIGNATURE not in "; ".join(found):
+            out.append(f"{name}: the edit was not caught by the signature")
+        elif not any("a root was issued" in f for f in found):
+            out.append(f"{name}: {BAD_SIGNATURE}")
+        else:
+            out.append(f"{name}: a root was issued for an edited receipt")
+    return out
+
+
+def rotation_keeps_the_old_key_verifying_until_it_is_retired() -> List[str]:
+    p_old, receipt_old, sig_old = signed_run()
+    p_new, receipt_new, sig_new = signed_run(ctx={**CTX, "run_id": "run_2"}, key=NEW_KEY, key_id="k2")
+    both = deployer_verifier(also=[("k2", NEW_KEY)])
+    return signed_check(p_old, receipt_old, sig_old, both) + signed_check(p_new, receipt_new, sig_new, both)
+
+
+def a_receipt_of_a_retired_key_is_refused_after_rotation() -> List[str]:
+    p, receipt, signature = signed_run()
+    retired = receipt_keys.make_verifier({"k2": NEW_KEY.public_key()})
+    return signed_check(p, receipt, signature, retired)
+
+
+def the_two_receipt_signing_inputs_do_not_drift() -> List[str]:
+    """DRIFT. CNS carries its own `receipt_signing_input` (it imports no repository) and Delta its own. A signature made over
+    one and checked over the other only works while they are byte-equal, so this holds them equal over valid receipts and
+    equal in refusal over invalid ones: whatever one refuses, the other refuses (the exception class may differ)."""
+    import copy
+    real = signed_run()[1]
+    other = signed_run(WELL, ctx={**CTX, "run_id": "run_2", "event_id": "event_2"})[1]
+    astral, pair = chr(0x1F600), chr(0xD83D) + chr(0xDE00)
+
+    def variant(base, **over):
+        r = copy.deepcopy(base)
+        for k, v in over.items():
+            if k.startswith("ctx."):
+                r["context"][k[4:]] = v
+            else:
+                r[k] = v
+        return r
+
+    class S(str):
+        pass
+
+    class I(int):  # noqa: E742
+        pass
+
+    class D(dict):
+        pass
+
+    valid = {"a real receipt": real, "another run's": other, "non-ASCII ids": variant(real, **{"ctx.entity_id": "patient_\u00e9\u4e2d"}),
+             "an astral character": variant(real, **{"ctx.run_id": "run_" + astral}), "empty strings": variant(real, **{"ctx.run_id": ""}),
+             "a huge int": variant(real, index=10 ** 30), "zero lengths": variant(real, index=0, ledger_length=0, checkpoint_length=0),
+             "an escaped quote": variant(real, **{"ctx.event_id": 'e"\\\n'})}
+    broken = {"a lone surrogate": variant(real, entry_hash=chr(0xD83D)), "a surrogate pair": variant(real, **{"ctx.run_id": pair}),
+              "a lone surrogate in the context": variant(real, **{"ctx.entity_id": chr(0xDE00)}),
+              "an extra key": {**real, "extra": 1}, "a missing key": {k: v for k, v in real.items() if k != "index"},
+              "a bool index": variant(real, index=True), "a bool length": variant(real, ledger_length=False),
+              "a negative index": variant(real, index=-1), "a negative length": variant(real, checkpoint_length=-5),
+              "a float index": variant(real, index=0.0), "a str-subclass hash": variant(real, ledger_head=S(real["ledger_head"])),
+              "an int-subclass index": variant(real, index=I(0)), "a dict subclass": D(real),
+              "a context with an extra key": variant(real, context={**real["context"], "extra": "x"}),
+              "a context that is a list": variant(real, context=list(real["context"].values())),
+              "a non-str key": {**real, 1: 2}, "None": None, "a list": list(real.items()),
+              "a NaN where an int belongs": variant(real, index=float("nan")), "bytes where a str belongs": variant(real, entry_hash=b"x")}
+
+    def ask(fn, receipt):
+        try:
+            return "ok", fn(receipt)
+        except (TypeError, ValueError):
+            return "refused", None
+
+    out: List[str] = []
+    for label, receipt in valid.items():
+        mine, theirs = ask(spine_trace.receipt_signing_input, receipt), ask(delta_signing.receipt_signing_input, receipt)
+        if mine[0] != "ok" or theirs[0] != "ok" or mine[1] != theirs[1]:
+            out.append(f"valid receipt ({label}): CNS {mine[0]}, delta {theirs[0]}, bytes {'equal' if mine[1] == theirs[1] else 'differ'}")
+    for label, receipt in broken.items():
+        mine, theirs = ask(spine_trace.receipt_signing_input, receipt), ask(delta_signing.receipt_signing_input, receipt)
+        if mine[0] != "refused" or theirs[0] != "refused":
+            out.append(f"invalid receipt ({label}): CNS {mine[0]}, delta {theirs[0]}")
+    if spine_trace.RECEIPT_SIGNATURE_DOMAIN != delta_signing.RECEIPT_SIGNATURE_DOMAIN:
+        out.append("the signature domain tags differ")
+    return out
+
+
+def GAP_a_holder_of_a_trusted_key_signs_a_forged_receipt() -> List[str]:
+    """KNOWN GAP, stated as a fact and a recorded limit. Signing closes the forged-receipt gap only for a verifier that trusts
+    only real keys. Whoever holds a trusted key can sign a hand-built receipt for a ledger that does not exist (index 4 of 9,
+    a head that names no ledger), and CNS, which sees a verifying signature and a receipt that fits the contents, names no
+    problem and issues a root. The signature says who vouched, not that the ledger is real. Only a held checkpoint taken from
+    a real ledger (`held_checkpoint`) or the key holder's honesty tells it from an honest one, and neither is in CNS."""
+    p = stages(SICK)
+    head = "1" * 64
+    receipt = {"schema": "ledger-receipt/1", "entry_digest": subject_digest(p["delta"]), "index": 4,
+               "entry_hash": p["delta"]["immutable_hash"], "previous_hash": p["delta"]["previous_hash"], "ledger_length": 9,
+               "ledger_head": head, "checkpoint_length": 9, "checkpoint_head": head, "context": dict(CTX)}
+    signature = delta_signing.sign_receipt(receipt, receipt_keys.make_signer(DEPLOYER_KEY, "k1"))
+    return signed_check(p, receipt, signature, deployer_verifier(), held=False)
 
 
 CLEAN = Expect("clean")
@@ -1952,6 +2167,27 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
     ("keys: the reference deployer signs, verifies, rotates and revokes", the_reference_keys_sign_verify_rotate_and_revoke, CLEAN),
+    # --- signed receipts: Delta signs through its hook, the deployer's keys decide, CNS asks one verifier once ---
+    ("signed: an honest receipt is verified and a root is issued, different from the unsigned root",
+     a_receipt_signed_by_the_deployer_is_verified_and_a_root_issued, CLEAN),
+    ("signed: an unsigned receipt is refused when a signature is required", an_unsigned_receipt_is_refused_when_a_signature_is_required,
+     Expect("problems", required=(SIGNATURE_REQUIRED,))),
+    ("signed: a hand-built consistent receipt with no delta call and no key is refused",
+     a_hand_built_consistent_receipt_with_no_delta_call_and_no_key_is_refused, Expect("problems", required=(SIGNATURE_REQUIRED,))),
+    ("signed: a receipt signed by an untrusted key", a_receipt_signed_by_an_untrusted_key, Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: a receipt signed by a key that claims the deployer's id", a_receipt_signed_by_a_key_claiming_the_deployers_id,
+     Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: a receipt signed by a revoked key", a_receipt_signed_by_a_revoked_key, Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: a signature over another receipt", a_signature_over_another_receipt, Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: a receipt edited after signing, each of ten fields", a_receipt_edited_after_signing,
+     Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: rotation, the old key and the new key both verify while both are trusted",
+     rotation_keeps_the_old_key_verifying_until_it_is_retired, CLEAN),
+    ("signed: rotation, a receipt of the retired key is refused", a_receipt_of_a_retired_key_is_refused_after_rotation,
+     Expect("problems", required=(BAD_SIGNATURE,))),
+    ("signed: DRIFT, CNS's and delta's receipt signing inputs are byte-equal and refuse alike",
+     the_two_receipt_signing_inputs_do_not_drift, CLEAN),
+    ("signed: GAP, a holder of a trusted key signs a forged receipt", GAP_a_holder_of_a_trusted_key_signs_a_forged_receipt, GAP),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),
     ("oracle: a refusal that edited an entry's content is a state change", the_oracle_flags_a_refusal_that_edited_an_entrys_content, CLEAN),

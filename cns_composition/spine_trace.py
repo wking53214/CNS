@@ -609,7 +609,7 @@ def receipt_signing_input(receipt: Any) -> bytes:
     """The exact bytes a ledger receipt is signed over: `RECEIPT_SIGNATURE_DOMAIN` then the receipt as canonical JSON.
 
     The receipt must be an exact `dict` with exactly the ten keys of `ledger-receipt/1`, each value of its exact type
-    (`str`; `int` that is not a bool for `index`, `ledger_length` and `checkpoint_length`; `context` an exact `dict` of
+    (`str`; `int` that is neither a bool nor negative for `index`, `ledger_length` and `checkpoint_length`; `context` an exact `dict` of
     the four exact `str` fields). Anything else is a `TypeError` or `ValueError` naming the field. This is the same
     function as delta's `receipt_signing_input`, duplicated because CNS imports no repository."""
     if type(receipt) is not dict:
@@ -623,6 +623,8 @@ def receipt_signing_input(receipt: Any) -> bytes:
         if name in _RECEIPT_INTS:
             if type(value) is not int:
                 raise TypeError(f"receipt field {name} must be an int (not a bool, not a subclass); got {type(value).__name__}")
+            if value < 0:
+                raise ValueError(f"receipt field {name} must not be negative")
         elif name == "context":
             if type(value) is not dict:
                 raise TypeError(f"receipt field context must be an exact dict; got {type(value).__name__}")
