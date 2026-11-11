@@ -5,8 +5,10 @@ are not importable in this suite, so what the job runs (the pin check against re
 spine) is the workflow's; what can be held here is the logic, on synthetic pyproject text, and the wiring.
 """
 
+import importlib
 import json
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -299,11 +301,17 @@ def test_the_committed_manifest_is_well_formed_and_names_the_cns_release_the_tab
 @pytest.fixture(params=["tomllib", "fallback"])
 def parser(request, monkeypatch):
     """Both readers: the real tomllib, and the strict fallback a Python 3.10 floor would use."""
-    if request.param == "fallback":
-        monkeypatch.setattr(sm, "_tomllib", None)
-    else:
-        pytest.importorskip("tomllib")
+    monkeypatch.setattr(sm, "_tomllib", None if request.param == "fallback" else _reference_toml())
     return request.param
+
+
+def _reference_toml():
+    """The TOML reader the fallback is held to: `tomllib`, or on Python 3.10 `tomli`, the same parser under the name it
+    had before it joined the standard library (pytest requires it there). No test declines to run for want of it."""
+    if sm._tomllib is not None:
+        return sm._tomllib
+    assert sys.version_info < (3, 11), "tomllib is missing on a Python that ships it"
+    return importlib.import_module("tomli")
 
 
 def _delta_with(mutator):
@@ -375,7 +383,7 @@ def test_the_fallback_refuses_what_it_cannot_read_completely(monkeypatch):
 
 
 def test_both_readers_agree_on_an_ordinary_pyproject(monkeypatch):
-    pytest.importorskip("tomllib")
+    monkeypatch.setattr(sm, "_tomllib", _reference_toml())
     text = pyproject([("zeta", Z), ("beta", B)])
     real = sm.declared(text)
     monkeypatch.setattr(sm, "_tomllib", None)
