@@ -86,7 +86,9 @@ def _git_env() -> Dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
                 "HOME": str(folder), "XDG_CONFIG_HOME": str(folder),
-                "GIT_CONFIG_GLOBAL": str(folder / "gitconfig"), "GIT_CONFIG_SYSTEM": str(folder / "gitconfig")})
+                "GIT_CONFIG_GLOBAL": str(folder / "gitconfig"), "GIT_CONFIG_SYSTEM": str(folder / "gitconfig"),
+                # a `git replace` ref can make a checkout report one commit while holding another's content
+                "GIT_NO_REPLACE_OBJECTS": "1"})
     return env
 
 
