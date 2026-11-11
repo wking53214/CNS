@@ -1,5 +1,15 @@
 # CNS connection integrity campaign: report of 2026-11-04
 
+> **Note of 2026-11-07.** The line numbers cited below point into other repositories' code as it stood when this was written. None of those files is in this repository, so the numbers were not checked and will drift. Use the file names to find the code.
+> **Status check of 2026-11-07.** The CNS changes in section B were committed later (PR #84 and follow-up branches), so
+> "uncommitted" below describes the state on 2026-11-04 only. On `main` today: the roster and context options (C1, C2),
+> the verdict-per-seat and partial checks (C3, C4), strict binding (C5), the fail-closed `resolve` (C6), the 36-repository
+> registry with `drift` (C8), the `same_subject` seat in `chains/full_chain.py` (C9) and the pinned evidence-spine guards
+> (C10) are present in code. C7 was withdrawn as the report says; `spine_trace.verify` does not exist, and `strict_problems`
+> and `strict_root` do. Test files for C1 to C4 and C6 are under `cns_composition/tests/`, not the top `tests/` folder.
+> Section A's findings about other repositories were recorded by agents on 2026-11-04 and were not re-verified here;
+> they describe those repositories at the commits named, not their current state.
+
 Scope: CNS at `7195144` (PR #84) on branch `ccr-271ac8e8-y0qkj4`, working tree uncommitted. The other 39 repositories were
 inspected and executed read-only; none was modified. Nothing was committed or pushed, as instructed. (CNS's own
 `CLAUDE.md` asks for one commit per step; this run's instruction not to commit overrides it, so the changes are in the

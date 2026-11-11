@@ -1,5 +1,6 @@
 # UAI-1 revision 2: the `revocation` kind, two-phase ledgers
 
+> **Check of 2026-11-07.** The files and test names this page cites were checked against the repository. It describes a past revision, so it is kept as written.
 Nothing here changes how a revision 1 message is signed, serialized or verified, and every revision 1 test vector
 still passes unchanged.
 

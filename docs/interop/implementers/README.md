@@ -1,5 +1,6 @@
 # Implementing UAI-1 without CNS
 
+> **Check of 2026-11-07.** Every test name and repository file this page cites was confirmed to exist in this repository. Claims about the outcome of earlier runs and about other repositories were not re-run or re-verified.
 This is the guide for an engineering team that wants to implement UAI-1 in its own language and check the result, without
 reading CNS source. It states what an implementation must do, how to test it, and what is **not** established.
 

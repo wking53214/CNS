@@ -6,8 +6,9 @@
 //
 // Scope and honest limits (the same as the Python single-host stores):
 //   * SQLite stores are for processes on ONE host. A Node receiver on several hosts shares the decision and permit LEDGERS
-//     in PostgreSQL through pg.mjs (act.mjs --ledger-backend postgres); the shared PostgreSQL policy and audit stores are
-//     Python only, so Node's withdrawals and audit record stay in these local files.
+//     in PostgreSQL through pg.mjs (act.mjs --ledger-backend postgres), and the shared PostgreSQL withdrawals and audit chain
+//     are pg_policy.mjs (PostgresGrantStore as `store`, PostgresAudit as `auditSink`); these SQLite and file stores are the
+//     single-host alternative.
 //   * The audit file is chained like Python's, but Node serialises writers with an exclusive lock FILE and Python with flock.
 //     Do not point both languages at one audit file: each language's lock is invisible to the other.
 //   * node:sqlite is experimental in Node 22; Node prints a warning. Nothing here is a claim that it is stable.
@@ -210,7 +211,7 @@ export class Permit {
 }
 
 export class GrantTable {
-  constructor(grants = [], { auditPath = null, store = null, permitLedger, permitLeaseMs = 60000 } = {}) {
+  constructor(grants = [], { auditPath = null, auditSink = null, store = null, permitLedger, permitLeaseMs = 60000 } = {}) {
     this.grants = new Map();
     for (const g of grants) {
       const k = `${g.capability} ${g.version}`;
@@ -218,8 +219,9 @@ export class GrantTable {
       this.grants.set(k, g);
     }
     if (!permitLedger || typeof permitLedger.reserve !== "function") throw new Error("permitLedger needs reserve, commit and release");
-    Object.assign(this, { store, permits: permitLedger, leaseMs: permitLeaseMs, auditPath, withdrawn: new Set() });
-    this.last = auditPath ? lastDigestOf(auditPath) : ZERO;   // a damaged chain is refused here, before anything is permitted
+    if (auditSink && auditPath) throw new Error("an audit record is a file or a shared sink, not both");
+    Object.assign(this, { store, permits: permitLedger, leaseMs: permitLeaseMs, auditPath, sink: auditSink, withdrawn: new Set() });
+    this.last = auditSink ? auditSink.verify() : auditPath ? lastDigestOf(auditPath) : ZERO;   // a damaged chain, local or shared, is refused here, before anything is permitted
     if (auditPath) mkParent(auditPath);
   }
   withdraw(id) { if (this.store) this.store.withdraw(id); else this.withdrawn.add(id); }
@@ -285,6 +287,7 @@ export class GrantTable {
     const entry = { at: now, action, outcome, grant, capability: String(t.capability), version: isInt(t.version) ? t.version : 0,
       decider: String(t.decider), requester: String(t.requester), decision_id: verified.envelope.id,
       subject_digest: verified.subject?.digest ?? "", approver, terms_digest: verified.envelope.body.terms_digest, retain_ms: g ? g.retain_ms : 0 };
+    if (this.sink) { this.last = this.sink.append(entry); return this.last; }   // one chain across every host; Refused('unavailable') on failure
     if (!this.auditPath) { entry.prev = this.last; this.last = entryDigest(entry); return this.last; }
     this.last = appendAudit(this.auditPath, entry);
     return this.last;

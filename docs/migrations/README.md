@@ -33,7 +33,7 @@ Every one of the 34 sites is inside `sentinel_os/`, a 176-file subtree
 committed into OBSERVE as plain files. OBSERVE's own code carries no copy of
 any CNS contract at all.
 
-OBSERVE already documents what that subtree is. From its `UPSTREAM.md`:
+OBSERVE already documents what that subtree is. From OBSERVE's `UPSTREAM.md` (in the OBSERVE repository, not this one):
 "OBSERVE is a downstream of three repositories, not an independent
 codebase", with `sentinel_os/` synced from sentinel_os at `ddedd12` and
 GSA-815 at `44ee595` on 2026-09-07. The CNS extraction happened on

@@ -13,8 +13,9 @@
 #                        verdicts bound to the answer text and tied to Ecology's record by its answer hash. Six scenarios, one of
 #                        them a DIT gate left out of the request, which cns_composition.super_gate refuses as a breach.
 # chains/evidence_spine.py  one document through HERALD, TIE, Conservation_Kernel, Governance_Gateway and CCC, then broken at
-#                        each seam. Fifty-eight scenarios: forty-four seams that hold, three gaps stated as facts, four that cross
-#                        the process boundary as a signed decision, and seven others (the clean run and the roster refusals).
+#                        each seam. Fifty-two scenarios: forty-four seams that hold, three gaps stated as facts, four that cross
+#                        the process boundary as a signed decision, and the clean run. Four more checks follow them (three
+#                        dropped-gate refusals and the CCC door-naming check), for fifty-six results in all.
 #
 # spine-pinned           the same decision spine, but on the four commits contracts/spine-manifest.json names and nothing else.
 #                        The `chains` job above runs each repository's floating default branch, which is the drift detector;
@@ -41,6 +42,7 @@ on:
       - cns/gate.py
       - cns/rowenum.py
       - cns_composition/decision_guard.py
+      - cns_composition/evidence_trace.py
       - cns_composition/gate_chain.py
       - cns_composition/repo_gates.py
       - cns_composition/spine_trace.py

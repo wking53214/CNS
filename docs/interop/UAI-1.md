@@ -1,5 +1,6 @@
 # UAI-1: the universal AI interface, version 1
 
+> **Check of 2026-11-07.** Every test name and repository file this page cites was confirmed to exist in this repository. Claims about the outcome of earlier runs and about other repositories were not re-run or re-verified.
 UAI-1 is how two independent systems exchange a request, agree terms, disclose what was agreed, and return a
 decision the receiver can verify on its own. Neither system has to import the other, share a process, share a
 language, or give up its own rules. This document is the specification. Two implementations follow it and share no

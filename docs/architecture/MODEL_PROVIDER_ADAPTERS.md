@@ -1,5 +1,9 @@
 # CNS Model Provider Adapters
 
+> Two Anthropic clients exist in this repository. This document describes the SDK-based adapter in
+> `cns_composition/providers/anthropic.py`. The standard-library client `anthropic_complete` in `cns_interop/providers.py`
+> is the one the UAI-1 live runs of 2026-11-04 used, and it is covered by the UAI-1 documents, not this one.
+
 ## Purpose
 
 CNS provides a provider-neutral contract for model requests and responses.
@@ -83,8 +87,12 @@ The current adapter does not implement:
 - Provider-specific thinking configuration.
 - Stop-sequence arrays.
 
-Unsupported generation settings must be rejected rather than silently
+The generation settings it accepts are `temperature`, `top_p` and `top_k`
+(numeric; `top_k` must be an integer). Any other setting is rejected rather than silently
 ignored.
+
+> Checked against `cns_composition/providers/anthropic.py` and `pyproject.toml` on 2026-11-07: the optional extra
+> pins `anthropic` at 0.116.0 or later and below 1.0, and the base dependency list is empty.
 
 ## Security and responsibility boundaries
 

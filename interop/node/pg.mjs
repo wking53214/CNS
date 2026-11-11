@@ -15,16 +15,22 @@
 //     child that runs past its bound, any error: Refused('unavailable'). An ambiguous commit is 'unavailable' too, and the
 //     row may then stay held until its lease lapses, the documented model (docs/interop/CONSISTENCY.md).
 //
-// NOT HERE. Python's require_sync_replication (quorum-durable commit) is not implemented in Node: a Node receiver against a
-// standby setup gets the primary's guarantee only. The receiver's withdrawals and audit record stay in Node's local files
-// (grants.mjs); only the decision and permit ledgers are shared.
+// QUORUM. With requireSyncReplication, as Python's require_sync_replication, every call first checks, inside its own transaction,
+// that the server demands a synchronous standby (synchronous_standby_names set and synchronous_commit on or remote_apply) and
+// refuses ('unavailable', the same reason as Python) if it does not, then commits with synchronous_commit = remote_apply. A
+// COMMIT whose wait for the standby was cancelled is answered by the server with success plus a warning, which is refused
+// here exactly as Python refuses it. DIFFERENCE: Python cancels a commit that waits on the standby after statement_timeout; psql
+// cannot be told to cancel only the COMMIT, so the whole call is bounded by _boundMs and the child is killed (still
+// 'unavailable'; the primary may have committed locally and the row stays held until its lease lapses, the same model).
+//
+// The receiver's withdrawals, policy version and audit chain are in pg_policy.mjs; only the decision and permit ledgers are here.
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { MAX_INT, Refused } from "./uai.mjs";
 
-const NAME = /^[a-z_][a-z0-9_]{0,40}$/;
-const NOW_MS = "(extract(epoch from clock_timestamp()) * 1000)::bigint";
+export const NAME = /^[a-z_][a-z0-9_]{0,40}$/;
+export const NOW_MS = "(extract(epoch from clock_timestamp()) * 1000)::bigint";
 const MAX_LEASE_MS = 3600 * 1000;
 const EARLIEST_PLAUSIBLE_MS = 946684800000;   // 2000-01-01T00:00:00Z, as Python's _EARLIEST_PLAUSIBLE_MS
 
@@ -76,13 +82,13 @@ export function dsnToEnv(dsn) {
 }
 
 export class PgGuard {
-  constructor(dsn, { connectTimeoutS = 3, statementTimeoutMs = 3000, psql = "psql" } = {}) {
+  constructor(dsn, { connectTimeoutS = 3, statementTimeoutMs = 3000, psql = "psql", requireSyncReplication = false } = {}) {
     const base = dsnToEnv(dsn);
     const options = [base.PGOPTIONS, `-c statement_timeout=${statementTimeoutMs}`, `-c lock_timeout=${statementTimeoutMs}`].filter(Boolean).join(" ");
     this._env = { ...base, PGCONNECT_TIMEOUT: String(connectTimeoutS), PGOPTIONS: options };
     // the outer bound: connect, one statement, and a margin; past it the child is killed and the answer is 'unavailable'
     this._boundMs = connectTimeoutS * 1000 + 2 * statementTimeoutMs + 2000;
-    this._psql = psql;
+    this._psql = psql; this._sync = requireSyncReplication === true;
     const probe = spawnSync(psql, ["--version"], { encoding: "utf8", timeout: 5000 });
     if (probe.error || probe.status !== 0) throw new Error("PostgreSQL support in Node needs the psql client on this host (postgresql-client)");
   }
@@ -91,12 +97,40 @@ export class PgGuard {
   _run(sql, vars = {}) {
     const args = ["-X", "-q", "-A", "-t", "-F", "\t", "-v", "ON_ERROR_STOP=1"];
     for (const [k, v] of Object.entries(vars)) args.push("-v", `${k}=${v === null || v === undefined ? "" : String(v)}`);
-    const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", ...(process.env.HOME ? { HOME: process.env.HOME } : {}), ...this._env };
-    const r = spawnSync(this._psql, args, { input: `BEGIN;\n${sql}\nCOMMIT;\n`, env, encoding: "utf8", timeout: this._boundMs, killSignal: "SIGKILL" });
-    if (r.error && r.error.code === "ETIMEDOUT") throw new Refused("unavailable", "the ledger database did not answer in time");
+    // a per-call application_name, so that a call killed at the bound can be found on the server and its wait cancelled (below)
+    const appName = `${(this._env.PGAPPNAME ?? "cns-node").slice(0, 40)}-${randomBytes(8).toString("hex")}`;
+    const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", ...(process.env.HOME ? { HOME: process.env.HOME } : {}), ...this._env, PGAPPNAME: appName };
+    const script = this._sync
+      // the quorum requirement is checked in the same transaction as the work, as Python's _guard does before fn(db)
+      ? `BEGIN;\nSELECT (current_setting('synchronous_standby_names') <> '' AND current_setting('synchronous_commit') IN ('on', 'remote_apply')) AS cns_quorum \\gset\n\\if :cns_quorum\nSET LOCAL synchronous_commit = 'remote_apply';\n${sql}\n\\else\nDO $$ BEGIN RAISE EXCEPTION 'cns_quorum_not_configured'; END $$;\n\\endif\nCOMMIT;\n`
+      : `BEGIN;\n${sql}\nCOMMIT;\n`;
+    const r = spawnSync(this._psql, args, { input: script, env, encoding: "utf8", timeout: this._boundMs, killSignal: "SIGKILL", maxBuffer: 256 * 1024 * 1024 });
+    if (r.error && r.error.code === "ETIMEDOUT") {
+      this._cancelWait(appName, env);
+      throw new Refused("unavailable", "the ledger database did not answer in time");
+    }
     if (r.error) throw new Refused("unavailable", `the ledger database is unreachable (${r.error.code ?? "spawn failed"})`);
-    if (r.status !== 0) throw new Refused("unavailable", "the ledger database did not give a definite answer");
+    if (r.status !== 0) {
+      if (this._sync && String(r.stderr).includes("cns_quorum_not_configured")) throw new Refused("unavailable", "this ledger was told to require quorum-durable commits and the server is not configured for them (synchronous_standby_names and synchronous_commit)");
+      throw new Refused("unavailable", "the ledger database did not give a definite answer");
+    }
+    // PostgreSQL answers a COMMIT whose wait for the standby was cancelled with SUCCESS and a warning: the transaction is committed
+    // on THIS node and may not exist anywhere else. Taking that as "granted" is the acknowledged-write-lost failure, so it is refused.
+    if (String(r.stderr).includes("synchronous replication")) throw new Refused("unavailable", "the commit was not confirmed by the standby, so it is not treated as granted (it may be held on this node until its lease lapses)");
     return r.stdout.split("\n").filter((l) => l !== "").map((l) => l.split("\t"));
+  }
+
+  // A child killed at the bound leaves its server backend where it was: a COMMIT waiting for a synchronous standby that cannot be
+  // reached stays in that wait, holding its row, because the server does not notice the client has gone. Python cancels that
+  // wait itself (a watchdog calling cancel), after which the server completes the commit on this node and warns. This does the
+  // same from outside: it asks the server to cancel the backend that carries this call's application_name. Best effort: if it
+  // fails the backend is released when the standby returns, and the answer is 'unavailable' either way.
+  _cancelWait(appName, env) {
+    try {
+      spawnSync(this._psql, ["-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-v", `app=${appName}`],
+        { input: "SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE application_name = :'app' AND pid <> pg_backend_pid();\n",
+          env: { ...env, PGAPPNAME: "cns-node-cancel" }, encoding: "utf8", timeout: this._boundMs, killSignal: "SIGKILL" });
+    } catch { /* nothing more can be done from here */ }
   }
 
   // The database's clock, in ms: the clock every lease is judged by. A missing, malformed or implausible answer is
@@ -196,6 +230,32 @@ WHERE ${T}.state = 'leased' AND ${T}.lease_until <= ${t} RETURNING fence, lease_
 i AS (INSERT INTO ${T} (sender, id, state, expires_at, fence) SELECT :'sender', :'id', 'committed', NULLIF(:'exp', '')::bigint, 0 WHERE NOT EXISTS (SELECT 1 FROM u) ON CONFLICT DO NOTHING RETURNING 1)
 SELECT (SELECT count(*) FROM u) + (SELECT count(*) FROM i);`, { sender: r.sender, id: r.id, token: r.token, exp: r.expiresAt });
     if (n === "0") throw new Refused("lease_lost", "the message was taken by another redemption after this lease lapsed");
+  }
+
+  // The Node shape of Python's commit_in: psql keeps no caller transaction, so the caller's SQL runs in the SAME psql transaction
+  // as the commit, after it and only if it took the message: both persist or neither does (a business statement that fails
+  // rolls the spend back, and the lease lapses). `sql` may use psql variables (:'name') for `vars`; names starting with cns_ are
+  // reserved. Refused('lease_lost') without running the caller's SQL when the message was taken by another holder; any other
+  // failure is 'unavailable' (Python surfaces a business error as the driver's own error; psql cannot tell them apart).
+  commitIn(r, sql, vars = {}) {
+    const names = Object.keys(vars);
+    if (typeof sql !== "string" || !sql.trim()) throw new RangeError("commitIn takes the caller's SQL");
+    if (names.some((k) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || k.startsWith("cns_"))) throw new RangeError("variable names are identifiers and do not start with cns_");
+    const T = this._t;
+    const rows = this._run(`WITH u AS (UPDATE ${T} SET state = 'committed', token = NULL, lease_until = NULL WHERE sender = :'cns_sender' AND id = :'cns_id' AND token = :'cns_token' RETURNING 1),
+i AS (INSERT INTO ${T} (sender, id, state, expires_at, fence) SELECT :'cns_sender', :'cns_id', 'committed', NULLIF(:'cns_exp', '')::bigint, 0 WHERE NOT EXISTS (SELECT 1 FROM u) ON CONFLICT DO NOTHING RETURNING 1)
+SELECT (SELECT count(*) FROM u) + (SELECT count(*) FROM i) > 0 AS cns_won \\gset
+\\if :cns_won
+${sql}
+;
+SELECT 'committed';
+\\else
+SELECT 'lease_lost';
+\\endif`, { cns_sender: r.sender, cns_id: r.id, cns_token: r.token, cns_exp: r.expiresAt, ...vars });
+    if (rows.length === 0 || rows[rows.length - 1][0] !== "committed") {
+      if (rows.length && rows[rows.length - 1][0] === "lease_lost") throw new Refused("lease_lost", "the message was taken by another redemption after this lease lapsed");
+      throw new Refused("unavailable", "the ledger database did not give a definite answer");
+    }
   }
 
   release(r) {

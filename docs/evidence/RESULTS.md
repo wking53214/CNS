@@ -1,5 +1,9 @@
 # Schema prediction test: results
 
+> **Status check of 2026-11-07.** The arithmetic in this file was re-checked: the held-out and control totals, the
+> separation ratios, the 56-token final vocabulary and the 18 training repositories all agree with the tables. The
+> measurements themselves came from a library that is not in this repository, and the run was not repeated. The
+> library path shown (`/home/user/lib`) is the run machine's path, not a path this repository can use.
 Library: `/home/user/lib`. Train repos: 18 (ANVIL, AUGUR, CCC, Conservation_Kernel, EDDP, Ecology, GRAPH, GSA-815, GSA-Master-Kernel, OBSERVE, TIE, VANGUARD, content-polish-pipeline, fortress-kernel, ghost_tools, observe-perceive, sentinel_os, synapsis). Held out: 7 (innovation_os, ATS, GEMS, Triad-42, HERALD, Governance_Gateway, CITADEL).
 Spine: 63 class names defined in 3+ train repos. Control: 12 third-party packages, 4,379 classes.
 

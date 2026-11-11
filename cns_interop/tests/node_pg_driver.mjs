@@ -7,7 +7,7 @@ import * as P from "../../interop/node/pg.mjs";
 const job = JSON.parse(readFileSync(0, "utf8"));
 const out = [];
 let L;
-try { L = new P.PostgresLedger(process.env[job.dsn_env] ?? "", { table: job.table, ...(job.psql ? { psql: job.psql } : {}), ...(job.allow_caller_time ? { allowCallerTime: true } : {}) }); }
+try { L = new P.PostgresLedger(process.env[job.dsn_env] ?? "", { table: job.table, ...(job.psql ? { psql: job.psql } : {}), ...(job.allow_caller_time ? { allowCallerTime: true } : {}), ...(job.opts ?? {}) }); }
 catch (e) { console.log(JSON.stringify([{ code: e.code ?? "config", reason: e.reason ?? e.message }])); process.exit(0); }
 const held = {};
 for (const [i, [op, ...a]] of job.ops.entries()) {
@@ -16,6 +16,10 @@ for (const [i, [op, ...a]] of job.ops.entries()) {
     else if (op === "reserve") { const r = L.reserve(a[0], a[1], a[2] ?? null, { leaseMs: a[3] }); held[i] = r; out.push({ ok: { fence: r.fence, leaseUntil: r.leaseUntil } }); }
     else if (op === "commit") { L.commit(held[a[0]]); out.push({ ok: true }); }
     else if (op === "release") { L.release(a[1] ? { ...held[a[0]], token: "f".repeat(32) } : held[a[0]]); out.push({ ok: true }); }
+    else if (op === "commit_in") {
+      try { L.commitIn(held[a[0]], a[1], a[2] ?? {}); out.push({ ok: true }); }
+      catch (e) { if (e instanceof RangeError) out.push({ code: "caller_error", reason: e.message }); else throw e; }   // a caller error, apart from the generic "error"
+    }
     else if (op === "sleep") { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a[0]); out.push({ ok: true }); }
     else if (op === "server_now") { out.push({ ok: L.serverNowMs() }); }
     else if (op === "check_clock") { out.push({ ok: L.checkClock(a[0], { clock: () => Date.now() + (a[1] ?? 0) }) }); }

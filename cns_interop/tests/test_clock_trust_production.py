@@ -150,7 +150,7 @@ def test_node_enforces_the_production_profile_as_python_does_and_creates_no_stat
     assert refused(local_policy) == (2, "config") and "host-local" in local_policy[1]["refused"]["reason"] and no_state(tmp_path / "b")
     pg_policy = run_receiver("node", tmp_path / "c", [*node_local_args(tmp_path / "c", pg), "--policy-backend", "postgres"], act_job(),
                              cluster.dsn, env_extra=PRODUCTION)
-    assert refused(pg_policy) == (2, "config") and "not implemented" in pg_policy[1]["refused"]["reason"] and no_state(tmp_path / "c")
+    assert refused(pg_policy) == (2, "config") and "do not give --grant-store or --audit" in pg_policy[1]["refused"]["reason"] and no_state(tmp_path / "c")
     no_clock = run_receiver("node", tmp_path / "d", [*BASE, *pg, "--decision-only"], act_job(), cluster.dsn, env_extra=PRODUCTION)
     assert refused(no_clock) == (2, "config") and "--max-clock-skew-ms" in no_clock[1]["refused"]["reason"]
     ok = run_receiver("node", tmp_path / "e", [*BASE, *pg, "--decision-only", "--max-clock-skew-ms", "5000"], act_job(), cluster.dsn,
