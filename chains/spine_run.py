@@ -21,12 +21,23 @@ swapped under a copied fingerprint) and state, as an `Expect` (see
 A scenario fails if a required problem is missing, if an unlisted problem appears, if it returns nothing when it
 should be refused, if it crashes without declaring it (a SystemExit or KeyboardInterrupt is a crash of that scenario and
 never ends the run), if a refusal's text came back without a refusal having been recorded, or if a refusal changed the
-state it guarded (the whole content of every entry, not only its hash). Eight scenarios, marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
+state it guarded (the whole content of every entry, not only its hash). Thirteen scenarios, marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
 recomputes every digest and fingerprint and writes a consistent receipt), a receipt written by hand over real contents
 with no ledger behind it, a narrative forged by someone who also recomputes the keyless content fingerprint, a Decision
 citing a closed lock, a legacy lock result with no entity id, a KeySet swapped under a copied fingerprint when no
 recomputation is supplied, a sink whose own store keeps a write the ledger does not have (delta's idempotency
-contract), and a rewritten ledger given a fresh checkpoint when no checkpoint is held outside it (`held_checkpoint`). They go red the day the gap closes and are then updated on purpose.
+contract), and a rewritten ledger given a fresh checkpoint when no checkpoint is held outside it (`held_checkpoint`), and, with the
+signed receipts and the durable store, a holder of a trusted key signing a forged receipt, an older signed checkpoint (a signature
+carries no freshness) and a ledger rolled back to an older complete signed package. They go red the day the gap closes and are then
+updated on purpose.
+
+Three groups were added with the signing hook, delta's file store and the verify command. `signed:` signs the receipt through
+delta's `sign_receipt` with the reference keys of `receipt_keys.py` (a trust list, a revocation set, rotation) and asks CNS's
+`strict_problems` with `receipt_signature`, `verify_receipt_signature` and `require_signed_receipt`; one scenario holds CNS's
+`receipt_signing_input` byte-equal to delta's. `store:` runs a producer and a fresh consumer as separate processes
+(`store_worker.py`) through `FileLedgerStore`, with the checkpoint in a directory of its own, signed. `package:` runs
+`make_package.py` and `verify_package.py` as separate processes, end to end. Their refusals carry the named reason of the
+process that refused, and the files they guard are compared byte for byte before and after.
 
 The run also attacks the receipt itself (zeroed heads, an index beyond the ledger or the checkpoint, another entry's
 hashes, a lying str-subclass digest or head, a key that only prints like a field name) starting from the receipt delta

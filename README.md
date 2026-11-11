@@ -248,15 +248,18 @@ the strict check takes, and what each part is worth:
 
 Recorded limits, none of them hidden, each one a scenario marked GAP or stated here:
 
-1. There is no authorship key. Contents made up by someone who recomputes every digest and fingerprint (all public and
+1. There is no authorship key in CNS. Contents made up by someone who recomputes every digest and fingerprint (all public and
    keyless) and writes a consistent receipt pass unless the caller requires a signed receipt and trusts only the real key
-   (`require_signed_receipt`), so an unsigned receipt detects mistakes and partial forgeries, not an author.
+   (`require_signed_receipt`), so an unsigned receipt detects mistakes and partial forgeries, not an author. The signature
+   closes the forged-receipt gap only for a verifier that trusts only real keys (limit 8).
 2. `LockResult` fields (`keyset_fingerprint`, `stale`, `entity_id`) are caller-settable, and an empty `entity_id` is
    accepted as legacy: a lock result for another entity with the id stripped is decided. Beta refuses one that names
    another entity.
-3. Checkpoint custody and file durability are not implemented. Delta's ledger is in memory, nothing survives a restart,
-   and a checkpoint is only as trustworthy as the place its holder keeps it. A ledger with no context does not check
-   fingerprints at append; its entries cannot be bound to a run.
+3. CNS holds no checkpoint, no ledger and no storage. Delta has a file store and a checkpoint store (a process kill is
+   tested, with a real `SIGKILL`; an OS crash or power loss is not), but a checkpoint is only as trustworthy as the place its
+   holder keeps it: one kept in the same directory as the ledger file is not independent, because whoever can rewrite one
+   can rewrite the other and the two then agree (limit 10). A ledger with no context does not check fingerprints at
+   append; its entries cannot be bound to a run.
 4. `content_fingerprint` is keyless: a forger who rewrites a narrative and recomputes it (its function is public) passes.
 5. `origin` is the producer's own claim; CNS checks its form and order only.
 6. A Decision records the union of the locks its rule cited, not which the rule required open and which closed, so a
@@ -266,17 +269,34 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
    ledger does not have (a scenario shows it). Delta's contract: the sink must be idempotent, keyed by the entry's hash, and
    the caller reconciles; a retry hands it the same entry. And an unsigned receipt written by hand with fields that fit
    each other (limit 1) passes: only where the checkpoint is kept, or a signature the deployer's key made, tells it from delta's.
+8. A signature says who vouched, not that the ledger is real. With `require_signed_receipt` and a verifier that trusts only
+   the deployer's real keys, a hand-built receipt is refused; a holder of a trusted key can still sign a receipt for a ledger
+   that does not exist (a `signed: GAP` scenario), and the keys, the trust list, rotation and revocation are the deployer's,
+   outside CNS. A key identifier is a label, not a secret.
+9. A signature carries no freshness. An older, complete, validly signed package (checkpoint, receipt signature, contents)
+   put back with the ledger file cut to match verifies and yields a root for the older state, and an older signed
+   checkpoint over a longer ledger is reported by delta's `reconcile` as `UNWITNESSED_TAIL`, not refused (two `store: GAP`
+   scenarios). A counter, a clock or a monitor that remembers the newest checkpoint is the deployer's.
+10. Independence is the caller's. `held_checkpoint`, delta's `reconcile` and `verify_package.py` are only as strong as the
+   storage the checkpoint came from, and the trust list the keys came from. A checkpoint beside the ledger file it protects,
+   or a trust list from the producer, agrees with whatever the producer wrote.
 
-The `chains` workflow runs 113 scenarios: seven lenient, and 106 more (the strict ones, the oracle and the manifest checks
-held to account with real objects). Of the 113 in all, 21 are checks that hold, 82 are attacks
+The `chains` workflow runs 151 scenarios (counted from the runner): seven lenient, and 144 more (the strict ones, the oracle and
+the manifest checks held to account with real objects, the signed receipts, the durable store and the verify command). Of the
+151 in all, 30 are checks that hold, 108 are attacks
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
 only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
 that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
-change), and the ten gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
+change), and the thirteen gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
 fingerprint, a cited closed lock, a legacy lock result, a KeySet swapped when no recomputation is supplied, the sink's
-own store, and a rewritten ledger with a fresh checkpoint when none is held outside it, a truncated export and a rewritten, rechained export
-when no checkpoint is held outside, limit 10); 13 of the 106 verify delta's public `export` with `verify_export` and a checkpoint held
-outside the ledger, or follow zeta's entity check. The scenarios attack the receipt itself
+own store, a rewritten ledger with a fresh checkpoint when none is held outside it, a truncated export and a rewritten, rechained export
+when no checkpoint is held outside, a holder of a trusted key signing a forged receipt, an older signed checkpoint, and a
+ledger rolled back to an older signed package: limits 1, 8 and 9); 13 of the first 106 verify delta's public `export` with `verify_export` and a checkpoint held
+outside the ledger, or follow zeta's entity check. Twelve scenarios (`signed:`) sign the receipt through delta's hook with the
+reference keys of `chains/receipt_keys.py` and hold the trust list, revocation, rotation, an edit of each of ten fields after
+signing, and the byte-equality of CNS's and delta's signing inputs; ten (`store:`) run a producer and a fresh consumer as
+separate processes through delta's file store and a separately kept signed checkpoint, including a `SIGKILL`; fifteen
+(`package:`) run `make_package.py` and `verify_package.py` as two processes. The scenarios attack the receipt itself
 from delta's real one, and delta's refusal of a checkpoint (one sentence for five causes) is explained by the runner's own
 wrapper so each scenario requires its own cause. A scenario table row must be an `Expect`; a plain string is a `TypeError`
 when the script loads.
