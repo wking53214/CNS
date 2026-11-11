@@ -220,7 +220,9 @@ the strict check takes, and what each part is worth:
   deployer hands CNS `verify_receipt_signature`, a callable(signing_input, signature) -> bool built from the keys it
   trusts; CNS holds no key, no trust list and no crypto, calls it once per evaluation, and counts only the answer `True`.
   Each of these is a named problem: a signature without a verifier, a verifier that raises or answers anything but `True`
-  ("receipt signature does not verify"), a malformed signature, and `require_signed_receipt=True` with no signature. A root
+  ("receipt signature does not verify"), a malformed signature, a verifier supplied with no signature (with or without `require_signed_receipt`: supplying
+  one says the receipt is meant to be authentic, so stripping the signature is not a downgrade), and
+  `require_signed_receipt=True` with no signature and no verifier. A root
   issued with a verified signature records it and differs from the unsigned root of the same receipt. With
   `require_signed_receipt=True` and a verifier that trusts only the real key, a hand-built consistent receipt is refused,
   because its author cannot sign it. What remains: a holder of the key can sign a receipt for a ledger that does not exist
@@ -325,15 +327,18 @@ protects is not independent; the consumer must be given it from storage the prod
 envelope (`key_id:` then the signature) are the reference deployer's in `chains/receipt_keys.py`, not delta's or CNS's.
 Run from a checkout with the four spine repositories importable (the same `PYTHONPATH` the runner uses).
 
-Exit codes: `0` verified, with one line (`verified: root=... entries=N checkpoint=N receipt_signature=verified|absent`); `1`
+Exit codes: `0` verified, with one line (`verified: root=... entries=N checkpoint=N receipt_signature=verified`, or `absent (allowed)` under `--allow-unsigned`); `1`
 refused, each named problem on stderr; `2` a usage error or an input that cannot be read (a missing file, text that is not
 JSON, a trust file of the wrong shape). The command reads the checkpoint with delta's `CheckpointStore` (its signature is
 verified under `--require-signed`, and whenever the file carries one), rebuilds the ledger with `delta.verify_export` against
 that checkpoint, asks delta for the receipt it would issue for that ledger and requires `receipt.json` to equal it, and then
 runs `strict_problems` on the four contents with that receipt, the checkpoint as `held_checkpoint`, zeta's own KeySet
-fingerprint rule (built from the real Zeta classes) and the receipt signature checked against the trust list. Without
-`--require-signed` a package with no signature verifies and says `receipt_signature=absent`; a signature that is present must
-verify either way.
+fingerprint rule (built from the real Zeta classes) and the receipt signature checked against the trust list. The
+receipt must be signed: a package with no `signature.json` is refused (exit 1, naming why) unless `--allow-unsigned` is
+passed, in which case it verifies and the summary says `receipt_signature=absent (allowed)`. A signature that is present
+must verify either way, and `--require-signed` (which also requires a signed checkpoint) cannot be combined with
+`--allow-unsigned`. CNS itself behaves the same way: `verify_receipt_signature` supplied without a `receipt_signature` is a
+named problem ("a verifier was supplied but the receipt has no signature"), with or without `require_signed_receipt`.
 
 What a pass does prove: the four stages' contents agree with each other and with the receipt; the ledger in the export is
 intact and contains the history the checkpoint names; and a holder of a trusted, unrevoked key signed that receipt. That is

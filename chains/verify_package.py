@@ -1,9 +1,12 @@
 """Verify a package made by `make_package.py`, from files alone: it trusts no object the producer ran.
 
-    python chains/verify_package.py PACKAGE_DIR --checkpoint CHECKPOINT_FILE --public-keys TRUST_JSON [--require-signed]
+    python chains/verify_package.py PACKAGE_DIR --checkpoint CHECKPOINT_FILE --public-keys TRUST_JSON [--require-signed | --allow-unsigned]
 
 Exit 0: verified, with a one-line summary carrying the root. Exit 1: refused, every named problem on stderr. Exit 2: usage
 error or an input that cannot be read (a missing file, text that is not JSON, a trust file of the wrong shape).
+
+The receipt must be signed: a package with no signature.json is refused (exit 1, naming why) unless `--allow-unsigned` is
+passed, and then the summary says `receipt_signature=absent (allowed)`. A signature that is present must always verify.
 
 What it does, in order, and stops at the first step that cannot go on:
   1. reads the checkpoint with Delta's `CheckpointStore` from CHECKPOINT_FILE, which must live outside the package. Its
@@ -72,7 +75,11 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--checkpoint", required=True, help="the checkpoint file, kept outside the package")
     ap.add_argument("--public-keys", required=True, help="the trust list: JSON of public keys and revoked key ids")
     ap.add_argument("--require-signed", action="store_true", help="the checkpoint and the receipt must both carry a verifying signature")
+    ap.add_argument("--allow-unsigned", action="store_true",
+                    help="accept a package that has no receipt signature (a signature that is present must still verify)")
     a = ap.parse_args(argv)  # a usage error exits 2
+    if a.allow_unsigned and a.require_signed:
+        ap.error("--allow-unsigned and --require-signed contradict each other")
 
     export = read_json(os.path.join(a.package, "export.json"))
     receipt = read_json(os.path.join(a.package, "receipt.json"))
@@ -124,16 +131,19 @@ def main(argv: List[str]) -> int:
             signature = bytes.fromhex(signature_file["receipt_signature"])
         except (KeyError, TypeError, ValueError):
             problems.append('signature.json is not {"receipt_signature": <hex>}')
+    allowed_absent = signature_file is None and a.allow_unsigned
+    if signature_file is None and not a.allow_unsigned:
+        problems.append("the package has no signature.json, so its receipt is unsigned; pass --allow-unsigned to accept that")
     kw: Dict[str, Any] = dict(
         chain=receipt, held_checkpoint=(checkpoint.length, checkpoint.head), keyset_fingerprint_of=zeta_keyset_fingerprint,
-        require_keyset_verifier=True, receipt_signature=signature, verify_receipt_signature=verify,
+        require_keyset_verifier=True, receipt_signature=signature, verify_receipt_signature=None if allowed_absent else verify,
         require_signed_receipt=a.require_signed)
     problems += strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
     if problems:
         refuse(problems)
     root = strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
     print(f"verified: root={root} entries={len(ledger)} checkpoint={checkpoint.length} "
-          f"receipt_signature={'verified' if signature is not None else 'absent'}")
+          f"receipt_signature={'verified' if signature is not None else 'absent (allowed)'}")
     return 0
 
 

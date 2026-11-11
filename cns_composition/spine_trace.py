@@ -222,6 +222,7 @@ FINGERPRINT_NOT_RECOMPUTED = "alpha's KeySet fingerprint does not match a recomp
 RECEIPT_SIGNATURE_DOMAIN = b"delta-ledger-receipt-signature/1\n"
 RECEIPT_SIGNATURE_BAD = "receipt signature does not verify"
 RECEIPT_SIGNATURE_NO_VERIFIER = ("a receipt signature was given without a verify_receipt_signature, so it was not verified")
+RECEIPT_SIGNATURE_VERIFIER_NO_SIGNATURE = "a verifier was supplied but the receipt has no signature"
 RECEIPT_SIGNATURE_REQUIRED = "require_signed_receipt is set and no receipt signature was given"
 RECEIPT_SIGNATURE_NOT_BYTES = "receipt_signature must be a non-empty bytes (exact type); got {got}"
 RECEIPT_SIGNATURE_VERIFIER_NOT_CALLABLE = "verify_receipt_signature must be callable; got {got}"
@@ -351,8 +352,9 @@ def strict_problems(
     that evaluation; nothing is remembered, as with `keyset_fingerprint_of`). Only the answer `True` counts: an exception, `False` or any
     other value is the problem "receipt signature does not verify". Each of these is a named problem: a signature without
     a verifier, a verifier that is not callable, a signature that is not an exact non-empty `bytes`, a signature with no
-    receipt, a receipt that cannot be put into signing form, and `require_signed_receipt=True` with no signature (a verifier
-    given with no signature, and no requirement, is not asked). A root issued with a verified signature records the digest
+    receipt, a receipt that cannot be put into signing form, a verifier supplied with no signature (with or
+    without `require_signed_receipt`; the verifier is not asked), and `require_signed_receipt=True` with no signature and no
+    verifier. A root issued with a verified signature records the digest
     of the signing input and of the signature in its domain, so it differs from the root of the same receipt unsigned;
     an unsigned root is unchanged.
 
@@ -679,6 +681,8 @@ def _signature_problems(receipt: Any, signature: Any, verifier: Any, required: b
     verify: an exception, `False`, or any truthy value that is not `True` all mean it did not. The signing input is computed
     once; when `signing` is given the bytes that were verified are left in it, so a root records exactly those bytes."""
     if signature is None:
+        if verifier is not None:  # supplying a verifier says the receipt is meant to be authentic: no signature is no downgrade
+            return [RECEIPT_SIGNATURE_VERIFIER_NO_SIGNATURE]
         return [RECEIPT_SIGNATURE_REQUIRED] if required else []
     if type(signature) is not bytes or not signature:
         return [RECEIPT_SIGNATURE_NOT_BYTES.format(got="an empty bytes" if type(signature) is bytes else type(signature).__name__)]

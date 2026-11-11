@@ -1698,6 +1698,7 @@ def the_reference_keys_sign_verify_rotate_and_revoke() -> List[str]:
 DEPLOYER_KEY, NEW_KEY, STRANGER_KEY = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
 BAD_SIGNATURE = spine_trace.RECEIPT_SIGNATURE_BAD
 SIGNATURE_REQUIRED = spine_trace.RECEIPT_SIGNATURE_REQUIRED
+VERIFIER_NO_SIGNATURE = spine_trace.RECEIPT_SIGNATURE_VERIFIER_NO_SIGNATURE
 
 
 def deployer_verifier(*, also=(), revoked=()):
@@ -1749,6 +1750,17 @@ def a_receipt_signed_by_the_deployer_is_verified_and_a_root_issued() -> List[str
 def an_unsigned_receipt_is_refused_when_a_signature_is_required() -> List[str]:
     p, receipt, _ = signed_run()
     return signed_check(p, receipt, None, deployer_verifier())
+
+
+def a_verifier_without_a_signature_is_refused_without_the_requirement() -> List[str]:
+    """Supplying the verifier says the receipt is meant to be authentic: stripping the signature is not a downgrade."""
+    p, receipt, _ = signed_run()
+    return signed_check(p, receipt, None, deployer_verifier(), required=False)
+
+
+def a_requirement_with_no_verifier_and_no_signature_is_refused() -> List[str]:
+    p, receipt, _ = signed_run()
+    return signed_check(p, receipt, None, None, required=True)
 
 
 def a_hand_built_consistent_receipt_with_no_delta_call_and_no_key_is_refused() -> List[str]:
@@ -2240,7 +2252,7 @@ def refused_package(*makes: Tuple[str, ...], attack: Callable[..., Tuple[Tuple[s
 
 
 SIGNED = ("--require-signed",)
-SUMMARY = re.compile(r"verified: root=[0-9a-f]{64} entries=3 checkpoint=3 receipt_signature=(verified|absent)")
+SUMMARY = re.compile(r"verified: root=[0-9a-f]{64} entries=3 checkpoint=3 receipt_signature=(verified|absent \(allowed\))")
 
 
 def an_honest_package_verifies_in_another_process() -> List[str]:
@@ -2253,11 +2265,19 @@ def an_honest_package_verifies_in_another_process() -> List[str]:
             out.append(f"an honest signed package did not verify with --require-signed: exit {done.returncode} {line!r} {done.stderr.strip()}")
         if signed.verify().stdout.strip() != line:
             out.append("the same package verified without --require-signed gives a different root or summary")
+        if signed.verify("--allow-unsigned").stdout.strip() != line:
+            out.append("--allow-unsigned changed the verdict on a package whose receipt IS signed")
+        if signed.verify("--allow-unsigned", "--require-signed").returncode != 2:
+            out.append("--allow-unsigned together with --require-signed was not a usage error (exit 2)")
         if signed.state() != before:
             out.append("verifying changed a file")
-        weaker = unsigned.verify()
-        if weaker.returncode != 0 or not weaker.stdout.strip().endswith("receipt_signature=absent"):
-            out.append(f"an unsigned package did not verify without --require-signed, saying so: exit {weaker.returncode} {weaker.stdout!r}")
+        default = unsigned.verify()
+        if default.returncode != 1 or "no signature.json" not in default.stderr or default.stdout.strip():
+            out.append(f"an unsigned package was not refused by default, naming why: exit {default.returncode} {default.stderr.strip()!r}")
+        weaker = unsigned.verify("--allow-unsigned")
+        if weaker.returncode != 0 or not SUMMARY.fullmatch(weaker.stdout.strip()) \
+                or not weaker.stdout.strip().endswith("receipt_signature=absent (allowed)"):
+            out.append(f"an unsigned package did not verify with --allow-unsigned, saying so: exit {weaker.returncode} {weaker.stdout!r}")
         if unsigned.verify(*SIGNED).returncode != 1:
             out.append("an unsigned package was accepted under --require-signed")
     return out
@@ -2309,6 +2329,15 @@ def a_substituted_checkpoint_of_another_ledger(a: Package, b: Package):
 
 def a_receipt_signature_that_is_missing(a: Package):
     return SIGNED, {}
+
+
+def a_receipt_signature_that_is_missing_with_no_flag(a: Package):
+    return (), {}
+
+
+def a_bad_receipt_signature_under_allow_unsigned(a: Package):
+    a.edit_trust(lambda trust, revoked: trust.update(k2=Ed25519PrivateKey.generate().public_key()))
+    return ("--allow-unsigned",), {}
 
 
 def a_checkpoint_signature_that_is_missing(a: Package):
@@ -2648,9 +2677,13 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("signed: an honest receipt is verified and a root is issued, different from the unsigned root",
      a_receipt_signed_by_the_deployer_is_verified_and_a_root_issued, CLEAN),
     ("signed: an unsigned receipt is refused when a signature is required", an_unsigned_receipt_is_refused_when_a_signature_is_required,
-     Expect("problems", required=(SIGNATURE_REQUIRED,))),
+     Expect("problems", required=(VERIFIER_NO_SIGNATURE,))),
+    ("signed: a verifier without a signature is refused even without the requirement",
+     a_verifier_without_a_signature_is_refused_without_the_requirement, Expect("problems", required=(VERIFIER_NO_SIGNATURE,))),
+    ("signed: the requirement with no verifier and no signature is refused",
+     a_requirement_with_no_verifier_and_no_signature_is_refused, Expect("problems", required=(SIGNATURE_REQUIRED,))),
     ("signed: a hand-built consistent receipt with no delta call and no key is refused",
-     a_hand_built_consistent_receipt_with_no_delta_call_and_no_key_is_refused, Expect("problems", required=(SIGNATURE_REQUIRED,))),
+     a_hand_built_consistent_receipt_with_no_delta_call_and_no_key_is_refused, Expect("problems", required=(VERIFIER_NO_SIGNATURE,))),
     ("signed: a receipt signed by an untrusted key", a_receipt_signed_by_an_untrusted_key, Expect("problems", required=(BAD_SIGNATURE,))),
     ("signed: a receipt signed by a key that claims the deployer's id", a_receipt_signed_by_a_key_claiming_the_deployers_id,
      Expect("problems", required=(BAD_SIGNATURE,))),
@@ -2684,7 +2717,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("store: GAP, an older signed checkpoint carries no freshness", GAP_an_older_signed_checkpoint_is_accepted_as_an_unwitnessed_tail, GAP),
     ("store: GAP, a ledger rolled back to an older signed package", GAP_a_ledger_rolled_back_to_an_older_signed_package_is_accepted, GAP),
     # --- the verify command: make_package.py and verify_package.py as two processes, files only between them ---
-    ("package: an honest package verifies in another process; an unsigned one only without --require-signed",
+    ("package: an honest package verifies in another process; an unsigned one only with --allow-unsigned",
      an_honest_package_verifies_in_another_process, CLEAN),
     ("package: altered contents", lambda: refused_package((), attack=altered_contents),
      Expect("refused", required=("verify_package refused (exit 1)", "the Decision delta recorded differs from beta's in: instructions"), raises=("ValueError",))),
@@ -2701,7 +2734,11 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("package: a substituted checkpoint, of another ledger", lambda: refused_package((), ("--run-offset", "10"), attack=a_substituted_checkpoint_of_another_ledger),
      Expect("refused", required=("verify_package refused (exit 1)", 'the ledger export is refused:', 'does not contain the history the held checkpoint recorded'), raises=("ValueError",))),
     ("package: no receipt signature under --require-signed", lambda: refused_package(("--no-receipt-signature",), attack=a_receipt_signature_that_is_missing),
-     Expect("refused", required=("verify_package refused (exit 1)", 'require_signed_receipt is set and no receipt signature was given'), raises=("ValueError",))),
+     Expect("refused", required=("verify_package refused (exit 1)", 'a verifier was supplied but the receipt has no signature'), raises=("ValueError",))),
+    ("package: no receipt signature and no flag is refused, naming why", lambda: refused_package(("--no-receipt-signature",), attack=a_receipt_signature_that_is_missing_with_no_flag),
+     Expect("refused", required=("verify_package refused (exit 1)", 'no signature.json', '--allow-unsigned'), raises=("ValueError",))),
+    ("package: --allow-unsigned does not excuse a signature that is there and wrong", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_bad_receipt_signature_under_allow_unsigned),
+     Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
     ("package: no checkpoint signature under --require-signed", lambda: refused_package(("--no-checkpoint-signature",), attack=a_checkpoint_signature_that_is_missing),
      Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint is not signed but a signature check was asked for'), raises=("ValueError",))),
     ("package: a receipt signed by the wrong key under a trusted id", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_receipt_key_that_is_the_wrong_key),

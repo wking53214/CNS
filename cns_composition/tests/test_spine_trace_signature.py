@@ -243,7 +243,7 @@ def test_a_verifier_that_is_not_callable_is_a_named_problem():
 def test_require_signed_receipt_without_a_signature_is_a_named_problem():
     parts, receipt = run()
     out = problems(parts, receipt, verify_receipt_signature=VERIFY, require_signed_receipt=True)
-    assert any("require_signed_receipt is set and no receipt signature was given" in p for p in out)
+    assert any("a verifier was supplied but the receipt has no signature" in p for p in out)
     with pytest.raises(ValueError, match="require_signed_receipt"):
         root(parts, receipt, require_signed_receipt=True)
 
@@ -342,9 +342,10 @@ def test_an_honest_unsigned_run_is_unchanged():
 def test_a_verifier_with_no_signature_and_no_requirement_changes_nothing():
     parts, receipt = run()
     asked = []
-    assert problems(parts, receipt, verify_receipt_signature=lambda i, s: asked.append(1) or True) == []
+    assert problems(parts, receipt, verify_receipt_signature=lambda i, s: asked.append(1) or True) == ["a verifier was supplied but the receipt has no signature"]
     assert asked == []
-    assert root(parts, receipt, verify_receipt_signature=VERIFY) == root(parts, receipt)
+    with pytest.raises(ValueError, match="a verifier was supplied but the receipt has no signature"):
+        root(parts, receipt, verify_receipt_signature=VERIFY)
 
 
 def test_a_hand_built_consistent_receipt_without_the_key_is_refused_under_the_requirement():
@@ -356,7 +357,7 @@ def test_a_hand_built_consistent_receipt_without_the_key_is_refused_under_the_re
     forged = receipt_for(parts)  # built by hand from the contents alone: no ledger exists behind it
     assert problems(parts, forged) == []  # the recorded gap, still true without a signature
     out = problems(parts, forged, verify_receipt_signature=VERIFY, require_signed_receipt=True)
-    assert any("require_signed_receipt is set" in p for p in out)
+    assert any("a verifier was supplied but the receipt has no signature" in p for p in out)
     attacker_sig = signed(forged, STRANGER)
     out = problems(parts, forged, receipt_signature=attacker_sig, verify_receipt_signature=VERIFY,
                    require_signed_receipt=True)
@@ -431,3 +432,22 @@ def test_a_planted_non_string_context_is_a_named_problem_not_a_type_error():
     assert any("cannot be put into signing form" in p for p in found)
     with pytest.raises(ValueError, match="cannot be put into signing form"):
         root(parts, bad, receipt_signature=signature, verify_receipt_signature=VERIFY)
+
+
+def test_a_verifier_without_a_signature_is_a_named_problem_whether_or_not_a_signature_is_required():
+    parts, receipt = run()
+    for required in (False, True):
+        asked = []
+        out = problems(parts, receipt, verify_receipt_signature=lambda i, s: asked.append(1) or True,
+                       require_signed_receipt=required)
+        assert out == ["a verifier was supplied but the receipt has no signature"]
+        assert asked == []
+        with pytest.raises(ValueError, match="a verifier was supplied but the receipt has no signature"):
+            root(parts, receipt, verify_receipt_signature=VERIFY, require_signed_receipt=required)
+
+
+def test_require_signed_receipt_alone_still_names_its_own_problem():
+    parts, receipt = run()
+    assert problems(parts, receipt, require_signed_receipt=True) == [
+        "require_signed_receipt is set and no receipt signature was given"]
+    assert problems(parts, receipt) == []
