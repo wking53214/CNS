@@ -19,10 +19,11 @@ entry says so.
 
 Nothing yet.
 
-## [2.4.0] - 2026-11-05 (not yet tagged)
+## [2.4.0] - 2026-11-11
 
 The work merged to `main` after the `v2.3.0` tag (`41592fb`), plus the independent review's fixes. A minor version, by
-the owner's decision of 2026-11-05: it added a package (UAI-1) that has since moved to its own repository (see Moved),
+the owner's decision of 2026-11-05, tagged `v2.4.0` by the owner on 2026-11-11, an annotated tag at
+`2736deecd6dce60e6cbfe18b8f2869856388c010` (the merge of #127): it added a package (UAI-1) that has since moved to its own repository (see Moved),
 strengthens the strict decision-spine check, adds optional arguments to `SuperGate.decide` and `DecisionGuard`, fixes
 one command that failed its own test, and tightens a few checks for input that was already wrong (see Changed). One
 behaviour change is a refusal that was an acceptance at `v2.3.0`: `subject_digest` no longer digests a `bytearray`,
