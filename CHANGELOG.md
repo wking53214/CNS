@@ -17,6 +17,41 @@ entry says so.
 
 ## [Unreleased]
 
+- **Release note for the owner (not decided here).** This section holds one change that refuses input 3.0.0 accepted:
+  `subject_digest` refuses a `Mapping` that is not a `dict` and a `Sequence` that is not a `list` or `tuple` (Step 2,
+  N8, below). Under the rule `tests/test_public_shape.py` states (a meaning change is a major version), the next
+  release is 4.0.0, unless the owner records why it is minor (for example: no caller passed one, which the scan below
+  that entry found). Until then `pyproject.toml` stays 3.0.0.
+- README: the banner, the "newest tag" sentence and the spine-repository status section now describe v3.0.0, the
+  measurements of 2026-11-11 at `27b0bad` (2150 tests; spine runner 164 of 164; evidence spine 56, 3 GAPs), that the
+  3.0.0 move is in progress, and why `pip install -r contracts/install-stack.txt` does not resolve until the circuit
+  is re-pinned. `tests/test_release_prose.py` holds those sentences and the CNS status row to
+  `contracts/cns-releases.json` and checks that every path the current documents cite exists here or is said to be in
+  UAI-2 (on the README before this change, four of its five tests fail).
+- `contracts/DIGEST.md`: the subject digest written out for an implementer, with the float text as an exact rule
+  instead of "Python repr" (a JavaScript `String(x)` gives `1e-7` and `100`), and a warning that a JSON reader which
+  turns `1.0` into `1` gets a different digest. The vectors file is unchanged.
+- `conformance/independent_consumer/digest.py`: a stdlib-only consumer written from `DIGEST.md`.
+  `tests/test_independent_consumer.py` runs it under `python -I` with an import hook that refuses `cns`: 38 of 38
+  vectors agree, the five refusals that can arrive as JSON are refused, and its float text equals CPython's `repr` on
+  20 edge cases and 40,000 sampled doubles. It was written here, in Python; a third-party implementation is not proven.
+- The `chains` workflow runs `chains/node_digest_agreement.py`: UAI-2's Node digest, read through UAI-2's own strict
+  reader, against the vectors (27 agree, 10 refused, 1 digested alike within UAI-1's depth limit, 0 different, at UAI-2
+  `7745e59`), and runs on changes to `contracts/digest-vectors.json`.
+- `chains/evidence_spine.py`: the root-guard and evidence-guard GAP labels say the kernel was built with the explicit
+  `allow_unguarded_*` opt-out, and each GAP names its owner. `test_decision_guard_limits.py` records DecisionGuard's
+  limits as assertions: one spend per process, a second copy of the module has its own spent set, a Decision carried
+  to another process is refused there.
+- Fixes from an independent review of the above: the Node digest check runs in its own `chains` job
+  (`digest-second-language`), after proving it fails a stub that digests wrongly; `test_decision_guard_limits.py` adds
+  a LIMIT for `os.fork` (a forked child spends a decision again); `DIGEST.md` adds duplicate-key, size and depth rules
+  and says any domain value renders; the consumer refuses duplicate keys.
+- `docs/evidence/RACE_CNS_3.0.0_2026-11-11.md`: the record of this campaign (baseline, changes, interoperability,
+  evidence-spine red team, review findings, scorecard). It concludes 9.0, not 9.2: the stack does not install until
+  the sweep and the circuit re-pin, the Unreleased breaking change awaits the owner, and no third party has run
+  `DIGEST.md`.
+- Pre-existing tests edited in this wave: none.
+
 - `cns_composition/repin.py` reads checkouts with `GIT_NO_REPLACE_OBJECTS=1` (its one git helper, `_git_env`), so a `git replace` ref cannot make a checkout look clean at a pinned commit while holding other content. Test: `cns_composition/tests/test_repin.py::test_a_replace_ref_does_not_make_a_checkout_look_clean`. The git helpers of `circuit_canary`, `circuit_refusals` and `release` are separate and were not changed.
 - The circuit manifest, the released-seats file and the install file are re-pinned (`repin --stack ... --released ...`, then the install renderer) to the heads the repositories pin: WARDEN 0.16.6 (`4869ca3`), JUDGE 0.5.7 (`92c2888`), ghost_tools `48d1a0f` (1.10.14), DRAFTER 0.2.20 (`7231bba`), BURNISH 0.3.22 (`edeee84`), WATCHER_MCU 0.3.17 (`2218473`). The `cns` package is unchanged. The CNS pin the repositories carry (`v2.3.0`) was not moved; `seat_pins` still reports it against the install file's `v2.4.0`, which is the owner's step.
 - The ledger receipt can be signed (Step 1 of the 2026-11-11 capability build). `strict_problems` and `strict_root` take the keyword-only `receipt_signature` (exact non-empty `bytes`), `verify_receipt_signature` (a callable(signing_input, signature) -> bool the deployer builds from the keys it trusts) and `require_signed_receipt` (default False), and `cns_composition.spine_trace` gains `receipt_signing_input` (identical to delta's; a string with no strict UTF-8 encoding is refused by field name). The verifier is asked once per evaluation and only `True` counts; each failure is a named problem; a root issued with a verified signature records it and differs from the unsigned root, and an unsigned root is unchanged (pinned to the value the code at `4237577` produced). No key, trust list or crypto in `cns` or `cns_composition`. With `require_signed_receipt=True` and a verifier that trusts only the real key a hand-built consistent receipt is refused; a holder of the key can still sign a lie, and the key and trust list are the deployer's. Tests: `test_spine_trace_signature.py` (a real Ed25519 key from `cryptography`, used only there) and `test_receipt_signing_input_utf8.py`.
