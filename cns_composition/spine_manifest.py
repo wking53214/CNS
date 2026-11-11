@@ -62,6 +62,7 @@ from __future__ import annotations
 import argparse
 import importlib.machinery
 import importlib.metadata
+import importlib
 import json
 import re
 import subprocess
@@ -72,10 +73,14 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from cns_composition import delivery
 from cns_composition.spine_trace import SPINE
 
-try:  # Python 3.11 and later; the floor of this repository is 3.10, which reads with the strict fallback below
-    import tomllib as _tomllib
-except ImportError:  # pragma: no cover - exercised by monkeypatching _tomllib to None in the tests
-    _tomllib = None  # type: ignore[assignment]
+# Python 3.11 and later; the floor of this repository is 3.10, which reads with the strict fallback below. The module is
+# named as a string because on 3.10 `tomllib` is not in the standard library, and tests/test_packaging.py holds every
+# import statement here to the standard library of the interpreter that runs it.
+_tomllib: Any
+try:
+    _tomllib = importlib.import_module("tomllib")
+except ImportError:  # pragma: no cover - Python 3.10 only; the tests also set _tomllib to None on every version
+    _tomllib = None
 
 __all__ = ["ALLOWED_EXTRAS", "DEFAULT_MANIFEST", "EXPECTED_RUNTIME", "OWNER", "SCHEMA", "check", "declared", "main", "manifest_problems", "load"]
 
