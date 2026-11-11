@@ -17,7 +17,8 @@ entry says so.
 
 ## [Unreleased]
 
-Nothing yet.
+- `cns_composition/repin.py` reads checkouts with `GIT_NO_REPLACE_OBJECTS=1` (its one git helper, `_git_env`), so a `git replace` ref cannot make a checkout look clean at a pinned commit while holding other content. Test: `cns_composition/tests/test_repin.py::test_a_replace_ref_does_not_make_a_checkout_look_clean`. The git helpers of `circuit_canary`, `circuit_refusals` and `release` are separate and were not changed.
+- The circuit manifest, the released-seats file and the install file are re-pinned (`repin --stack ... --released ...`, then the install renderer) to the heads the repositories pin: WARDEN 0.16.6 (`4869ca3`), JUDGE 0.5.7 (`92c2888`), ghost_tools `48d1a0f` (1.10.14), DRAFTER 0.2.20 (`7231bba`), BURNISH 0.3.22 (`edeee84`), WATCHER_MCU 0.3.17 (`2218473`). The `cns` package is unchanged. The CNS pin the repositories carry (`v2.3.0`) was not moved; `seat_pins` still reports it against the install file's `v2.4.0`, which is the owner's step.
 
 ## [3.0.0] - not yet tagged
 

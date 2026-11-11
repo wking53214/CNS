@@ -288,3 +288,20 @@ def test_a_stack_folder_the_manifest_does_not_name_is_noted_by_check_and_by_writ
     assert repin.uncovered_notes(stack, ["alpha", "beta"]) == [
         "the stack folder also holds WATCHER_MCU, which the manifest does not name, so nothing pins it to a commit"]
     assert repin.uncovered_notes(stack, ["alpha", "Beta", "watcher_mcu"]) == []
+
+
+def test_a_replace_ref_does_not_make_a_checkout_look_clean(stack):
+    """`git replace <pin> <new>` then `git checkout <pin>` makes git report the pinned commit and a clean status
+    while the files are another commit's. repin asks git with replace refs off, so the checkout reads as dirty."""
+    folder = stack / "Beta"
+    pinned = git(folder, "rev-parse", "HEAD")
+    (folder / "f0.txt").write_text("content that is not the pinned content\n")
+    git(folder, "add", "-A")
+    git(folder, "commit", "-q", "-m", "other")
+    other = git(folder, "rev-parse", "HEAD")
+    git(folder, "replace", pinned, other)
+    git(folder, "checkout", "-q", pinned)
+    assert git(folder, "status", "--porcelain") == ""   # git itself, with the replace ref honoured, sees nothing
+    assert repin._git_env()["GIT_NO_REPLACE_OBJECTS"] == "1"
+    with pytest.raises(repin.RepinError, match="uncommitted changes"):
+        repin.read_heads(stack, ["Beta"])
