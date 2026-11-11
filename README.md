@@ -288,6 +288,43 @@ the same scenarios on exactly the four commits `contracts/spine-manifest.json` n
 has held every pin and checkout to that file, on Python 3.10 (the floor) and 3.12. The checkout check refuses an edited, untracked, index-hidden (--skip-worktree, --assume-unchanged) or ignored importable file
 (a planted `__pycache__/x.pyc`); the 3.10 TOML fallback refuses any line separator TOML does not know (U+2028 and the like).
 
+### Verify a package
+
+A run of the spine can be handed to someone else as files and checked there, by a command that trusts no object the
+producer ran. `chains/make_package.py` is the producer (it runs the real pipeline); `chains/verify_package.py` is the consumer.
+
+```
+python chains/make_package.py PACKAGE_DIR --checkpoint-dir CHECKPOINT_DIR --trust-out TRUST_JSON
+python chains/verify_package.py PACKAGE_DIR --checkpoint CHECKPOINT_DIR/checkpoint.json --public-keys TRUST_JSON --require-signed
+```
+
+`PACKAGE_DIR` holds `export.json` (delta's ledger export), `receipt.json`, `signature.json` and `contents.json` (the four
+stages' contents). The checkpoint is written to a separately named directory because a checkpoint beside the ledger it
+protects is not independent; the consumer must be given it from storage the producer cannot rewrite. `TRUST_JSON` is
+`{"keys": {key_id: 64 hex characters of an Ed25519 public key}, "revoked": [key_id, ...]}`; the keys and the signature
+envelope (`key_id:` then the signature) are the reference deployer's in `chains/receipt_keys.py`, not delta's or CNS's.
+Run from a checkout with the four spine repositories importable (the same `PYTHONPATH` the runner uses).
+
+Exit codes: `0` verified, with one line (`verified: root=... entries=N checkpoint=N receipt_signature=verified|absent`); `1`
+refused, each named problem on stderr; `2` a usage error or an input that cannot be read (a missing file, text that is not
+JSON, a trust file of the wrong shape). The command reads the checkpoint with delta's `CheckpointStore` (its signature is
+verified under `--require-signed`, and whenever the file carries one), rebuilds the ledger with `delta.verify_export` against
+that checkpoint, asks delta for the receipt it would issue for that ledger and requires `receipt.json` to equal it, and then
+runs `strict_problems` on the four contents with that receipt, the checkpoint as `held_checkpoint`, zeta's own KeySet
+fingerprint rule (built from the real Zeta classes) and the receipt signature checked against the trust list. Without
+`--require-signed` a package with no signature verifies and says `receipt_signature=absent`; a signature that is present must
+verify either way.
+
+What a pass does prove: the four stages' contents agree with each other and with the receipt; the ledger in the export is
+intact and contains the history the checkpoint names; and a holder of a trusted, unrevoked key signed that receipt. That is
+content agreement and ledger integrity, given a checkpoint and a trust list the caller obtained independently.
+
+What it does not prove: that the Decision was right; that the key holder is honest (a holder of a trusted key can sign a
+receipt for a ledger that does not exist, and a ledger cut back to an older, complete, signed package verifies, since a
+signed checkpoint carries no freshness); or that the checkpoint and the trust list were independent of the producer, which
+only the caller can know. The runner holds each of these refusals with the two commands as separate processes
+(`package:` scenarios) and records the two limits above as gaps (`signed: GAP` and `store: GAP` scenarios).
+
 ## The rule
 
 `cns` carries **row shapes and interfaces**: dataclasses, enums,

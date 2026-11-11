@@ -43,6 +43,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -51,7 +52,7 @@ import threading
 import warnings
 from collections.abc import Mapping
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import receipt_keys
 from spine_oracle import Expect, attempts, check_table, entries_digest, judge
@@ -2144,6 +2145,212 @@ def a_producer_killed_mid_run_loses_no_acknowledged_entry() -> List[str]:
         return out
 
 
+# --- the verify command, end to end as two commands in two processes (Step 4) ----------------------------------------------
+
+CHAINS = os.path.dirname(os.path.abspath(__file__))
+MAKE_PACKAGE, VERIFY_PACKAGE = os.path.join(CHAINS, "make_package.py"), os.path.join(CHAINS, "verify_package.py")
+
+
+def run_script(path: str, *args: str) -> "subprocess.CompletedProcess[str]":
+    return subprocess.run([sys.executable, path, *args], capture_output=True, text=True, timeout=180, env=dict(os.environ))
+
+
+class Package:
+    """A package made by `make_package.py` in a temporary place: the package directory, the checkpoint directory (a different
+    one) and the trust list, and the commands to verify it."""
+
+    def __init__(self, root: str, name: str = "a", *make_args: str) -> None:
+        self.root = root
+        self.dir = os.path.join(root, name, "package")
+        self.checkpoint_dir = os.path.join(root, name, "checkpoint-storage")
+        self.checkpoint = os.path.join(self.checkpoint_dir, "checkpoint.json")
+        self.trust = os.path.join(root, name, "trust.json")
+        made = run_script(MAKE_PACKAGE, self.dir, "--checkpoint-dir", self.checkpoint_dir, "--trust-out", self.trust, *make_args)
+        if made.returncode != 0:
+            raise RuntimeError(f"make_package exited {made.returncode}: {made.stderr.strip()[-400:]}")
+
+    def verify(self, *more: str, package: Optional[str] = None, checkpoint: Optional[str] = None,
+               trust: Optional[str] = None) -> "subprocess.CompletedProcess[str]":
+        return run_script(VERIFY_PACKAGE, package or self.dir, "--checkpoint", checkpoint or self.checkpoint,
+                          "--public-keys", trust or self.trust, *more)
+
+    def state(self) -> Dict[str, str]:
+        """Every byte of the package, the checkpoint storage and the trust list: a refusal must change none of them."""
+        found: Dict[str, str] = {}
+        for base in (self.dir, self.checkpoint_dir, os.path.dirname(self.trust)):
+            for folder, _, names in os.walk(base):
+                for name in names:
+                    with open(os.path.join(folder, name), "rb") as fh:
+                        found[os.path.relpath(os.path.join(folder, name), self.root)] = hashlib.sha256(fh.read()).hexdigest()
+        return found
+
+    def edit(self, name: str, change: Callable[[Any], Any]) -> None:
+        path = os.path.join(self.dir, name)
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        change(data)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, sort_keys=True)
+
+    def edit_trust(self, change: Callable[[Dict[str, Any], set], Any]) -> None:
+        with open(self.trust, encoding="utf-8") as fh:
+            trust, revoked = receipt_keys.trust_from_json(fh.read())
+        revoked = set(revoked)
+        change(trust, revoked)
+        with open(self.trust, "w", encoding="utf-8") as fh:
+            fh.write(receipt_keys.trust_to_json(trust, revoked))
+
+
+@contextlib.contextmanager
+def packages(*makes: Tuple[str, ...]):
+    """One or more packages in one temporary place; each `makes` entry is the extra arguments for one `make_package.py`."""
+    with tempfile.TemporaryDirectory() as root:
+        yield [Package(root, "abcdefgh"[i], *args) for i, args in enumerate(makes)]
+
+
+def verify_refusal(pkg: Package, *more: str, **where: str) -> Callable[[], None]:
+    """The verify command as a thunk: ValueError carrying everything it printed to stderr when it refuses (exit 1); anything
+    else that is not a pass (a usage error, an unreadable input) is a RuntimeError, which no scenario here declares."""
+    def thunk() -> None:
+        done = pkg.verify(*more, **where)
+        if done.returncode == 1:
+            raise ValueError(f"verify_package refused (exit 1): {done.stderr.strip()}")
+        if done.returncode != 0:
+            raise RuntimeError(f"verify_package exited {done.returncode}, not 1: {done.stderr.strip()[-300:]}")
+    return thunk
+
+
+def refused_package(*makes: Tuple[str, ...], attack: Callable[..., Tuple[Tuple[str, ...], Dict[str, str]]]) -> List[str]:
+    """Make the packages, let `attack(*packages)` damage them and say how to verify (extra arguments, replacement paths), and
+    return what the verify command refused, with the state of every file checked before and after."""
+    with packages(*makes) as made:
+        more, where = attack(*made)
+        return refused(verify_refusal(made[0], *more, **where), state=made[0].state)
+
+
+SIGNED = ("--require-signed",)
+SUMMARY = re.compile(r"verified: root=[0-9a-f]{64} entries=3 checkpoint=3 receipt_signature=(verified|absent)")
+
+
+def an_honest_package_verifies_in_another_process() -> List[str]:
+    out: List[str] = []
+    with packages((), ("--no-receipt-signature", "--no-checkpoint-signature")) as (signed, unsigned):
+        before = signed.state()
+        done = signed.verify(*SIGNED)
+        line = done.stdout.strip()
+        if done.returncode != 0 or not SUMMARY.fullmatch(line) or not line.endswith("receipt_signature=verified"):
+            out.append(f"an honest signed package did not verify with --require-signed: exit {done.returncode} {line!r} {done.stderr.strip()}")
+        if signed.verify().stdout.strip() != line:
+            out.append("the same package verified without --require-signed gives a different root or summary")
+        if signed.state() != before:
+            out.append("verifying changed a file")
+        weaker = unsigned.verify()
+        if weaker.returncode != 0 or not weaker.stdout.strip().endswith("receipt_signature=absent"):
+            out.append(f"an unsigned package did not verify without --require-signed, saying so: exit {weaker.returncode} {weaker.stdout!r}")
+        if unsigned.verify(*SIGNED).returncode != 1:
+            out.append("an unsigned package was accepted under --require-signed")
+    return out
+
+
+def altered_contents(pkg: Package):
+    pkg.edit("contents.json", lambda d: d["beta"].update(instructions="Send home."))
+    return SIGNED, {}
+
+
+def an_altered_export(pkg: Package):
+    pkg.edit("export.json", lambda d: d["entries"][1]["decision"].update(instructions="Send home."))
+    return SIGNED, {}
+
+
+def a_substituted_receipt(a: Package, b: Package):
+    with open(os.path.join(b.dir, "receipt.json"), encoding="utf-8") as fh:
+        other = json.load(fh)
+    a.edit("receipt.json", lambda d: (d.clear(), d.update(other)))
+    return SIGNED, {}
+
+
+def a_substituted_receipt_with_its_own_signature(a: Package, b: Package):
+    for name in ("receipt.json", "signature.json"):
+        shutil.copy(os.path.join(b.dir, name), os.path.join(a.dir, name))
+    return SIGNED, {}
+
+
+def a_substituted_older_checkpoint(a: Package):
+    return SIGNED, {"checkpoint": os.path.join(a.checkpoint_dir, "older.json")}
+
+
+def a_substituted_empty_checkpoint(a: Package):
+    path = os.path.join(a.root, "empty.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"v": 1, "length": 0, "head": "0" * 64}, fh)
+    return SIGNED, {"checkpoint": path}
+
+
+def a_substituted_checkpoint_of_another_ledger(a: Package, b: Package):
+    """The checkpoint is genuinely signed, by a key the trust list holds (both keys are trusted here), and is for another
+    ledger of the same length: only the history it names tells."""
+    def both(trust: Dict[str, Any], revoked: set) -> None:
+        with open(b.trust, encoding="utf-8") as fh:
+            trust.update(receipt_keys.trust_from_json(fh.read())[0])
+    a.edit_trust(both)
+    return SIGNED, {"checkpoint": b.checkpoint}
+
+
+def a_receipt_signature_that_is_missing(a: Package):
+    return SIGNED, {}
+
+
+def a_checkpoint_signature_that_is_missing(a: Package):
+    return SIGNED, {}
+
+
+def a_receipt_key_that_is_the_wrong_key(a: Package):
+    a.edit_trust(lambda trust, revoked: trust.update(k2=Ed25519PrivateKey.generate().public_key()))
+    return SIGNED, {}
+
+
+def a_receipt_key_that_is_untrusted(a: Package):
+    a.edit_trust(lambda trust, revoked: trust.pop("k2"))
+    return SIGNED, {}
+
+
+def a_receipt_key_that_is_revoked(a: Package):
+    a.edit_trust(lambda trust, revoked: revoked.add("k2"))
+    return SIGNED, {}
+
+
+def a_checkpoint_key_that_is_untrusted(a: Package):
+    a.edit_trust(lambda trust, revoked: trust.pop("k1"))
+    return SIGNED, {}
+
+
+def inputs_that_cannot_be_read_exit_two_not_one() -> List[str]:
+    out: List[str] = []
+    with packages(()) as (pkg,):
+        def expect2(label: str, done: "subprocess.CompletedProcess[str]") -> None:
+            if done.returncode != 2:
+                out.append(f"{label}: exit {done.returncode}, not 2")
+
+        expect2("a missing checkpoint file", pkg.verify(checkpoint=os.path.join(pkg.root, "nowhere.json")))
+        expect2("a missing package directory", pkg.verify(package=os.path.join(pkg.root, "nowhere")))
+        expect2("a missing trust file", pkg.verify(trust=os.path.join(pkg.root, "nowhere.json")))
+        with open(os.path.join(pkg.root, "bad.json"), "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        expect2("a trust file that is not JSON", pkg.verify(trust=os.path.join(pkg.root, "bad.json")))
+        with open(os.path.join(pkg.root, "shape.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"keys": []}')
+        expect2("a trust file of the wrong shape", pkg.verify(trust=os.path.join(pkg.root, "shape.json")))
+        with open(os.path.join(pkg.dir, "export.json"), "w", encoding="utf-8") as fh:
+            fh.write("[1, 2")
+        expect2("an export that is not JSON", pkg.verify())
+        expect2("no arguments at all", run_script(VERIFY_PACKAGE))
+        expect2("no checkpoint given", run_script(VERIFY_PACKAGE, pkg.dir, "--public-keys", pkg.trust))
+        inside = run_script(MAKE_PACKAGE, os.path.join(pkg.root, "q"), "--checkpoint-dir", os.path.join(pkg.root, "q"),
+                            "--trust-out", os.path.join(pkg.root, "q.json"))
+        expect2("a producer told to put the checkpoint in the package", inside)
+    return out
+
+
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
@@ -2465,6 +2672,36 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("store: a producer killed with SIGKILL loses no acknowledged entry", a_producer_killed_mid_run_loses_no_acknowledged_entry, CLEAN),
     ("store: GAP, an older signed checkpoint carries no freshness", GAP_an_older_signed_checkpoint_is_accepted_as_an_unwitnessed_tail, GAP),
     ("store: GAP, a ledger rolled back to an older signed package", GAP_a_ledger_rolled_back_to_an_older_signed_package_is_accepted, GAP),
+    # --- the verify command: make_package.py and verify_package.py as two processes, files only between them ---
+    ("package: an honest package verifies in another process; an unsigned one only without --require-signed",
+     an_honest_package_verifies_in_another_process, CLEAN),
+    ("package: altered contents", lambda: refused_package((), attack=altered_contents),
+     Expect("refused", required=("verify_package refused (exit 1)", "the Decision delta recorded differs from beta's in: instructions"), raises=("ValueError",))),
+    ("package: altered export", lambda: refused_package((), attack=an_altered_export),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the ledger export is refused:'), raises=("ValueError",))),
+    ("package: a substituted receipt", lambda: refused_package((), ("--run-offset", "10"), attack=a_substituted_receipt),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the receipt in the package is not the one Delta issues for this export and checkpoint'), raises=("ValueError",))),
+    ("package: a substituted receipt with its own signature", lambda: refused_package((), ("--run-offset", "10"), attack=a_substituted_receipt_with_its_own_signature),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the receipt in the package is not the one Delta issues for this export and checkpoint', 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: a substituted checkpoint, older and genuinely signed", lambda: refused_package(("--older-checkpoint-length", "1"), attack=a_substituted_older_checkpoint),
+     Expect("refused", required=("verify_package refused (exit 1)", 'is not covered by the checkpoint (length 1)', "is not the held checkpoint's length 1"), raises=("ValueError",))),
+    ("package: a substituted checkpoint, empty", lambda: refused_package((), attack=a_substituted_empty_checkpoint),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint is refused:', 'names no entry (length 0)'), raises=("ValueError",))),
+    ("package: a substituted checkpoint, of another ledger", lambda: refused_package((), ("--run-offset", "10"), attack=a_substituted_checkpoint_of_another_ledger),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the ledger export is refused:', 'does not contain the history the held checkpoint recorded'), raises=("ValueError",))),
+    ("package: no receipt signature under --require-signed", lambda: refused_package(("--no-receipt-signature",), attack=a_receipt_signature_that_is_missing),
+     Expect("refused", required=("verify_package refused (exit 1)", 'require_signed_receipt is set and no receipt signature was given'), raises=("ValueError",))),
+    ("package: no checkpoint signature under --require-signed", lambda: refused_package(("--no-checkpoint-signature",), attack=a_checkpoint_signature_that_is_missing),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint is not signed but a signature check was asked for'), raises=("ValueError",))),
+    ("package: a receipt signed by the wrong key under a trusted id", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_receipt_key_that_is_the_wrong_key),
+     Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: a receipt signed by an untrusted key", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_receipt_key_that_is_untrusted),
+     Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: a receipt signed by a revoked key", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_receipt_key_that_is_revoked),
+     Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
+    ("package: a checkpoint signed by an untrusted key", lambda: refused_package((), attack=a_checkpoint_key_that_is_untrusted),
+     Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint signature does not verify'), raises=("ValueError",))),
+    ("package: inputs that cannot be read, and usage errors, exit 2 and not 1", inputs_that_cannot_be_read_exit_two_not_one, CLEAN),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),
     ("oracle: a refusal that edited an entry's content is a state change", the_oracle_flags_a_refusal_that_edited_an_entrys_content, CLEAN),
