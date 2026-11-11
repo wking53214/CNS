@@ -22,8 +22,11 @@ WHAT IT CHECKS (`check`)
     or in any extra (a plain `name>=1` requirement and a URL from another host are named like any other);
     every pin is owned by `OWNER`, the repository owner, and every `cns` extra pins the manifest's tag;
   - each checkout is at the commit the manifest names (`git rev-parse HEAD`) AND is clean: `git status --porcelain` lists
-    nothing, untracked files included, because HEAD naming the pinned commit says nothing about the files that are
-    imported (an edited tracked file, or a planted untracked one, is named);
+    nothing, untracked files included, no index entry is marked --skip-worktree or --assume-unchanged (`git ls-files -v`),
+    and no IGNORED file that Python can import (.py, .pyc, .so, .pth and the like, `__pycache__` included, whether hidden
+    by .gitignore, a global ignore or .git/info/exclude) is present, because HEAD naming the pinned commit says nothing
+    about the files that are imported. Ignored files that are not importable (logs, other tools' caches) are not named;
+    a checkout that was imported from before may need `git clean -fdx`;
   - the pyproject is read as TOML. With Python 3.11 and later that is `tomllib`; on 3.10, the floor of this repository,
     a strict fallback reads only the two tables the check needs and REFUSES (a named problem) a pyproject it cannot read
     completely: a multi-line string, a repeated section or key, a bracket in a comment inside a list, a character Python's splitlines
@@ -412,14 +415,42 @@ def _head(path: Path) -> Optional[str]:
     return done.stdout.strip() if done.returncode == 0 else None
 
 
-def _status(path: Path) -> Optional[List[str]]:
-    """The lines of `git status --porcelain` (untracked files listed one by one), or None when git cannot say."""
+#: What Python can import from a file on disk. An IGNORED file with one of these suffixes is a difference that counts; an
+#: ignored log, cache directory of another tool or build text file is not (CNS's own CI and an editor leave those).
+_IMPORTABLE = (".py", ".pyw", ".pyc", ".pyo", ".pyd", ".so", ".pth")
+
+
+def _git_lines(path: Path, *args: str) -> Optional[List[str]]:
+    """The NUL separated records of `git <args>` run in `path`, or None when git cannot say."""
     try:
-        done = subprocess.run(["git", "-C", str(path), "status", "--porcelain", "--untracked-files=all"],
-                              capture_output=True, text=True, timeout=60)
+        done = subprocess.run(["git", "-C", str(path), *args], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
-    return done.stdout.splitlines() if done.returncode == 0 else None
+    return [r for r in done.stdout.split("\0") if r] if done.returncode == 0 else None
+
+
+def _status(path: Path) -> Optional[List[str]]:
+    """Every way a checkout's files differ from, or hide from, its HEAD, or None when git cannot say.
+
+    Three reads, because `git status` alone can be told to look away:
+      - `git status --porcelain --untracked-files=all`: edited, staged and untracked files (as before);
+      - `git ls-files -v`: any index entry that is not plain `H`, i.e. marked --skip-worktree (`S`) or --assume-unchanged
+        (a lowercase tag), which makes git status report an edited file as clean;
+      - `git status --porcelain --ignored --untracked-files=all`: files hidden by .gitignore, a global ignore or
+        .git/info/exclude. Only those Python can import (`_IMPORTABLE`: .py, .pyc, .so and the like, including everything
+        under `__pycache__`) are reported: a planted `__pycache__/x.pyc` is imported in place of the source, while an
+        ignored log is not code. A checkout that has been imported from before may therefore need `git clean -fdx`.
+    """
+    plain = _git_lines(path, "status", "--porcelain", "-z", "--untracked-files=all")
+    flags = _git_lines(path, "ls-files", "-v", "-z")
+    ignored = _git_lines(path, "status", "--porcelain", "-z", "--ignored", "--untracked-files=all")
+    if plain is None or flags is None or ignored is None:
+        return None
+    out = list(plain)
+    out += [f"{r[2:]} is marked {'skip-worktree' if r[0] == 'S' else 'assume-unchanged'} ({r[0]}), so git status would not show an edit to it"
+            for r in flags if r[:1] != "H" and r[1:2] == " "]
+    out += [f"{r[3:]} is ignored by git but importable ({r[:2]})" for r in ignored if r.startswith("!! ") and r[3:].lower().endswith(_IMPORTABLE)]
+    return out
 
 
 def check(

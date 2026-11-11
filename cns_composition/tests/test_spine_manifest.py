@@ -653,3 +653,87 @@ def test_n2_this_repositorys_own_pyproject_is_never_read_differently_by_the_fall
         assert sm._view(text) == real
     except ValueError:
         pass
+
+
+# --- Step 7c (N4): a checkout is also dirty when git status is told to look away, or when what it hides can be imported ----
+
+def _one_repo(tmp_path):
+    import subprocess
+    folder = tmp_path / "repo"
+    folder.mkdir()
+    subprocess.run(["git", "init", "-q", str(folder)], check=True)
+    (folder / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    (folder / "pkg").mkdir()
+    (folder / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (folder / "notes.txt").write_text("n\n", encoding="utf-8")
+    (folder / ".gitignore").write_text("__pycache__/\n*.log\nbuild/\n", encoding="utf-8")
+    _git(folder, "add", "-A")
+    _git(folder, "commit", "-q", "-m", "c")
+    return folder
+
+
+def test_n4_a_clean_checkout_is_clean(tmp_path):
+    assert sm._status(_one_repo(tmp_path)) == []
+
+
+@pytest.mark.parametrize("flag", ["--skip-worktree", "--assume-unchanged"])
+def test_n4_an_edit_hidden_by_an_index_flag_is_named(tmp_path, flag):
+    folder = _one_repo(tmp_path)
+    _git(folder, "update-index", flag, "mod.py")
+    (folder / "mod.py").write_text("x = 'EDITED'\n", encoding="utf-8")
+    found = sm._status(folder)
+    assert found and any("mod.py" in line for line in found), found
+
+
+def test_n4_an_index_flag_is_named_even_when_the_file_is_unedited(tmp_path):
+    folder = _one_repo(tmp_path)
+    _git(folder, "update-index", "--skip-worktree", "mod.py")
+    assert any("mod.py" in line for line in sm._status(folder))
+
+
+@pytest.mark.parametrize("planted", ["__pycache__/mod.cpython-313.pyc", "pkg/__pycache__/__init__.cpython-310.pyc",
+                                     "build/lib.py", "sitecustomize.py", "ext.so"])
+def test_n4_an_ignored_importable_file_is_named(tmp_path, planted):
+    folder = _one_repo(tmp_path)
+    (folder / ".git" / "info" / "exclude").write_text("sitecustomize.py\n*.so\n", encoding="utf-8")
+    target = folder / planted
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"planted")
+    found = sm._status(folder)
+    assert any(planted in line for line in found), found
+
+
+def test_n4_a_path_hidden_only_by_info_exclude_is_named(tmp_path):
+    folder = _one_repo(tmp_path)
+    (folder / ".git" / "info" / "exclude").write_text("planted.py\n", encoding="utf-8")
+    (folder / "planted.py").write_text("print(1)\n", encoding="utf-8")
+    assert any("planted.py" in line for line in sm._status(folder))
+
+
+def test_n4_an_ignored_file_that_cannot_be_imported_does_not_make_a_checkout_dirty(tmp_path):
+    # The narrow choice: CNS's own CI and a developer's editor leave logs and caches; only what Python can import counts.
+    folder = _one_repo(tmp_path)
+    (folder / "run.log").write_text("log\n", encoding="utf-8")
+    (folder / "build").mkdir()
+    (folder / "build" / "out.txt").write_text("o\n", encoding="utf-8")
+    assert sm._status(folder) == []
+
+
+def test_n4_the_command_refuses_each_hidden_change(tmp_path, capsys):
+    stack, man, rel = _stack_at_manifest(tmp_path)
+    args = ["--manifest", str(man), "--releases", str(rel), "--stack", str(stack)]
+    zeta = stack / "interconnected_zeta"
+    assert sm.main(args) == 0
+    capsys.readouterr()
+    _git(zeta, "update-index", "--skip-worktree", "mod.py")
+    (zeta / "mod.py").write_text("x = 'EDITED'\n", encoding="utf-8")
+    assert sm.main(args) == 1
+    assert "interconnected_zeta has 1 uncommitted or untracked change(s)" in capsys.readouterr().err
+    _git(zeta, "update-index", "--no-skip-worktree", "mod.py")
+    _git(zeta, "checkout", "--", ".")
+    assert sm.main(args) == 0
+    (zeta / ".git" / "info" / "exclude").write_text("__pycache__/\n", encoding="utf-8")
+    (zeta / "__pycache__").mkdir()
+    (zeta / "__pycache__" / "mod.cpython-313.pyc").write_bytes(b"planted")
+    assert sm.main(args) == 1
+    assert "__pycache__/mod.cpython-313.pyc" in capsys.readouterr().err
