@@ -59,6 +59,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import threading
 import warnings
 from collections.abc import Mapping
@@ -1692,6 +1693,54 @@ def the_reference_keys_sign_verify_rotate_and_revoke() -> List[str]:
     return out
 
 
+def a_trust_list_that_is_ambiguous_is_refused() -> List[str]:
+    """The trust list is the deployer's whole authority, so a list that can be read two ways is refused rather than guessed:
+    one public key under two ids (revoking one id would leave the other), a revoked id that names no trusted id (a typo, a
+    case or Unicode-normalisation difference revokes nothing), one id twice in the JSON (the last would win silently), and an
+    id outside ASCII (NFC and NFD spell the same id differently). Each is a ValueError from the file reader AND from the verifier
+    builder, and a valid list is still accepted."""
+    a, b = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+    ha, hb = receipt_keys.public_key_hex(a.public_key()), receipt_keys.public_key_hex(b.public_key())
+    nfc = unicodedata.normalize("NFC", "k\u00e9")
+    nfd = unicodedata.normalize("NFD", nfc)
+    out: List[str] = []
+
+    def both_refuse(label: str, text: str, trust: Dict[str, Any], revoked: Tuple[str, ...]) -> None:
+        if not refused(lambda: receipt_keys.trust_from_json(text)):
+            out.append(f"{label}: trust_from_json accepted it")
+        if not refused(lambda: receipt_keys.make_verifier(trust, revoked)):
+            out.append(f"{label}: make_verifier accepted it")
+
+    def doc(keys: str, revoked: str = "[]") -> str:
+        return '{"keys": {' + keys + '}, "revoked": ' + revoked + '}'
+
+    both_refuse("one public key under two ids", doc(f'"old": "{ha}", "new": "{ha}"', '["old"]'),
+                {"old": a.public_key(), "new": a.public_key()}, ("old",))
+    both_refuse("a revoked id that matches no trusted id", doc(f'"k1": "{ha}"', '["k2"]'), {"k1": a.public_key()}, ("k2",))
+    both_refuse("a revoked id that differs from the trusted one only in case", doc(f'"k1": "{ha}"', '["K1"]'),
+                {"k1": a.public_key()}, ("K1",))
+    both_refuse("a non-ASCII id (NFC)", doc(f'"{nfc}": "{ha}"'), {nfc: a.public_key()}, ())
+    both_refuse("a non-ASCII id (NFD)", doc(f'"{nfd}": "{ha}"'), {nfd: a.public_key()}, ())
+    both_refuse("a revoked NFD spelling of an NFC id", doc(f'"{nfc}": "{ha}"', json.dumps([nfd])), {nfc: a.public_key()}, (nfd,))
+    if not refused(lambda: receipt_keys.trust_from_json(doc(f'"k1": "{hb}", "k1": "{ha}"'))):
+        out.append("one id twice in the JSON: the last silently won")
+    if not refused(lambda: receipt_keys.make_signer(a, nfc)):
+        out.append("make_signer accepted a non-ASCII id")
+    trust, revoked = receipt_keys.trust_from_json(doc(f'"k1": "{ha}", "k2": "{hb}"', '["k1"]'))
+    if sorted(trust) != ["k1", "k2"] or revoked != frozenset({"k1"}):
+        out.append("a valid trust list with one revoked id was not read back as written")
+    with packages(()) as (pkg,):  # the command: an ambiguous trust file is an input that cannot be read, exit 2
+        for label, text in (("a key under two ids", doc(f'"old": "{ha}", "new": "{ha}"', '["old"]')),
+                            ("a revoked id that names nothing", doc(f'"k1": "{ha}"', '["k2"]')),
+                            ("an id twice", doc(f'"k1": "{hb}", "k1": "{ha}"'))):
+            with open(os.path.join(pkg.root, "ambiguous.json"), "w", encoding="utf-8") as fh:
+                fh.write(text)
+            done = pkg.verify(trust=os.path.join(pkg.root, "ambiguous.json"))
+            if done.returncode != 2 or "Traceback" in done.stderr:
+                out.append(f"verify_package with a trust file with {label}: exit {done.returncode}, stderr {done.stderr.strip()[-160:]!r}")
+    return out
+
+
 # --- signed receipts: the deployer's keys, Delta's signing hook, CNS's verification (Step 2) -----------------------------
 
 #: Fresh keys for each run of the script; nothing is hard-coded. The deployer's key is the one the verifier trusts.
@@ -2810,6 +2859,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: GAP, contents fabricated by someone who recomputes the digests",
      GAP_contents_fabricated_by_someone_who_recomputes_the_digests, GAP),
     ("keys: the reference deployer signs, verifies, rotates and revokes", the_reference_keys_sign_verify_rotate_and_revoke, CLEAN),
+    ("keys: an ambiguous trust list is refused (one key under two ids, a revocation naming nothing, a duplicate id, a non-ASCII id)",
+     a_trust_list_that_is_ambiguous_is_refused, CLEAN),
     # --- signed receipts: Delta signs through its hook, the deployer's keys decide, CNS asks one verifier once ---
     ("signed: an honest receipt is verified and a root is issued, different from the unsigned root",
      a_receipt_signed_by_the_deployer_is_verified_and_a_root_issued, CLEAN),

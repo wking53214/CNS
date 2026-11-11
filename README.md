@@ -325,6 +325,8 @@ stages' contents). The checkpoint is written to a separately named directory bec
 protects is not independent; the consumer must be given it from storage the producer cannot rewrite. `TRUST_JSON` is
 `{"keys": {key_id: 64 hex characters of an Ed25519 public key}, "revoked": [key_id, ...]}`; the keys and the signature
 envelope (`key_id:` then the signature) are the reference deployer's in `chains/receipt_keys.py`, not delta's or CNS's.
+Revocation is by id, so a trust file that could be read two ways is refused (exit 2): one public key under two ids, a
+revoked id that names no trusted id, an id twice in the JSON, or an id outside ASCII.
 Run from a checkout with the four spine repositories importable (the same `PYTHONPATH` the runner uses).
 
 The command verifies one entry of the ledger: the last, or the one `--entry INDEX` names (0-based). A receipt for any
