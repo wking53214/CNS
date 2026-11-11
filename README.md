@@ -1,11 +1,11 @@
 # cns
 
-> **Check of 2026-11-07.** Confirmed in this repository and on GitHub and PyPI: the 2.3.0 tag and its install pin, the four GitHub Releases (latest `v2.2.0`), and that PyPI has a `cns` release 2.3.50. The sibling repository rows and the description of that PyPI package were not re-checked.
+> **Check of 2026-11-10 (commit 03eca66).** Confirmed in this repository and on GitHub and PyPI: the 2.3.0 tag and its install pin, the four GitHub Releases (latest `v2.2.0`), and that PyPI has a `cns` release 2.3.50 (an unrelated project). Run in a clean environment: 3019 tests passed with none skipped, `ruff` and `mypy` clean, and the release check agrees. The test jobs on `main` pass. The `stack` workflow has failed since 2026-11-09 ("expected exactly one cns distribution") and is not yet fixed. The sibling repository rows were not re-measured.
 The central nervous system of the library: one package holding
 the contracts every repo joins on.
 
-Where the five-repository circuit stands today (what was checked, what it found when it ran on itself, what is
-still open): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
+Where the five-repository circuit stood on 2026-11-06 (what was checked, what it found when it ran on itself, what was
+still open; older than this README and not refreshed): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
 remains to be done: [docs/RELEASED_SEATS.md](docs/RELEASED_SEATS.md).
 
 ## The interoperability foundation (read this first)
@@ -76,12 +76,20 @@ decisions. AI models and independent agents connect through **adapters**: an ada
 `recommendation`, read by a strict parser that refuses anything beyond verdict, reasons, evidence and an escalation flag.
 The decider's own policy may lower the recommendation, a grant decides whether anything may be done, and a person may have to approve. UAI-1 provider clients exist for Anthropic, Google Gemini, OpenAI (ChatGPT models) and Copilot (through GitHub Models or Azure OpenAI). Their local wire-format tests do not establish live interoperability. The separate Anthropic composition-layer adapter documented below has been exercised with one explicitly authorized live request. That result does not establish live interoperability for the UAI-1 clients or other providers.
 
-### Where it sits in STACK
+### Where it sits in ≡TACK
 
-STACK is a library of many repositories, many of which decide something. CNS gives them one vocabulary so one can read
+≡TACK is the whole library of repositories, many of which decide something. CNS gives them one vocabulary so one can read
 and check another's verdict. It is not a governance engine: governance components (HERALD, TIE, Conservation_Kernel,
 Governance_Gateway, CCC and the Warden circuit) make their own decisions in their own repositories, and CNS holds only the
 shapes they share. The evidence spine, below, shows one document crossing five of them.
+
+### Where this fits
+
+What goes in: a decision from any repo that joins CNS, written in the shared shapes (a record of what was decided, where it started, and what the outcome was). What comes out: a verdict (pass, retry or terminal breach) that another repo can read and check without inventing its own format. CNS does not make decisions itself. It is the shared rulebook, and it is for people who maintain a repo that has to trust another repo's verdict.
+
+### CNS connection
+
+CNS is shared infrastructure that several systems use, not a stage in one pipeline. Each connected repo has a connector that sends its verdicts to CNS, and CNS has an admission module that reads them back. The ledger in `contracts/cns-links.json` lists 42 repositories: 37 two-way, 4 exempt and 1 hub (this one). A connector existing does not mean the application uses it, and a passing check is not permission to act. See "Where the six spine repositories stand" below for what was built, tested and used.
 
 ### Implemented today, and what is not
 
@@ -696,7 +704,7 @@ repository's own suite with CNS absent, the second with the `cns` extra installe
 
 | Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
 |---|---|---|---|---|---|
-| CNS | 2.3.0, tagged; `main` is ahead of the tag | Tags `v0.1.0` to `v2.3.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`; `v2.3.0` has its text there and no Release yet. | red at `fa40197` on 2026-11-07: the test jobs fail on a type-check error in one test file (fix in PR #123); recheck after it merges | 3003 passed, 1 skipped (measured 2026-11-07; the optional `anthropic` package was absent in that sandbox, and CI installs it) | not applicable |
+| CNS | 2.3.0, tagged; `main` is ahead of the tag | Tags `v0.1.0` to `v2.3.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`; `v2.3.0` has its text there and no Release yet. | test jobs green at `03eca66` on 2026-11-10; the `stack` workflow is red since 2026-11-09 (open) | 3019 passed, 0 skipped (measured 2026-11-10 in a clean environment with the dev extras) | not applicable |
 | HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.3.0` |
 | TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.3.0` |
 | Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.3.0` |
