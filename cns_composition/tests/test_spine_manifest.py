@@ -574,3 +574,174 @@ def test_the_command_reads_the_installed_distributions_and_needs_no_network(tmp_
     assert f"zeta is installed from commit {'e' * 40} but the manifest names {Z}" in capsys.readouterr().err
     (site / "zeta-0.1.0.dist-info" / "direct_url.json").write_text(json.dumps(_vcs("interconnected_zeta", Z)), encoding="utf-8")
     assert sm.main(["--manifest", str(man), "--releases", str(rel), "--installed"]) == 0
+
+
+# --- Step 7a (N2): the fallback and tomllib must split lines the same way ------------------------------------------------
+
+#: Characters Python's str.splitlines() treats as a line break and TOML does not (TOML breaks on LF and CRLF only).
+LINE_SEPARATORS = [" ", " ", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\r"]
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "spine_pyprojects"
+
+
+def _decoy_text(sep):
+    """The reviewer's pyproject: a comment hides a decoy header and the good pins behind `sep`; the real list is the attacker's."""
+    good = pyproject([("zeta", Z), ("beta", B)])
+    evil = '    "zeta @ git+https://github.com/attacker/interconnected_zeta@main",\n'
+    hidden = (f'# a{sep}dependencies = ["zeta @ git+https://github.com/wking53214/interconnected_zeta@{Z}", '
+              f'"beta @ git+https://github.com/wking53214/interconnected_beta@{B}"]\n# b{sep}[tool.decoy]\n')
+    text = good.replace('[project]\nname = "x"\n', '[project]\nname = "x"\n' + hidden, 1)
+    return text.replace(f'    "zeta @ git+https://github.com/wking53214/interconnected_zeta@{Z}",\n', evil, 1)
+
+
+@pytest.mark.parametrize("sep", LINE_SEPARATORS, ids=lambda s: f"U+{ord(s):04X}")
+def test_n2_a_line_separator_toml_does_not_know_cannot_hide_a_decoy_from_either_reader(sep, parser):
+    texts = good_texts()
+    texts["interconnected_delta"] = _decoy_text(sep)
+    found = sm.check(manifest(), texts, heads(), RELEASES)
+    assert found, "the decoy pyproject was accepted"
+    assert any("attacker" in p or "cannot be read completely" in p for p in found), found
+    if parser == "fallback":
+        has(found, f"U+{ord(sep):04X}")
+
+
+def test_n2_the_probe_text_is_what_the_reviewer_reproduced(monkeypatch):
+    tomllib = _reference_toml()
+    text = _decoy_text(" ")
+    assert "attacker" in tomllib.loads(text)["project"]["dependencies"][0]
+    monkeypatch.setattr(sm, "_tomllib", None)
+    with pytest.raises(ValueError, match="U\\+2028"):
+        sm.declared(text)
+
+
+@pytest.mark.parametrize("bad", ["\x00", "\x01", "\x7f"], ids=lambda s: f"U+{ord(s):04X}")
+def test_n2_a_control_character_in_a_comment_is_refused_by_the_fallback(bad, monkeypatch):
+    monkeypatch.setattr(sm, "_tomllib", None)
+    text = pyproject([("zeta", Z)]).replace('name = "x"\n', f'name = "x"\n# c{bad}d\n', 1)
+    with pytest.raises(ValueError, match="U\\+"):
+        sm.declared(text)
+
+
+def test_n2_a_non_toml_space_is_not_whitespace_to_the_fallback(monkeypatch):
+    # tomllib calls a header behind a no-break space invalid; the fallback must not read it as a header.
+    monkeypatch.setattr(sm, "_tomllib", None)
+    text = pyproject([("zeta", Z)]).replace("\n[tool.pytest.ini_options]", "\n [tool.pytest.ini_options]", 1)
+    with pytest.raises(ValueError):
+        sm.declared(text)
+
+
+def test_n2_a_key_the_fallback_cannot_split_exactly_is_refused_even_outside_the_watched_tables(monkeypatch):
+    monkeypatch.setattr(sm, "_tomllib", None)
+    base = pyproject([("zeta", Z)])
+    for line in ("a.b = 1", '"a\\"b" = 1', "x y = 1"):
+        with pytest.raises(ValueError):
+            sm.declared(base.replace('testpaths = ["tests"]', line, 1))
+    # a plain quoted key that holds `=` and `[` is split at its closing quote, not at the first `=` in it
+    ok = base.replace('testpaths = ["tests"]', '"x = [" = 1', 1)
+    assert sm.declared(ok)["runtime"] == {"zeta": ("interconnected_zeta", Z)}
+
+
+@pytest.mark.parametrize("repo", list(SPINE))
+def test_n2_the_real_pyprojects_read_the_same_through_both_readers(repo, monkeypatch):
+    monkeypatch.setattr(sm, "_tomllib", _reference_toml())
+    text = (FIXTURES / f"{repo}.toml").read_text(encoding="utf-8")
+    real = sm._view(text)
+    assert sm.declared(text) == {"runtime": sm._pins(real["dependencies"] or []), "optional": sm._pins(sm._flat_optional(real))}
+    monkeypatch.setattr(sm, "_tomllib", None)
+    assert sm._view(text) == real
+    assert sm._view(text)["dependencies"] is not None
+
+
+def test_n2_this_repositorys_own_pyproject_is_never_read_differently_by_the_fallback(monkeypatch):
+    # The fallback may refuse a file it cannot read completely; it must never return a different answer.
+    monkeypatch.setattr(sm, "_tomllib", _reference_toml())
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    real = sm._view(text)
+    monkeypatch.setattr(sm, "_tomllib", None)
+    try:
+        assert sm._view(text) == real
+    except ValueError:
+        pass
+
+
+# --- Step 7c (N4): a checkout is also dirty when git status is told to look away, or when what it hides can be imported ----
+
+def _one_repo(tmp_path):
+    import subprocess
+    folder = tmp_path / "repo"
+    folder.mkdir()
+    subprocess.run(["git", "init", "-q", str(folder)], check=True)
+    (folder / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    (folder / "pkg").mkdir()
+    (folder / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (folder / "notes.txt").write_text("n\n", encoding="utf-8")
+    (folder / ".gitignore").write_text("__pycache__/\n*.log\nbuild/\n", encoding="utf-8")
+    _git(folder, "add", "-A")
+    _git(folder, "commit", "-q", "-m", "c")
+    return folder
+
+
+def test_n4_a_clean_checkout_is_clean(tmp_path):
+    assert sm._status(_one_repo(tmp_path)) == []
+
+
+@pytest.mark.parametrize("flag", ["--skip-worktree", "--assume-unchanged"])
+def test_n4_an_edit_hidden_by_an_index_flag_is_named(tmp_path, flag):
+    folder = _one_repo(tmp_path)
+    _git(folder, "update-index", flag, "mod.py")
+    (folder / "mod.py").write_text("x = 'EDITED'\n", encoding="utf-8")
+    found = sm._status(folder)
+    assert found and any("mod.py" in line for line in found), found
+
+
+def test_n4_an_index_flag_is_named_even_when_the_file_is_unedited(tmp_path):
+    folder = _one_repo(tmp_path)
+    _git(folder, "update-index", "--skip-worktree", "mod.py")
+    assert any("mod.py" in line for line in sm._status(folder))
+
+
+@pytest.mark.parametrize("planted", ["__pycache__/mod.cpython-313.pyc", "pkg/__pycache__/__init__.cpython-310.pyc",
+                                     "build/lib.py", "sitecustomize.py", "ext.so"])
+def test_n4_an_ignored_importable_file_is_named(tmp_path, planted):
+    folder = _one_repo(tmp_path)
+    (folder / ".git" / "info" / "exclude").write_text("sitecustomize.py\n*.so\n", encoding="utf-8")
+    target = folder / planted
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"planted")
+    found = sm._status(folder)
+    assert any(planted in line for line in found), found
+
+
+def test_n4_a_path_hidden_only_by_info_exclude_is_named(tmp_path):
+    folder = _one_repo(tmp_path)
+    (folder / ".git" / "info" / "exclude").write_text("planted.py\n", encoding="utf-8")
+    (folder / "planted.py").write_text("print(1)\n", encoding="utf-8")
+    assert any("planted.py" in line for line in sm._status(folder))
+
+
+def test_n4_an_ignored_file_that_cannot_be_imported_does_not_make_a_checkout_dirty(tmp_path):
+    # The narrow choice: CNS's own CI and a developer's editor leave logs and caches; only what Python can import counts.
+    folder = _one_repo(tmp_path)
+    (folder / "run.log").write_text("log\n", encoding="utf-8")
+    (folder / "build").mkdir()
+    (folder / "build" / "out.txt").write_text("o\n", encoding="utf-8")
+    assert sm._status(folder) == []
+
+
+def test_n4_the_command_refuses_each_hidden_change(tmp_path, capsys):
+    stack, man, rel = _stack_at_manifest(tmp_path)
+    args = ["--manifest", str(man), "--releases", str(rel), "--stack", str(stack)]
+    zeta = stack / "interconnected_zeta"
+    assert sm.main(args) == 0
+    capsys.readouterr()
+    _git(zeta, "update-index", "--skip-worktree", "mod.py")
+    (zeta / "mod.py").write_text("x = 'EDITED'\n", encoding="utf-8")
+    assert sm.main(args) == 1
+    assert "interconnected_zeta has 1 uncommitted or untracked change(s)" in capsys.readouterr().err
+    _git(zeta, "update-index", "--no-skip-worktree", "mod.py")
+    _git(zeta, "checkout", "--", ".")
+    assert sm.main(args) == 0
+    (zeta / ".git" / "info" / "exclude").write_text("__pycache__/\n", encoding="utf-8")
+    (zeta / "__pycache__").mkdir()
+    (zeta / "__pycache__" / "mod.cpython-313.pyc").write_bytes(b"planted")
+    assert sm.main(args) == 1
+    assert "__pycache__/mod.cpython-313.pyc" in capsys.readouterr().err

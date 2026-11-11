@@ -1277,6 +1277,72 @@ def test_a_held_checkpoint_mapping_is_read_once():
     assert Shifty.reads == 2
 
 
+# --- Step 7b (N1): strict_root validates and snapshots the held checkpoint once, as strict_problems does ----------------
+
+def _shifting_mapping():
+    class Shifty(Mapping):
+        """Honest for the two reads one snapshot needs, then a different head: a second read would see the lie."""
+        reads = 0
+
+        def __getitem__(self, key):
+            Shifty.reads += 1
+            if Shifty.reads > 2:
+                return "f" * 64 if key == "head" else 9
+            return {"length": 1, "head": HONEST_HEAD}[key]
+
+        def __iter__(self):
+            return iter(("length", "head"))
+
+        def __len__(self):
+            return 2
+    return Shifty
+
+
+def _shifting_tuple():
+    class ShiftyPair(tuple):
+        reads = 0
+
+        def __getitem__(self, index):
+            ShiftyPair.reads += 1
+            if ShiftyPair.reads > 2:
+                return ("f" * 64) if index == 1 else 9
+            return (1, HONEST_HEAD)[index]
+    return ShiftyPair((1, HONEST_HEAD))
+
+
+def test_n1_strict_root_reads_a_shifting_held_mapping_once():
+    Shifty = _shifting_mapping()
+    parts = build()
+    chain = receipt_for(parts)
+    root = held_root(parts, chain, Shifty())
+    assert Shifty.reads == 2
+    assert root == held_root(parts, chain, (1, HONEST_HEAD)), "the root binds a held head that was never compared"
+
+
+def test_n1_strict_root_reads_a_shifting_held_tuple_once():
+    parts = build()
+    chain = receipt_for(parts)
+    held = _shifting_tuple()
+    root = held_root(parts, chain, held)
+    assert type(held).reads == 2
+    assert root == held_root(parts, chain, (1, HONEST_HEAD))
+
+
+def test_n1_strict_problems_reads_a_shifting_held_tuple_once():
+    parts = build()
+    held = _shifting_tuple()
+    assert held_problems(parts, receipt_for(parts), held) == []
+    assert type(held).reads == 2
+
+
+def test_n1_a_held_checkpoint_that_fails_validation_is_read_once_by_strict_root_too():
+    Shifty = _shifting_mapping()
+    parts = build()
+    with pytest.raises(ValueError, match="checkpoint held outside the ledger"):
+        held_root(parts, receipt_for(parts, checkpoint_head="e" * 64), Shifty())
+    assert Shifty.reads <= 2
+
+
 def test_the_entry_that_is_the_last_one_the_checkpoint_covers_must_have_that_entrys_hash_as_the_head():
     # the A1 gap: index == checkpoint_length - 1, a checkpoint head that is not the entry's own hash, no held checkpoint
     parts = build()
@@ -1302,16 +1368,15 @@ def root_with(parts, verifier, **kw):
     return strict_root(*args, chain=receipt_for(parts), keyset_fingerprint_of=verifier, **kw)
 
 
-def test_a_verifier_that_lies_on_its_second_call_cannot_let_problems_report_and_root_issue():
-    # E55: honest on call 1 (it recomputes WRONG, so the run does not hold together), then it echoes alpha's own
-    # fingerprint. Each public call used to ask it afresh, so strict_problems named the problem and strict_root issued.
+def test_a_verifier_is_asked_once_inside_one_strict_root_evaluation():
+    # E55, as far as it holds: inside ONE evaluation the verifier is asked once, and that one answer decides. Two separate
+    # public calls are two evaluations (Step 7d, N5); a verifier that lies across them is the caller's trust.
     parts = build()
     calls = []
 
     def flaky(alpha):
         calls.append(1)
         return WRONG if len(calls) == 1 else alpha["keyset_fingerprint"]
-    has(run_with(parts, flaky), "alpha's KeySet fingerprint does not match a recomputation")
     with pytest.raises(ValueError, match="does not match a recomputation"):
         root_with(parts, flaky)
     assert len(calls) == 1
@@ -1327,7 +1392,7 @@ def test_the_verifier_is_asked_exactly_once_for_one_evaluation():
     assert run_with(parts, counting) == []
     assert len(calls) == 1
     root_with(parts, counting)
-    assert len(calls) == 1  # the same alpha content, the same verifier: the answer is reused, not asked again
+    assert len(calls) == 2  # strict_root is a second evaluation (Step 7d): one question each, never two inside one
 
 
 def test_another_alpha_content_is_a_new_question_for_the_same_verifier():
@@ -1355,6 +1420,8 @@ def test_a_verifier_that_is_a_bound_method_is_asked_once_too():
             return WRONG if Owner.n == 1 else alpha["keyset_fingerprint"]
     owner = Owner()
     has(run_with(parts, owner.verify), "does not match a recomputation")
+    assert Owner.n == 1
+    Owner.n = 0
     with pytest.raises(ValueError):
         root_with(parts, owner.verify)
     assert Owner.n == 1
@@ -1387,3 +1454,79 @@ def test_require_keyset_verifier_must_be_a_real_bool():
     with pytest.raises(TypeError, match="require_keyset_verifier must be a bool"):
         strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], chain=receipt_for(parts),
                         require_keyset_verifier=1)
+
+
+# --- Step 7d (N5): the verifier's answer belongs to ONE evaluation; nothing is remembered between public calls ------------
+
+def test_n5_a_verifier_that_is_revoked_is_asked_again_on_the_next_call():
+    parts = build()
+    live = {"revoked": False}
+
+    def verifier(alpha):
+        return WRONG if live["revoked"] else alpha["keyset_fingerprint"]
+    assert run_with(parts, verifier) == []
+    live["revoked"] = True
+    has(run_with(parts, verifier), "does not match a recomputation")
+    with pytest.raises(ValueError, match="does not match a recomputation"):
+        root_with(parts, verifier)
+
+
+def test_n5_a_transient_failure_is_not_a_permanent_failure():
+    parts = build()
+    state = {"down": True}
+
+    def verifier(alpha):
+        if state["down"]:
+            raise ConnectionError("backend down")
+        return alpha["keyset_fingerprint"]
+    has(run_with(parts, verifier), "does not match a recomputation")
+    state["down"] = False
+    assert run_with(parts, verifier) == []
+    assert len(root_with(parts, verifier)) == 64
+
+
+def test_n5_a_verifier_that_cannot_be_weakly_referenced_is_asked_once_per_evaluation():
+    class Slotted:
+        __slots__ = ()
+        n = 0
+
+        def __call__(self, alpha):
+            Slotted.n += 1
+            return alpha["keyset_fingerprint"]
+    parts = build()
+    verifier = Slotted()
+    assert run_with(parts, verifier) == []
+    assert Slotted.n == 1
+    assert len(root_with(parts, verifier)) == 64
+    assert Slotted.n == 2
+
+
+def test_n5_strict_root_asks_once_and_uses_that_one_answer():
+    parts = build()
+    calls = []
+
+    def verifier(alpha):
+        calls.append(1)
+        return alpha["keyset_fingerprint"]
+    assert len(root_with(parts, verifier)) == 64
+    assert calls == [1]
+
+
+def test_n5_a_verifier_that_lies_across_two_public_calls_is_the_callers_trust():
+    # Documented, not claimed fixed: strict_problems and strict_root are two evaluations, so a verifier that answers
+    # differently between them can make one name a problem and the other issue a root. The caller who needs one answer
+    # for both asks once itself and passes a verifier that returns it.
+    parts = build()
+    calls = []
+
+    def flaky(alpha):
+        calls.append(1)
+        return WRONG if len(calls) == 1 else alpha["keyset_fingerprint"]
+    has(run_with(parts, flaky), "does not match a recomputation")
+    assert len(root_with(parts, flaky)) == 64
+    assert len(calls) == 2
+
+
+def test_n5_no_module_level_memory_of_verifier_answers_remains():
+    import cns_composition.spine_trace as st
+    assert not hasattr(st, "_VERIFIED")

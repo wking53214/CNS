@@ -23,7 +23,7 @@
 #                        this job runs the set the four repositories declare. It first holds every pin and every checkout to
 #                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 113 scenarios, including the hardened
 #                        components' refusals and the delta receipt. The manifest names the hardened tips (alpha 17bc5fd, zeta 5762348,
-#                        beta 9b0f616, delta 3343652). Individual green CI is not this.
+#                        beta 9b0f616, delta 0402271). Individual green CI is not this.
 #
 # Each script exits 1 when a scenario differs from what it states, so this goes red the day a repository changes in a
 # way that breaks a chain: the failure points at the scenario, and the repositories' own suites cannot see it.

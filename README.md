@@ -216,13 +216,13 @@ the strict check takes, and what each part is worth:
 - **An optional checkpoint held outside the ledger** (`held_checkpoint=(length, head)` or `{"length": ..., "head": ...}`,
   supplied by the caller from storage the ledger's producer cannot write). The receipt's `checkpoint_length` and
   `checkpoint_head` must then equal it exactly; a ledger that was tampered with, rechained and given a fresh checkpoint is
-  refused. Without it nothing CNS holds can tell that receipt from an honest one, and behaviour is exactly as before (a
+  refused (it is read and validated once per call, and that one snapshot is both compared and recorded in the root). Without it nothing CNS holds can tell that receipt from an honest one, and behaviour is exactly as before (a
   recorded gap). With it, what stays undetectable is a tampering the held checkpoint does not cover (entries after its
   length), a held checkpoint the attacker can also write, and a checkpoint taken from the ledger being checked.
 - **An optional recomputation of alpha's KeySet fingerprint** (`keyset_fingerprint_of`, built by the caller from zeta, which
   owns the rule; CNS imports nothing from zeta). The runner supplies it. Without it only the fingerprint strings alpha,
   zeta and beta carry are compared, and substituted alpha content that copies the original string passes. The callable is
-  asked once per alpha content (a second evaluation of the same run reuses the answer), a root issued with it says so, and
+  asked once per evaluation (each `strict_problems` or `strict_root` call asks afresh and remembers nothing; a verifier that lies across two separate calls is the caller's trust), a root issued with it says so, and
   `require_keyset_verifier=True` makes its absence a named problem (the default keeps existing callers working).
 - **A KeySet fingerprint and a content fingerprint compared as carried.** Zeta records the fingerprint of the KeySet it
   evaluated; beta's `content_fingerprint` (13 of a Decision's 16 fields; `decision_fingerprint` covers five and is
@@ -268,10 +268,11 @@ wrapper so each scenario requires its own cause. A scenario table row must be an
 when the script loads.
 Each scenario declares an `Expect` (`chains/spine_oracle.py`): the problems it requires, the only extras it may add, texts it
 forbids, and whether it is clean, a problem, a refusal or a gap. A missing required problem, an unlisted extra problem, an
-unexpected success, an undeclared crash, or a refusal that changed the ledger it guarded fails the scenario; the oracle has
+unexpected success, an undeclared crash, a refusal that changed the ledger it guarded, or a `refused` scenario with no refusal of its own attack call (recorded per scenario and per thread, so another scenario's or another thread's refusal does not count) fails the scenario; the oracle has
 its own tests in `tests/test_spine_oracle.py`. The scenario run on the manifest's commits is `spine-pinned`: a second job runs
 the same scenarios on exactly the four commits `contracts/spine-manifest.json` names, after `cns_composition.spine_manifest`
-has held every pin and checkout to that file.
+has held every pin and checkout to that file. The checkout check refuses an edited, untracked, index-hidden (--skip-worktree, --assume-unchanged) or ignored importable file
+(a planted `__pycache__/x.pyc`); the 3.10 TOML fallback refuses any line separator TOML does not know (U+2028 and the like).
 
 ## The rule
 

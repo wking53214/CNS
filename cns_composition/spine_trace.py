@@ -95,10 +95,7 @@ present, which Lock should open, or whether the Decision is right. `strict_root`
 from __future__ import annotations
 
 import re
-import threading
-import types
 import warnings
-import weakref
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
@@ -340,6 +337,8 @@ def strict_problems(
     is the root it always was). With it, what stays undetectable is a tampering the held checkpoint does not cover
     (entries after its length), a held checkpoint the attacker could also rewrite, and a caller that supplies a
     checkpoint taken from the ledger it is checking. CNS holds no ledger and no storage: it compares what it is handed.
+    The held checkpoint is read and validated ONCE per call (`strict_problems` and `strict_root` share one normalisation),
+    and that one snapshot is both compared with the receipt and recorded in the root.
     A root issued against a held checkpoint carries that fact in its domain, so it differs from one issued without.
 
     `chain_verified` is a deprecated alias that is never evidence. Passing it, whatever the value, emits a
@@ -352,10 +351,14 @@ def strict_problems(
     "alpha's KeySet fingerprint does not match a recomputation from alpha's keys". Left out, CNS only compares the
     fingerprint strings that alpha, zeta and beta carry, so a substituted alpha content that copies the original
     fingerprint string passes (a recorded gap). The callable is itself supplied by the caller, which is one more thing
-    that is trusted. It is asked ONCE per alpha content: the answer is kept against the callable and the content, so a
-    callable that answers differently the second time cannot make `strict_problems` name a problem and `strict_root`
-    issue a root for the same run (hacker1 E55). A root issued with a callable says so in its domain (present only when
-    set, so a root issued without one is unchanged), so the two are never equal. `require_keyset_verifier=True` makes the absence of the callable a
+    that is trusted. It is asked ONCE per evaluation, and nothing is remembered between calls: one `strict_problems` call
+    asks once, and one `strict_root` call evaluates once and uses that one answer, so inside `strict_root` a callable
+    cannot say yes to the check and no to the root (hacker1 E55). Two separate public calls are two evaluations, and
+    each asks afresh: a callable that was revoked, or that failed for a transient reason, is asked again. A callable
+    that answers differently across two separate calls (honest to `strict_problems`, lying to `strict_root`, or the
+    reverse) is therefore the caller's trust, and E55 is NOT claimed fixed across calls; a caller who needs one answer
+    for both asks once itself and passes a callable that returns it. A root issued with a callable says so in its domain
+    (present only when set, so a root issued without one is unchanged), so the two are never equal. `require_keyset_verifier=True` makes the absence of the callable a
     named problem instead (default False, so existing callers are unchanged).
     """
     if chain_verified is not _UNSET:
@@ -366,7 +369,7 @@ def strict_problems(
     if unread:
         return unread
     return _strict_problems(*snap, chain=chain, bare_assertion=chain_verified is not _UNSET,
-                            keyset_fingerprint_of=keyset_fingerprint_of, held_checkpoint=held_checkpoint,
+                            keyset_fingerprint_of=keyset_fingerprint_of, held_snapshot=_resolve_held(held_checkpoint),
                             require_keyset_verifier=require_keyset_verifier)
 
 
@@ -538,49 +541,16 @@ def _require_bool(value: object) -> None:
         raise TypeError(f"require_keyset_verifier must be a bool; got {type(value).__name__}")
 
 
-#: What each verifier answered, per alpha content: {id(owner): (weak reference to the owner, {(function, digest): answer})}.
-#: Held by identity and weakly, so a collected verifier takes its answers with it and a lookalike cannot borrow them.
-_VERIFIED: Dict[int, Tuple[Any, Dict[Tuple[Any, str], Optional[str]]]] = {}
-_VERIFIED_LOCK = threading.Lock()
-_VERIFIED_LIMIT = 64
+def _ask_verifier(verifier: Callable[[Mapping[str, Any]], str], alpha: Mapping[str, Any]) -> Optional[str]:
+    """Ask `verifier` for the fingerprint of this alpha content. A verifier that raises has answered None.
 
-
-def _recomputed_once(verifier: Callable[[Mapping[str, Any]], str], alpha: Mapping[str, Any]) -> Optional[str]:
-    """Ask `verifier` for the fingerprint of this alpha content, once. A verifier that raises has answered None. The answer
-    is kept for the pair (verifier, content digest), so a later evaluation of the same run reuses it instead of asking a
-    verifier that may now answer differently. A callable that cannot be held weakly is asked every time."""
-    owner: Any = verifier.__self__ if isinstance(verifier, types.MethodType) else verifier
-    tag: Any = verifier.__func__ if isinstance(verifier, types.MethodType) else None
-    key: Optional[Tuple[Any, str]]
-    memo: Optional[Dict[Tuple[Any, str], Optional[str]]]
-    try:
-        key = (tag, subject_digest(alpha))
-        slot = _VERIFIED.get(id(owner))
-        memo = slot[1] if slot is not None and slot[0]() is owner else None
-    except Exception:  # noqa: BLE001 - nothing to key on: ask the verifier, keep nothing
-        key, memo = None, None
-    if memo is not None and key in memo:
-        return memo[key]
+    Nothing is remembered. The answer belongs to the one evaluation that asked (one `strict_problems` call or one
+    `strict_root` call, each of which asks exactly once), so a verifier that is revoked, or that failed once for a
+    transient reason, is asked again by the next call."""
     try:
         answer: Optional[str] = verifier(_plain(alpha))
     except Exception:  # noqa: BLE001 - a verifier that cannot recompute has not verified
         answer = None
-    if key is not None and (answer is None or type(answer) is str):
-        try:
-            with _VERIFIED_LOCK:
-                slot = _VERIFIED.get(id(owner))
-                if slot is None or slot[0]() is not owner:
-                    ident = id(owner)
-
-                    def forget(_ref: Any, ident: int = ident) -> None:
-                        _VERIFIED.pop(ident, None)
-                    slot = (weakref.ref(owner, forget), {})
-                    _VERIFIED[ident] = slot
-                if len(slot[1]) >= _VERIFIED_LIMIT:
-                    slot[1].pop(next(iter(slot[1])))
-                slot[1][key] = answer
-        except TypeError:  # not weakly referenceable
-            pass
     return answer
 
 
@@ -610,8 +580,17 @@ def _held_checkpoint(held: Any) -> Tuple[Optional[Tuple[int, str]], List[str]]:
     return (None, out) if out else ((length, head), [])
 
 
+def _resolve_held(held_checkpoint: Any) -> Tuple[Optional[Tuple[int, str]], List[str]]:
+    """The caller's held checkpoint, read and validated ONCE: (snapshot, problems). (None, []) when none was given. Both
+    public entry points call this exactly once per evaluation and hand the result down, so the comparison and what a root
+    records are the same value, whatever the object the caller passed does on a second read."""
+    if held_checkpoint is None:
+        return None, []
+    return _held_checkpoint(held_checkpoint)
+
+
 def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any = None, bare_assertion: bool = False,
-                     keyset_fingerprint_of: Any = None, held_checkpoint: Any = None,
+                     keyset_fingerprint_of: Any = None, held_snapshot: Tuple[Optional[Tuple[int, str]], List[str]] = (None, []),
                      require_keyset_verifier: bool = False) -> List[str]:
     out: List[str] = []
     stages = {"alpha": alpha, "beta": beta, "delta": delta}
@@ -771,7 +750,7 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
             # Zeta owns the fingerprint rule; the caller hands CNS a function built from it. CNS only compares. A copy of
             # alpha is handed over so the function cannot alter what is judged, and a function that raises or answers
             # anything but alpha's own fingerprint is the same problem.
-            recomputed = _recomputed_once(keyset_fingerprint_of, alpha)
+            recomputed = _ask_verifier(keyset_fingerprint_of, alpha)
             if type(recomputed) is not str or recomputed != fa:
                 out.append(FINGERPRINT_NOT_RECOMPUTED)
         fb = beta.get("keyset_fingerprint")
@@ -785,10 +764,7 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
                    "was not recomputed by the component that owns the rule")
     if bare_assertion:
         out.append(BARE_ASSERTION)
-    held_cp: Optional[Tuple[int, str]] = None
-    held_issues: List[str] = []
-    if held_checkpoint is not None:
-        held_cp, held_issues = _held_checkpoint(held_checkpoint)
+    held_cp, held_issues = held_snapshot
     receipt_issues = [] if chain is None else _receipt_problems(chain, delta, dd, run, held_cp)
     out += held_issues + receipt_issues
     if chain is None or receipt_issues or held_issues:
@@ -820,17 +796,18 @@ def strict_root(
                       DeprecationWarning, stacklevel=2)
     _require_bool(require_keyset_verifier)
     (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
+    held_snapshot = _resolve_held(held_checkpoint)  # once: the comparison below and the root's record use this one snapshot
     found = unread or _strict_problems(alpha, zeta, beta, delta, chain=chain, bare_assertion=chain_verified is not _UNSET,
-                                       keyset_fingerprint_of=keyset_fingerprint_of, held_checkpoint=held_checkpoint,
+                                       keyset_fingerprint_of=keyset_fingerprint_of, held_snapshot=held_snapshot,
                                        require_keyset_verifier=require_keyset_verifier)
     if found:
         raise ValueError("the spine run does not hold together: " + "; ".join(found))
     context = alpha["context"]
     held_fact: Dict[str, Any] = {}
     if held_checkpoint is not None:
-        held, _ = _held_checkpoint(held_checkpoint)
-        assert held is not None  # a held checkpoint that did not read is a problem above, so no root reaches here
-        held_fact = {"held_checkpoint": {"length": held[0], "head": held[1]}}
+        held_cp = held_snapshot[0]
+        assert held_cp is not None  # a held checkpoint that did not read is a problem above, so no root reaches here
+        held_fact = {"held_checkpoint": {"length": held_cp[0], "head": held_cp[1]}}
     if keyset_fingerprint_of is not None:
         held_fact["keyset_verifier"] = "supplied"  # present only when set: a root issued without one is exactly what it was
     return subject_digest({

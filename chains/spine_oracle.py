@@ -18,13 +18,18 @@ KeyboardInterrupt, GeneratorExit) is a crash of that scenario: it always fails t
 
 A `refused` scenario must also show that the attack call was made and refused. Text a scenario returns is not that
 evidence (a scenario that let the attack through can return the refusal text), so `refused()` records every call it
-makes and every refusal it catches, and `judge` requires a refusal recorded while the scenario ran (or the scenario
-itself raising an exception class it declares). The record is a counter, not an element of the returned list, because
-rows branch on whether `refused()` returned anything.
+makes and every refusal it catches into the record of the scenario that is running, and `judge` requires a refusal in
+THAT record (or the scenario itself raising an exception class it declares), one whose text carries a problem the
+scenario requires, so a refusal of something unrelated does not stand in for the attack. The record is made by `judge`
+for each scenario and found through a context variable, and it also remembers the thread that runs the scenario: a
+refusal made before the scenario, in another scenario, or on another thread (even one started with a copy of the
+context) is not counted. The record is not an element of the returned list, because rows branch on whether `refused()`
+returned anything.
 """
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import hashlib
 import threading
@@ -62,14 +67,24 @@ class Expect:
 Expectation = Expect
 CAUGHT = (ValueError, TypeError, OverflowError)
 
-_EVIDENCE_LOCK = threading.Lock()
-_CALLS = 0
-_REFUSALS = 0
 
 
-def _evidence() -> Tuple[int, int]:
-    with _EVIDENCE_LOCK:
-        return _CALLS, _REFUSALS
+@dataclass
+class _Attempts:
+    """What one running scenario attempted: the refusals its own `refused()` calls caught, on the thread that runs it."""
+    thread: int
+    active: bool = True
+    calls: int = 0
+    refusals: List[str] = dataclasses.field(default_factory=list)
+
+
+_CURRENT: "contextvars.ContextVar[Optional[_Attempts]]" = contextvars.ContextVar("spine_oracle_attempts", default=None)
+
+
+def _record() -> Optional[_Attempts]:
+    """The running scenario's record, or None outside `judge` and on any thread other than the one running the scenario."""
+    record = _CURRENT.get()
+    return record if record is not None and record.thread == threading.get_ident() else None
 
 
 def entries_digest(entries: Iterable[Any]) -> str:
@@ -84,21 +99,30 @@ def entries_digest(entries: Iterable[Any]) -> str:
     return h.hexdigest()
 
 
-def refused(thunk: Callable[[], Any], *, catch: Tuple[type, ...] = (), state: Optional[Callable[[], Any]] = None) -> List[str]:
+def attempts() -> Optional[_Attempts]:
+    """The running scenario's record, for a scenario that must make its attack call on a thread of its own (a deadlock guard):
+    take it on the scenario's thread and pass it to `refused(..., record=...)` there. It is explicit on purpose: a thread the
+    scenario did not hand it to cannot add evidence, and a record from a scenario that has finished counts for nothing."""
+    return _record()
+
+
+def refused(thunk: Callable[[], Any], *, catch: Tuple[type, ...] = (), state: Optional[Callable[[], Any]] = None,
+            record: Optional[_Attempts] = None) -> List[str]:
     """What a boundary refused, as a problem string, or nothing if it let the call through.
 
     `state`, when given, is read before and after; a refusal that left the state different is reported as a second
-    problem, because a refused call must change nothing."""
-    global _CALLS, _REFUSALS
+    problem, because a refused call must change nothing. `record` is the scenario's own record from `attempts()`, handed to a
+    thread the scenario started; it counts only while that scenario is still running."""
     before = state() if state is not None else None
-    with _EVIDENCE_LOCK:
-        _CALLS += 1
+    record = record if record is not None and record.active else _record()
+    if record is not None:
+        record.calls += 1
     try:
         thunk()
     except CAUGHT + tuple(catch) as exc:
-        with _EVIDENCE_LOCK:
-            _REFUSALS += 1
         out = [f"{type(exc).__name__}: {exc}"]
+        if record is not None:
+            record.refusals.append(out[0])
         if state is not None:
             after = state()
             if after != before:
@@ -131,11 +155,15 @@ def judge(expect: Expect, scenario: Callable[[], List[str]]) -> Tuple[List[str],
     if not isinstance(expect, Expect):
         raise TypeError(f"a scenario must declare an Expect, not {type(expect).__name__}")
     raised: Optional[BaseException] = None
-    refusals_before = _evidence()[1]
+    mine = _Attempts(threading.get_ident())
+    token = _CURRENT.set(mine)
     try:
         found = list(scenario())
     except BaseException as exc:  # noqa: BLE001 - a scenario that crashes (SystemExit and KeyboardInterrupt too) is judged, not propagated
         raised, found = exc, [f"{type(exc).__name__}: {exc}"]
+    finally:
+        _CURRENT.reset(token)
+        mine.active = False
     why: List[str] = []
     if raised is not None:
         if not isinstance(raised, Exception):
@@ -155,9 +183,11 @@ def judge(expect: Expect, scenario: Callable[[], List[str]]) -> Tuple[List[str],
         for p in found:
             if not any(t in p for t in listed):
                 why.append(f"unlisted extra problem {p!r}")
-        if expect.outcome == "refused" and raised is None and _evidence()[1] == refusals_before:
+        if expect.outcome == "refused" and raised is None and not any(
+                t in r for r in mine.refusals for t in expect.required):
             why.append("no refusal was recorded while the scenario ran: it returned refusal text without making an attack call "
-                       "that a boundary refused (use refused() around the attack call)")
+                       "that a boundary refused (use refused() around the attack call, on the scenario's own thread; a refusal "
+                       "of something else, or one made elsewhere, is not evidence)")
         if expect.outcome == "refused" and expect.raises and found and not any(
                 p.startswith(c + ":") for p in found for c in expect.raises):
             why.append(f"no problem starts with an accepted exception class {expect.raises}")

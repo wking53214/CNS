@@ -114,10 +114,11 @@ plain values digest as before).
   CNS. alpha's run is the reference the other stages are judged against.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.
-  It names the hardened tips (alpha `17bc5fd`, zeta `5762348`, beta `9b0f616`, delta `3343652`); `v2.3.0` and its
-  commit are unchanged. Delta's `pyproject.toml` at `3343652` pins zeta `5762348` and beta `9b0f616`. The manifest
-  check was verified on detached worktrees at exactly those commits and `chains/spine_run.py` ran 83 of 83 on them, with
-  every component imported from its worktree.
+  It named the hardened tips (alpha `17bc5fd`, zeta `5762348`, beta `9b0f616`, delta `0402271`) against `v2.3.0`; the
+  manifest check was verified on detached worktrees at exactly those commits and `chains/spine_run.py` ran 83 of 83 on
+  them, with every component imported from its worktree. At the `v2.4.0` record it names the re-pinned heads (alpha
+  `0a76c82`, zeta `95be445`, beta `1ba6004`, delta `78a5158`, which includes the fix at `0402271`), each pinning CNS
+  `v2.4.0`; `spine_manifest --stack` reads them clean and `chains/spine_run.py` ran 113 of 113 on them.
 
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
@@ -169,25 +170,34 @@ Each item names the attack it answers. Nothing in `cns/` changed, no pin moved, 
 
 - `cns_composition/spine_manifest` (F-05, F-16). The pyproject is read as TOML (`tomllib` on 3.11 and later; on 3.10 a strict
   fallback that refuses what it cannot read completely: a multi-line string, a repeated section or key, a bracket in a comment
-  inside a list). A comment ending in `]` ended the dependency list early for the old reader, and a decoy list in a
+  inside a list, and, since Step 7a, any character Python's `splitlines` breaks a line on but TOML does not (U+2028, U+2029,
+  U+0085, CR alone, VT, FF, FS, GS, RS), any other control character, and a key it cannot split exactly). A comment ending in `]` ended the dependency list early for the old reader, and a decoy list in a
   multi-line string hid a dependency pinned to another owner at a branch; both are now named or refused. A checkout is
   refused when `git status --porcelain` lists anything, untracked files included, because HEAD at the pinned commit said
-  nothing about the files imported. Messages show whole 40 character commits. `--installed` holds each installed
+  nothing about the files imported. Since Step 7c it is also refused when an index entry is marked --skip-worktree or
+  --assume-unchanged (`git ls-files -v`), or when an ignored file Python can import (.py, .pyc, .so, .pth and the like,
+  `__pycache__` included, whether hidden by .gitignore or .git/info/exclude) is present; ignored logs and other tools' caches
+  are not named, and a checkout that was imported from before may need `git clean -fdx`. Messages show whole 40 character commits. `--installed` holds each installed
   distribution's `direct_url.json` commit (importlib.metadata, no network) to the manifest, and that the package imported
   is the installed one; it does not see an installed tree edited in place.
 - `chains/spine_oracle.py` and `chains/spine_run.py` (F-08). A `SystemExit` or `KeyboardInterrupt` from a scenario fails that
-  scenario and never ends the run; a refusal's returned text counts only when `refused()` recorded a refusal while the
-  scenario ran; the state a refusal must leave alone is a digest of the whole content of every entry, not its hash;
+  scenario and never ends the run; a refusal's returned text counts only when `refused()` recorded, in that scenario's own
+  record and on its own thread, a refusal that carries a text the scenario requires (Step 7e: a refusal of something else, an
+  earlier scenario's, or another thread's does not count; a thread the scenario starts is handed the record explicitly); the state a refusal must leave alone is a digest of the whole content of every entry, not its hash;
   `Expect` texts are exact, non-blank `str`; a checkpoint row cannot pass on a refusal for another reason; a same-ledger
   rewrite is no longer labelled a wrong ledger. Not changed: `raises` still matches by class name.
 - `strict_problems` and `strict_root` (F-04). Optional `held_checkpoint`, a checkpoint the caller keeps where the ledger's
   producer cannot write: the receipt must carry exactly it. A tampered, rechained ledger with a fresh checkpoint (macg2 A4)
   is refused with it and, as recorded, undetectable without it. A receipt whose entry is the last one its checkpoint
   covers must name that entry's hash as the checkpoint head (macg2 A1). A root issued against a held checkpoint carries
-  that fact; without it every root is what it was.
-- `strict_problems` and `strict_root` (F-07). The keyset verifier is asked once per alpha content and the answer is
-  reused, so a verifier that answers differently the second time can no longer make `strict_problems` name a problem and
-  `strict_root` issue a root (hacker1 E55). A root issued with a verifier says so. `require_keyset_verifier=True` makes the
+  that fact; without it every root is what it was. Since Step 7b `strict_problems` and `strict_root` each read and validate
+  the held checkpoint once and use that one snapshot for the comparison and for what the root records.
+- `strict_problems` and `strict_root` (F-07). The keyset verifier is asked once per evaluation: one `strict_problems` call
+  asks once, and one `strict_root` call evaluates once and uses that answer, so inside `strict_root` a verifier cannot
+  say yes to the check and no to the root (hacker1 E55). Nothing is remembered between calls (an earlier version of this
+  change kept a process-wide memo, which made a revoked verifier keep its stale pass and a transient failure permanent;
+  removed in Step 7d, N5). Two separate public calls are two evaluations, so a verifier that lies across them is the
+  caller's trust and E55 is not claimed fixed across calls. A root issued with a verifier says so. `require_keyset_verifier=True` makes the
   absence a named problem. An echo verifier (hacker1 E54) is still the caller's trust.
 - Documentation (F-17): "13 of a Decision's 15 fields" is 16 (README, `chains/spine_run.py`); the manifest docstring's
   Python floor and its success message; the scenario counts; the statement that no signature moved.
@@ -197,6 +207,13 @@ Each item names the attack it answers. Nothing in `cns/` changed, no pin moved, 
   `cns_composition/tests/test_composition_public_shape.py` (the strict signature gained `held_checkpoint` and
   `require_keyset_verifier`, F-04, F-07). `chains/spine_run.py` rows edited: the zeroed-heads row allows the checkpoint-head
   problem (F-04) and the checkpoint cause is worded "unmatched checkpoint" (F-08).
+  Step 7d (N5), edited because they encoded the process-wide verifier memo: in `test_spine_trace_strict.py`,
+  `test_a_verifier_that_lies_on_its_second_call_cannot_let_problems_report_and_root_issue` (now
+  `test_a_verifier_is_asked_once_inside_one_strict_root_evaluation`: one `strict_root` call asks once),
+  `test_the_verifier_is_asked_exactly_once_for_one_evaluation` (`strict_root` after `strict_problems` is a second
+  evaluation, so two questions in all, not one) and `test_a_verifier_that_is_a_bound_method_is_asked_once_too` (one
+  question per public call); and the `chains/spine_run.py` row "a verifier that answers differently the second time cannot
+  split problems from root" (now "a verifier is asked once inside one root evaluation", `strict_root` alone).
 
 ### Changed
 

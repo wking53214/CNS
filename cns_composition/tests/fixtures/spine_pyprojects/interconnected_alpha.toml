@@ -1,0 +1,24 @@
+[project]
+name = "alpha"
+version = "0.1.0"
+description = "Detects named Keys in raw pediatric vitals, ready to feed into interconnected_zeta Locks."
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "zeta @ git+https://github.com/wking53214/interconnected_zeta@57623483ec51b09601a32cc44a41c2bc097e88db",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+# Optional: lets alpha outputs be bound to a CNS verdict (alpha.cns_connector). Nothing in alpha imports cns otherwise.
+cns = ["cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["alpha"]

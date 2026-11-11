@@ -47,7 +47,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
 
-from spine_oracle import Expect, check_table, entries_digest, judge
+from spine_oracle import Expect, attempts, check_table, entries_digest, judge
 from spine_oracle import refused as _refused
 
 import alpha.cns_connector as alpha_cns
@@ -252,11 +252,13 @@ def check(parts, *, verify_fingerprint: bool = True) -> List[str]:
     return found + ([f"delta issued no verification receipt: {refusal}"] if refusal else [])
 
 
-def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None, catch: Tuple[type, ...] = ()) -> List[str]:
+def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None, catch: Tuple[type, ...] = (),
+            record: Any = None) -> List[str]:
     """What a boundary refused, as a problem string, or nothing if it let the call through. `state` is compared before
     and after: a refusal that changed it is a second problem (see spine_oracle.refused). `catch` adds exception classes
-    beyond the ValueErrors, TypeErrors and OverflowErrors the oracle already treats as refusals."""
-    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError) + tuple(catch), state=state)
+    beyond the ValueErrors, TypeErrors and OverflowErrors the oracle already treats as refusals. `record` is the scenario's
+    own record (`attempts()`), handed to a thread the scenario started; see spine_oracle.attempts."""
+    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError) + tuple(catch), state=state, record=record)
 
 
 def ledger_state(ledger: DecisionLedger) -> Callable[[], Any]:
@@ -537,10 +539,11 @@ def a_keyset_substituted_under_a_copied_fingerprint_is_recomputed() -> List[str]
     return substituted_alpha_content_under_the_original_fingerprint(verify_fingerprint=True)
 
 
-def a_verifier_that_answers_differently_the_second_time() -> List[str]:
-    """E55. A substituted alpha under a copied fingerprint, and a verifier that recomputes honestly once and then echoes alpha's
-    own fingerprint. `strict_problems` names the problem; `strict_root` used to ask again, be lied to, and issue a root for the
-    same run. The verifier is asked once, so no root is issued."""
+def a_verifier_is_asked_once_inside_one_root_evaluation() -> List[str]:
+    """E55, as far as it holds. A substituted alpha under a copied fingerprint, and a verifier that recomputes honestly the first
+    time it is asked and then echoes alpha's own fingerprint. `strict_root` evaluates once and uses that one answer, so no root
+    is issued. Two separate public calls are two evaluations and each asks afresh: a verifier that lies across them is the
+    caller's trust (stated in `strict_problems`' docstring), not something this scenario claims."""
     p = stages(SICK)
     other = alpha_cns.keyset_content(observe(SICK_ELSEWHERE), context=CTX)
     other["keyset_fingerprint"] = p["alpha"]["keyset_fingerprint"]
@@ -551,15 +554,14 @@ def a_verifier_that_answers_differently_the_second_time() -> List[str]:
     def flaky(alpha: Any) -> str:
         asked.append(1)
         return zeta_keyset_fingerprint(alpha) if len(asked) == 1 else alpha["keyset_fingerprint"]
-    args = (q["alpha"], q["zeta"], q["beta"], q["delta"])
-    found = strict_problems(*args, chain=receipt, keyset_fingerprint_of=flaky)
+    found: List[str] = []
     try:
-        strict_root(*args, chain=receipt, keyset_fingerprint_of=flaky)
-        found.append("a root was issued for a run strict_problems refused")
-    except ValueError:
-        pass
+        strict_root(q["alpha"], q["zeta"], q["beta"], q["delta"], chain=receipt, keyset_fingerprint_of=flaky)
+        found.append("a root was issued for a run whose verifier answered wrongly")
+    except ValueError as exc:
+        found += str(exc).split("the spine run does not hold together: ", 1)[-1].split("; ")
     if len(asked) != 1:
-        found.append(f"the verifier was asked {len(asked)} times for one run")
+        found.append(f"the verifier was asked {len(asked)} times inside one evaluation")
     return found
 
 
@@ -1135,8 +1137,10 @@ def a_sink_that_appends_to_its_own_ledger() -> List[str]:
     ledger = DecisionLedger(require_context=True, sink=sink)
     holder.append(ledger)
     result: List[List[str]] = []
+    mine = attempts()  # the worker thread is this scenario's own: it is handed the scenario's record explicitly
     worker = threading.Thread(
-        target=lambda: result.append(refused(lambda: ledger.append(p["decision"], context=CTX), ledger_state(ledger), catch=(RuntimeError,))),
+        target=lambda: result.append(refused(lambda: ledger.append(p["decision"], context=CTX), ledger_state(ledger), catch=(RuntimeError,),
+                                             record=mine)),
         daemon=True)
     worker.start()
     worker.join(timeout=10)
@@ -1891,7 +1895,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("the export says require_context=False; the verifier requires True",), raises=("ValueError",))),
     ("strict: zeta refuses a lock result bound to another entity's context", zeta_refuses_to_bind_a_lock_result_to_another_entitys_context,
      Expect("refused", required=("the LockResult was evaluated for entity 'patient_1'",), raises=("ValueError",))),
-    ("strict: a verifier that answers differently the second time cannot split problems from root", a_verifier_that_answers_differently_the_second_time,
+    ("strict: a verifier is asked once inside one root evaluation", a_verifier_is_asked_once_inside_one_root_evaluation,
      Expect("problems", required=("alpha's KeySet fingerprint does not match a recomputation from alpha's keys",))),
     ("strict: a required verifier that is missing is a named problem", a_required_verifier_that_is_missing,
      Expect("problems", required=("no keyset_fingerprint_of was supplied, and require_keyset_verifier is set",))),
