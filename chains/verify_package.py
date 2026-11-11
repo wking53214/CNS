@@ -9,7 +9,8 @@ The receipt must be signed: a package with no signature.json is refused (exit 1,
 passed, and then the summary says `receipt_signature=absent (allowed)`. A signature that is present must always verify.
 
 What it does, in order, and stops at the first step that cannot go on:
-  1. reads the checkpoint with Delta's `CheckpointStore` from CHECKPOINT_FILE, which must live outside the package. Its
+  1. reads the checkpoint with Delta's `CheckpointStore` from CHECKPOINT_FILE, which must live outside the package (so must
+     TRUST_JSON): if the real path of either, symlinks followed, or a hard link, is inside PACKAGE_DIR it exits 2. Its
      signature is verified with the trust list when `--require-signed` is given, and also whenever the file carries one.
   2. `delta.verify_export(export, checkpoint)`: rebuilds the ledger from export.json, recomputing every hash, and requires it
      to contain the history the checkpoint names.
@@ -61,6 +62,23 @@ def refuse(problems: List[str]) -> NoReturn:
     raise SystemExit(1)
 
 
+def inside_package(path: str, package: str) -> bool:
+    """True when the REAL location of `path` is in the package directory: by its resolved path (symlinks and `..` followed,
+    from either side) or because it is the same file as one the package holds (a hard link)."""
+    real_package, real = os.path.realpath(package), os.path.realpath(path)
+    if os.path.commonpath([real_package, real]) == real_package:
+        return True
+    if os.path.isfile(real):
+        for folder, _, names in os.walk(real_package):
+            for name in names:
+                try:
+                    if os.path.samefile(os.path.join(folder, name), real):
+                        return True
+                except OSError:
+                    continue
+    return False
+
+
 def read_json(path: str) -> Any:
     try:
         with open(path, encoding="utf-8") as fh:
@@ -81,6 +99,10 @@ def main(argv: List[str]) -> int:
     if a.allow_unsigned and a.require_signed:
         ap.error("--allow-unsigned and --require-signed contradict each other")
 
+    for flag, path in (("--checkpoint", a.checkpoint), ("--public-keys", a.public_keys)):
+        if inside_package(path, a.package):
+            unreadable(f"{flag} {path} is inside the package directory {a.package} (its real path is, symlinks followed): "
+                       "the checkpoint and the trust list must come from somewhere the package's author cannot write")
     export = read_json(os.path.join(a.package, "export.json"))
     receipt = read_json(os.path.join(a.package, "receipt.json"))
     contents = read_json(os.path.join(a.package, "contents.json"))

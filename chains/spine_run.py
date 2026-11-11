@@ -2391,6 +2391,42 @@ def inputs_that_cannot_be_read_exit_two_not_one() -> List[str]:
     return out
 
 
+def the_checkpoint_and_the_trust_list_must_live_outside_the_package() -> List[str]:
+    """The checkpoint is independent only if the package's author cannot write it. Given a path whose REAL location is inside
+    the package directory (a copy, a symlink in the package to a file outside, a symlink outside to a file inside, a hard
+    link), the command exits 2 and says so; the same files from outside the package still verify."""
+    out: List[str] = []
+    with packages((), ()) as (pkg, clean):
+        def expect2(label: str, done: "subprocess.CompletedProcess[str]") -> None:
+            if done.returncode != 2 or "inside the package" not in done.stderr or done.stdout.strip():
+                out.append(f"{label}: exit {done.returncode}, stderr {done.stderr.strip()[-200:]!r}, stdout {done.stdout.strip()!r}")
+
+        for flag, source, name in (("checkpoint", pkg.checkpoint, "cp.json"), ("trust", pkg.trust, "trust.json")):
+            def use(path: str) -> "subprocess.CompletedProcess[str]":
+                return pkg.verify("--require-signed", **{flag: path})  # type: ignore[arg-type]
+            label = "the checkpoint" if flag == "checkpoint" else "the trust list"
+            inside = os.path.join(pkg.dir, name)
+            shutil.copy(source, inside)
+            expect2(f"{label} copied into the package", use(inside))
+            via_link = os.path.join(pkg.dir, "link-" + name)
+            os.symlink(source, via_link)  # a name in the package, the file outside
+            expect2(f"{label} reached through a symlink inside the package", use(via_link))
+            outside_link = os.path.join(pkg.root, "outside-link-" + name)
+            os.symlink(inside, outside_link)  # a name outside, the file inside
+            expect2(f"{label} reached through a symlink outside that points into the package", use(outside_link))
+            hard = os.path.join(pkg.dir, "hard-" + name)
+            os.link(source, hard)
+            expect2(f"{label} hard-linked into the package", use(hard))
+            expect2(f"{label} reached by a path through ..", use(os.path.join(pkg.dir, "..", "package", name)))
+        os.symlink(pkg.dir, os.path.join(pkg.root, "pkg-link"))  # the package itself named through a link
+        expect2("the package given through a symlink and the checkpoint inside it",
+                run_script(VERIFY_PACKAGE, os.path.join(pkg.root, "pkg-link"), "--checkpoint", os.path.join(pkg.dir, "cp.json"),
+                           "--public-keys", pkg.trust))
+        if clean.verify("--require-signed").returncode != 0:
+            out.append("an untouched package no longer verifies with the checkpoint and trust list from outside")
+    return out
+
+
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
@@ -2749,6 +2785,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
     ("package: a checkpoint signed by an untrusted key", lambda: refused_package((), attack=a_checkpoint_key_that_is_untrusted),
      Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint signature does not verify'), raises=("ValueError",))),
+    ("package: a checkpoint or trust list whose real path is inside the package exits 2",
+     the_checkpoint_and_the_trust_list_must_live_outside_the_package, CLEAN),
     ("package: inputs that cannot be read, and usage errors, exit 2 and not 1", inputs_that_cannot_be_read_exit_two_not_one, CLEAN),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),

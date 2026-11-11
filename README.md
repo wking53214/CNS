@@ -327,6 +327,10 @@ protects is not independent; the consumer must be given it from storage the prod
 envelope (`key_id:` then the signature) are the reference deployer's in `chains/receipt_keys.py`, not delta's or CNS's.
 Run from a checkout with the four spine repositories importable (the same `PYTHONPATH` the runner uses).
 
+The rule is enforced, not a convention: if the real path of `--checkpoint` or `--public-keys` is inside `PACKAGE_DIR`
+(a copy, a symlink in the package to a file outside, a symlink outside to a file inside, a `..` path, or a hard link to a
+file the package holds), the command exits 2 with a message saying so, before it reads anything.
+
 Exit codes: `0` verified, with one line (`verified: root=... entries=N checkpoint=N receipt_signature=verified`, or `absent (allowed)` under `--allow-unsigned`); `1`
 refused, each named problem on stderr; `2` a usage error or an input that cannot be read (a missing file, text that is not
 JSON, a trust file of the wrong shape). The command reads the checkpoint with delta's `CheckpointStore` (its signature is
