@@ -42,6 +42,14 @@ entry says so.
   `allow_unguarded_*` opt-out, and each GAP names its owner. `test_decision_guard_limits.py` records DecisionGuard's
   limits as assertions: one spend per process, a second copy of the module has its own spent set, a Decision carried
   to another process is refused there.
+- Fixes from an independent review of the above: the Node digest check runs in its own `chains` job
+  (`digest-second-language`), after proving it fails a stub that digests wrongly; `test_decision_guard_limits.py` adds
+  a LIMIT for `os.fork` (a forked child spends a decision again); `DIGEST.md` adds duplicate-key, size and depth rules
+  and says any domain value renders; the consumer refuses duplicate keys.
+- `docs/evidence/RACE_CNS_3.0.0_2026-11-11.md`: the record of this campaign (baseline, changes, interoperability,
+  evidence-spine red team, review findings, scorecard). It concludes 9.0, not 9.2: the stack does not install until
+  the sweep and the circuit re-pin, the Unreleased breaking change awaits the owner, and no third party has run
+  `DIGEST.md`.
 - Pre-existing tests edited in this wave: none.
 
 - `cns_composition/repin.py` reads checkouts with `GIT_NO_REPLACE_OBJECTS=1` (its one git helper, `_git_env`), so a `git replace` ref cannot make a checkout look clean at a pinned commit while holding other content. Test: `cns_composition/tests/test_repin.py::test_a_replace_ref_does_not_make_a_checkout_look_clean`. The git helpers of `circuit_canary`, `circuit_refusals` and `release` are separate and were not changed.
