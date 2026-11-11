@@ -37,7 +37,7 @@ def test_nothing_from_the_event_is_spliced_into_a_shell():
 
 def test_every_repository_the_chains_use_is_checked_out():
     declared = set(re.findall(r"repository: \$\{\{ github\.repository_owner \}\}/(\S+)", WORKFLOW))
-    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", "HERALD", "TIE", "Conservation_Kernel", "ccc", *SPINE}
+    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", "HERALD", "TIE", "Conservation_Kernel", "ccc", "UAI-2", *SPINE}
 
 
 def test_the_full_chain_names_only_repositories_whose_gate_ends_cns_declares():
@@ -135,7 +135,7 @@ def test_the_evidence_script_runs_with_exactly_its_four_repositories_importable(
     path = re.search(r"PYTHONPATH: (.+)", step).group(1).split(":")
     assert path == ["${{ github.workspace }}/stack/HERALD", "${{ github.workspace }}/stack/TIE/src",
                     "${{ github.workspace }}/stack/Conservation_Kernel/src", "${{ github.workspace }}/stack/Governance_Gateway/src",
-                    "${{ github.workspace }}/stack/ccc"]
+                    "${{ github.workspace }}/stack/ccc", "${{ github.workspace }}/stack/UAI-2"]
 
 
 def test_the_evidence_script_states_its_scenarios_and_imports_only_its_four_repositories():
