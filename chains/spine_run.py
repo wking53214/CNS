@@ -38,9 +38,15 @@ the checkpoint does not cover). Delta's refusal of a checkpoint is one sentence 
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+import hashlib
 import json
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 import warnings
 from collections.abc import Mapping
@@ -161,19 +167,21 @@ CTX = {"schema": CONTEXT_SCHEMA, "entity_id": "patient_1", "event_id": "event_1"
 SICK_ELSEWHERE = VitalsObservation(heart_rate=149, oxygen_saturation=90.0, respiratory_rate=36, temperature=39.6, age_months=14)
 
 
-def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None, origin=None) -> Dict[str, Any]:
-    """Run the four stages for real, binding each to the context and to the digest of the stage before it."""
+def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None, origin=None,
+           ledger=None, at=T0) -> Dict[str, Any]:
+    """Run the four stages for real, binding each to the context and to the digest of the stage before it. `ledger` (default a
+    new one that requires a context) and `at` (the Decision's time) let a caller record several runs into one ledger."""
     locks, engine = build()
-    ledger = DecisionLedger(require_context=True)
+    ledger = DecisionLedger(require_context=True) if ledger is None else ledger
     entity = ctx["entity_id"]
     keys = observe(vitals)
     alpha = alpha_cns.keyset_content(keys, context=ctx, origin=origin)
     # zeta and beta are told which KeySet digest to name; nothing in either can check it against what they evaluated.
     da = subject_digest(alpha if bind_keyset_of is None else alpha_cns.keyset_content(observe(bind_keyset_of), context=ctx))
-    results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
+    results = LockEvaluator(locks).evaluate_all(entity, keys, at)
     zeta = {lid: zeta_cns.lock_result_content(r, context=ctx, keyset_digest=da) for lid, r in results.items()}
     decided_on = results if results_from is None else results_from
-    decision = engine.decide(entity, keys if keys_for_decision is None else keys_for_decision, decided_on, T0)
+    decision = engine.decide(entity, keys if keys_for_decision is None else keys_for_decision, decided_on, at)
     beta = beta_cns.decision_content(
         decision, context=ctx, keyset_digest=da,
         lock_result_digests={lid: zeta_cns.lock_result_digest(r, context=ctx, keyset_digest=da) for lid, r in decided_on.items()})
@@ -1885,6 +1893,257 @@ def GAP_a_holder_of_a_trusted_key_signs_a_forged_receipt() -> List[str]:
     return signed_check(p, receipt, signature, deployer_verifier(), held=False)
 
 
+# --- the durable store across processes (Step 3) ----------------------------------------------------------------------
+#
+# Each scenario runs SEPARATE python processes (`store_worker.py`, with this interpreter and this PYTHONPATH). The producer
+# records Decisions through FileLedgerStore, writes a signed checkpoint into a directory of its own and hands over the three
+# upstream contents and a signature over Delta's receipt. A fresh consumer reconciles the store with the checkpoint, rebuilds
+# the receipt itself and asks CNS for the strict root. Every refusal is judged by the consumer's own named reason, and the
+# store files must be byte-identical afterwards.
+
+WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_worker.py")
+
+
+def record(ledger, i, vitals=None) -> Dict[str, Any]:
+    """The i-th run recorded into `ledger`: alternating readings, a minute later each, its own run and event."""
+    return stages((SICK, WELL)[i % 2] if vitals is None else vitals, ctx={**CTX, "run_id": f"run_{i}", "event_id": f"event_{i}"},
+                  ledger=ledger, at=T0 + timedelta(minutes=i))
+
+
+def worker(*args: str, **kw: Any) -> "subprocess.CompletedProcess[str]":
+    return subprocess.run([sys.executable, WORKER, *args], capture_output=True, text=True, timeout=180, env=dict(os.environ), **kw)
+
+
+class World:
+    """Three places that do not share a directory: the ledger store, the checkpoint (separate storage) and the hand-off."""
+
+    def __init__(self, root: str) -> None:
+        self.root = root
+        self.ledger = os.path.join(root, "ledger")
+        self.checkpoint = os.path.join(root, "checkpoint-storage", "checkpoint.json")
+        self.handoff = os.path.join(root, "handoff")
+        self.file = os.path.join(self.ledger, "ledger.jsonl")
+
+    def produce(self, entries: int, *more: str) -> List[str]:
+        """Run a producer process to completion; the audit ids it acknowledged."""
+        done = worker("producer", "--ledger", self.ledger, "--checkpoint", self.checkpoint, "--handoff", self.handoff,
+                      "--entries", str(entries), *more)
+        if done.returncode != 0:
+            raise RuntimeError(f"the producer exited {done.returncode}: {done.stderr.strip()[-400:]}")
+        return [line.split()[1] for line in done.stdout.splitlines() if line.startswith("ACK ")]
+
+    def consume(self, *more: str) -> "subprocess.CompletedProcess[str]":
+        return worker("consumer", "--ledger", self.ledger, "--checkpoint", self.checkpoint, "--handoff", self.handoff, *more)
+
+    def state(self) -> Dict[str, str]:
+        """Every byte of the ledger store and of the checkpoint storage: a refused load must leave both as they were."""
+        found: Dict[str, str] = {}
+        for base in (self.ledger, os.path.dirname(self.checkpoint)):
+            for folder, _, names in os.walk(base):
+                for name in names:
+                    path = os.path.join(folder, name)
+                    with open(path, "rb") as fh:
+                        found[os.path.relpath(path, self.root)] = hashlib.sha256(fh.read()).hexdigest()
+        return found
+
+    def lines(self) -> List[bytes]:
+        with open(self.file, "rb") as fh:
+            return fh.read().splitlines(keepends=True)
+
+    def write_lines(self, lines: List[bytes]) -> None:
+        with open(self.file, "wb") as fh:
+            fh.write(b"".join(lines))
+
+
+@contextlib.contextmanager
+def world():
+    with tempfile.TemporaryDirectory() as root:
+        yield World(root)
+
+
+def consumer_refusal(w: World, *more: str) -> Callable[[], None]:
+    """The consumer as a thunk that raises ValueError carrying its own named reason when it exits non-zero."""
+    def thunk() -> None:
+        done = w.consume(*more)
+        if done.returncode != 0:
+            raise ValueError(f"the consumer exited {done.returncode}: {done.stderr.strip()}")
+    return thunk
+
+
+def consumer_answer(done: "subprocess.CompletedProcess[str]") -> Dict[str, Any]:
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def a_producer_and_a_fresh_consumer_agree() -> List[str]:
+    with world() as w:
+        acked = w.produce(4)
+        before = w.state()
+        done = w.consume()
+        if done.returncode != 0:
+            return [f"the consumer refused an honest store: {done.stderr.strip()}"]
+        answer = consumer_answer(done)
+        out: List[str] = []
+        if len(acked) != 4 or len(w.lines()) != 4:
+            out.append(f"the producer acknowledged {len(acked)} entries and the file holds {len(w.lines())}, not 4")
+        if os.path.dirname(w.checkpoint) == w.ledger or w.checkpoint.startswith(w.ledger):
+            out.append("the checkpoint is in the ledger's directory, which is not independent")
+        if answer.get("status") != "OK" or answer.get("entries") != 4 or answer.get("checkpoint_length") != 4:
+            out.append(f"the consumer reported {answer}")
+        if not (isinstance(answer.get("root"), str) and len(answer["root"]) == 64):
+            out.append("the consumer issued no root")
+        if w.state() != before:
+            out.append("the consumer changed the store or the checkpoint")
+        return out
+
+
+def a_ledger_file_truncated_below_the_checkpoint() -> List[str]:
+    with world() as w:
+        w.produce(4)
+        w.write_lines(w.lines()[:2])
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def an_entry_rewritten_and_the_file_rechained() -> List[str]:
+    """Entry 1 is a different Decision, recorded afresh so that every later hash, sum and the chain are consistent: the file
+    verifies on its own. Only the checkpoint held elsewhere says the history was different."""
+    with world() as w:
+        w.produce(4)
+        with tempfile.TemporaryDirectory() as other:
+            ledger = DecisionLedger(require_context=True, sink=delta_pkg.FileLedgerStore(other).sink)
+            for i in range(4):
+                record(ledger, i, SICK_ELSEWHERE if i == 1 else None)
+            with open(os.path.join(other, "ledger.jsonl"), "rb") as fh:
+                rewritten = fh.read()
+        if rewritten == b"".join(w.lines()):
+            return ["the rewrite equals the honest file, so nothing was rewritten"]
+        with open(w.file, "wb") as fh:
+            fh.write(rewritten)
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def a_torn_final_line_is_recovered_and_reported() -> List[str]:
+    """A fifth entry past the checkpoint is cut off mid-line, as a crash would. The checkpoint covers four: the load drops the
+    torn line, says so, and the strict root is issued for the witnessed entry. Nothing is written by the load."""
+    with world() as w:
+        acked = w.produce(5, "--checkpoint-at", "4")
+        lines = w.lines()
+        w.write_lines(lines[:4] + [lines[4][: len(lines[4]) // 2]])
+        before = w.state()
+        done = w.consume()
+        if done.returncode != 0:
+            return [f"the consumer refused a torn final line past the checkpoint: {done.stderr.strip()}"]
+        answer = consumer_answer(done)
+        out: List[str] = []
+        if answer["recovered_tail"].get("count") != 1 or answer["status"] != "OK" or answer["entries"] != 4 or not answer.get("root"):
+            out.append(f"the torn line was not recovered and reported: {answer} ({len(acked)} acknowledged)")
+        if w.state() != before:
+            out.append("the load wrote to the store")
+        return out
+
+
+def mid_file_damage_is_refused() -> List[str]:
+    with world() as w:
+        w.produce(4)
+        lines = w.lines()
+        if b"patient_1" not in lines[1]:
+            return ["the damage could not be made"]
+        lines[1] = lines[1].replace(b"patient_1", b"patient_2", 1)
+        w.write_lines(lines)
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def a_checkpoint_replaced_by_an_older_signed_one(*more: str, expect_refusal: bool = True) -> List[str]:
+    with world() as w:
+        with tempfile.TemporaryDirectory() as old:
+            snapshot = (os.path.join(old, "checkpoint.json"), os.path.join(old, "handoff"))
+            w.produce(4, "--snapshot-at", "2", "--snapshot-checkpoint", snapshot[0], "--snapshot-handoff", snapshot[1])
+            os.replace(snapshot[0], w.checkpoint)
+        if expect_refusal:
+            return refused(consumer_refusal(w, *more), state=w.state)
+        before = w.state()
+        done = w.consume(*more)
+        if done.returncode != 0:
+            return [f"the consumer refused: {done.stderr.strip()}"]
+        answer = consumer_answer(done)
+        out = [] if answer.get("status") == "UNWITNESSED_TAIL" and answer.get("unwitnessed") == 2 else [f"the consumer reported {answer}"]
+        return out + ([] if w.state() == before else ["the consumer changed the store or the checkpoint"])
+
+
+def GAP_an_older_signed_checkpoint_is_accepted_as_an_unwitnessed_tail() -> List[str]:
+    """KNOWN GAP, a recorded limit. A signature carries no freshness: the checkpoint at two entries, validly signed by the
+    deployer's key and put back over the one at four, verifies. `reconcile` reports UNWITNESSED_TAIL (two entries nothing
+    independent vouches for) and does not refuse. A consumer that insists on OK refuses it (the scenario above); one that
+    accepts a tail is told, and gets no root, but nothing in the store or the signature says the checkpoint is old."""
+    return a_checkpoint_replaced_by_an_older_signed_one("--accept-unwitnessed", expect_refusal=False)
+
+
+def GAP_a_ledger_rolled_back_to_an_older_signed_package_is_accepted() -> List[str]:
+    """KNOWN GAP, a recorded limit and the sharp end of the one above. The attacker has an older, complete, validly signed
+    package (checkpoint at two entries, the hand-off for entry two) and cuts the ledger file back to two lines. Every check
+    passes and a root is issued for the older state; the two later, acknowledged entries are gone and nothing here says so.
+    Freshness (a counter, a clock or a monitor that remembers the newest checkpoint) is the deployer's, outside CNS."""
+    with world() as w:
+        with tempfile.TemporaryDirectory() as old:
+            snapshot = (os.path.join(old, "checkpoint.json"), os.path.join(old, "handoff"))
+            w.produce(4, "--snapshot-at", "2", "--snapshot-checkpoint", snapshot[0], "--snapshot-handoff", snapshot[1])
+            os.replace(snapshot[0], w.checkpoint)
+            for name in ("contents.json", "receipt_signature.hex"):
+                shutil.copy(os.path.join(snapshot[1], name), os.path.join(w.handoff, name))
+        w.write_lines(w.lines()[:2])
+        done = w.consume()
+        if done.returncode != 0:
+            return [f"the rollback was refused, so the gap has closed: {done.stderr.strip()}"]
+        answer = consumer_answer(done)
+        return [] if answer.get("entries") == 2 and answer.get("root") else [f"the consumer reported {answer}"]
+
+
+def a_checkpoint_with_no_signature_when_one_is_required() -> List[str]:
+    with world() as w:
+        w.produce(4)
+        store = delta_pkg.CheckpointStore(w.checkpoint)
+        store.write(store.read())  # the same value, written without a signature
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def a_producer_killed_mid_run_loses_no_acknowledged_entry() -> List[str]:
+    """SIGKILL of a producer that is recording as fast as it can. A fresh process loads the store: every entry the producer had
+    acknowledged is there, in order, with at most one more (appended, not yet reported), and the chain verifies on load."""
+    with world() as w:
+        proc = subprocess.Popen([sys.executable, WORKER, "producer", "--ledger", w.ledger, "--checkpoint", w.checkpoint,
+                                 "--handoff", w.handoff, "--forever"], stdout=subprocess.PIPE, text=True, env=dict(os.environ))
+        timer = threading.Timer(120, proc.kill)
+        timer.start()
+        acked: List[str] = []
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if line.startswith("ACK ") and line.endswith("\n"):
+                    acked.append(line.split()[1])
+                if len(acked) >= 15:
+                    break
+            proc.kill()  # SIGKILL: no handler runs, nothing is flushed that was not already
+            proc.wait()
+            for line in proc.stdout:  # what was written before the kill and not yet read
+                if line.startswith("ACK ") and line.endswith("\n"):
+                    acked.append(line.split()[1])
+        finally:
+            timer.cancel()
+            if proc.stdout is not None:
+                proc.stdout.close()
+        out: List[str] = []
+        if proc.returncode != -9:
+            out.append(f"the producer was not killed by SIGKILL (exit {proc.returncode})")
+        done = worker("load", "--ledger", w.ledger)
+        if done.returncode != 0:
+            return out + [f"the consumer could not load the killed store: {done.stderr.strip()[-300:]}"]
+        loaded = consumer_answer(done)["ids"]
+        if loaded[: len(acked)] != acked:
+            out.append(f"{len(acked)} entries were acknowledged and the store does not begin with them ({len(loaded)} loaded)")
+        if len(loaded) - len(acked) not in (0, 1):
+            out.append(f"{len(loaded)} entries loaded for {len(acked)} acknowledged")
+        return out
+
+
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
@@ -2188,6 +2447,24 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("signed: DRIFT, CNS's and delta's receipt signing inputs are byte-equal and refuse alike",
      the_two_receipt_signing_inputs_do_not_drift, CLEAN),
     ("signed: GAP, a holder of a trusted key signs a forged receipt", GAP_a_holder_of_a_trusted_key_signs_a_forged_receipt, GAP),
+    # --- the durable store across separate processes: a producer, then a fresh consumer ---
+    ("store: a producer's store, checkpoint and signature are accepted by a fresh consumer, which issues a root",
+     a_producer_and_a_fresh_consumer_agree, CLEAN),
+    ("store: a ledger file truncated below the checkpoint", a_ledger_file_truncated_below_the_checkpoint,
+     Expect("refused", required=("reconcile LOST",), raises=("ValueError",))),
+    ("store: an entry rewritten and the file rechained", an_entry_rewritten_and_the_file_rechained,
+     Expect("refused", required=("reconcile DIVERGED",), raises=("ValueError",))),
+    ("store: a torn final line is recovered, reported, and the root is issued", a_torn_final_line_is_recovered_and_reported, CLEAN),
+    ("store: damage in the middle of the file", mid_file_damage_is_refused,
+     Expect("refused", required=("StoreCorruptError", "damaged before the end of the file"), raises=("ValueError",))),
+    ("store: a checkpoint replaced by an older signed one is refused by a consumer that requires OK",
+     a_checkpoint_replaced_by_an_older_signed_one,
+     Expect("refused", required=("reconcile UNWITNESSED_TAIL",), raises=("ValueError",))),
+    ("store: a checkpoint with no signature when one is required", a_checkpoint_with_no_signature_when_one_is_required,
+     Expect("refused", required=("the checkpoint is not signed but a signature check was asked for",), raises=("ValueError",))),
+    ("store: a producer killed with SIGKILL loses no acknowledged entry", a_producer_killed_mid_run_loses_no_acknowledged_entry, CLEAN),
+    ("store: GAP, an older signed checkpoint carries no freshness", GAP_an_older_signed_checkpoint_is_accepted_as_an_unwitnessed_tail, GAP),
+    ("store: GAP, a ledger rolled back to an older signed package", GAP_a_ledger_rolled_back_to_an_older_signed_package_is_accepted, GAP),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),
     ("oracle: a refusal that edited an entry's content is a state change", the_oracle_flags_a_refusal_that_edited_an_entrys_content, CLEAN),

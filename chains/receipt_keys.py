@@ -28,8 +28,10 @@ holder is honest, and a holder can sign a receipt for a ledger that does not exi
 
 from __future__ import annotations
 
-from typing import Any, Callable, Collection, Dict, Mapping
+import json
+from typing import Any, Callable, Collection, Dict, Mapping, Tuple
 
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 SEPARATOR = b":"
@@ -75,3 +77,27 @@ def make_verifier(trust: Mapping[str, Ed25519PublicKey], revoked: Collection[str
             return False
 
     return verify
+
+
+def public_key_hex(public_key: Ed25519PublicKey) -> str:
+    return public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+
+
+def trust_to_json(trust: Mapping[str, Ed25519PublicKey], revoked: Collection[str] = ()) -> str:
+    """The trust list as the JSON a consumer reads: public keys only (64 hex characters each), never a private key."""
+    return json.dumps({"keys": {k: public_key_hex(v) for k, v in sorted(trust.items())}, "revoked": sorted(revoked)}, indent=2) + "\n"
+
+
+def trust_from_json(text: str) -> Tuple[Dict[str, Ed25519PublicKey], frozenset]:
+    """`(trust, revoked)` from `trust_to_json`'s format; ValueError for anything that is not exactly that shape."""
+    data = json.loads(text)
+    if type(data) is not dict or set(data) != {"keys", "revoked"} or type(data["keys"]) is not dict \
+            or type(data["revoked"]) is not list or not all(type(r) is str for r in data["revoked"]):
+        raise ValueError('a trust file is {"keys": {key_id: 64 hex characters}, "revoked": [key_id, ...]}')
+    trust: Dict[str, Ed25519PublicKey] = {}
+    for key_id, hexkey in data["keys"].items():
+        _key_id_bytes(key_id)
+        if type(hexkey) is not str or len(hexkey) != 64:
+            raise ValueError(f"the public key for {key_id!r} is not 64 hex characters")
+        trust[key_id] = Ed25519PublicKey.from_public_bytes(bytes.fromhex(hexkey))
+    return trust, frozenset(data["revoked"])
