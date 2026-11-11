@@ -8,12 +8,16 @@ another repository's to close, and each test fails the day the limit changes, so
 import importlib
 import importlib.util
 import pickle
+import multiprocessing
 import subprocess
 import sys
+from pathlib import Path
 
 from cns_composition import decision_guard as dg
 from cns_composition.super_gate import Judged
 from cns_composition.tests.test_decision_guard import decision
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _guard(module=dg):
@@ -51,10 +55,11 @@ def test_LIMIT_a_second_copy_of_the_decision_guard_module_has_its_own_spent_set(
     assert again(("doc-1", "abc")) is True
 
 
-def test_a_decision_cannot_be_carried_to_another_process_and_spent_there():
-    """Cross-process replay of an in-process Decision does not arise: its issuance proof is keyed per process, and a
-    copy carried out is not `issued` there. Carrying a decision across processes is UAI-1's job (signed envelopes, in
-    UAI-2), whose replay rule is a shared ledger: two ledgers, two spends (chains/evidence_spine.py records that GAP)."""
+def test_a_decision_carried_to_a_freshly_started_process_is_refused_there():
+    """A copy carried to a process started afresh is not `issued` there: the issuance proof is keyed per process.
+    Carrying a decision across processes is UAI-1's job (signed envelopes, in UAI-2), whose replay rule is a shared
+    ledger: two ledgers, two spends (chains/evidence_spine.py records that GAP). A forked process is different; see
+    the next test."""
     blob = pickle.dumps(decision())
     code = ("import pickle, sys\n"
             "from cns_composition.decision_guard import DecisionGuard\n"
@@ -62,6 +67,31 @@ def test_a_decision_cannot_be_carried_to_another_process_and_spent_there():
             "d = pickle.loads(sys.stdin.buffer.read())\n"
             "g = DecisionGuard(lambda a: Judged(*a))\n"
             "try:\n    g.authorize(d)\n    print('opened')\nexcept ValueError:\n    print('refused')\n")
-    done = subprocess.run([sys.executable, "-c", code], input=blob, capture_output=True, timeout=60)
+    done = subprocess.run([sys.executable, "-c", code], input=blob, capture_output=True, timeout=60, cwd=str(ROOT))
     assert done.returncode == 0, done.stderr.decode()
     assert done.stdout.decode().strip() == "refused"
+
+
+def test_LIMIT_a_forked_process_inherits_the_issuer_and_spends_the_decision_again():
+    """After os.fork the child holds a copy of the issuer key and of the spent set, so a decision issued before the
+    fork opens one guard in the child and one in the parent. Single use is per process; a deployment that forks after
+    deciding must spend through a ledger both share (UAI-2's ledger, or its own)."""
+    issued = decision()
+    ctx = multiprocessing.get_context("fork")
+    answers = ctx.Queue()
+
+    def child():
+        guard = _guard()
+        try:
+            guard.authorize(issued)
+            answers.put(guard(("doc-1", "abc")))
+        except ValueError:
+            answers.put("refused")
+
+    process = ctx.Process(target=child)
+    process.start()
+    in_child = answers.get(timeout=60)
+    process.join(timeout=60)
+    parent = _guard()
+    parent.authorize(issued)
+    assert in_child is True and parent(("doc-1", "abc")) is True

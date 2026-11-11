@@ -89,3 +89,22 @@ def test_digest_md_float_text_is_cpython_repr_on_edge_cases_and_a_large_random_s
     wrong = [x for x in edges + sample if x != 0.0 and float_text(x) != repr(x)]
     assert wrong == [], [(repr(x), float_text(x)) for x in wrong[:5]]
     assert float_text(0.0) == float_text(-0.0) == "0.0"
+
+
+def test_the_consumer_refuses_json_text_that_names_a_key_twice_and_reads_one_that_does_not():
+    consumer = _consumer_module()
+    try:
+        consumer.loads('{"a": 1, "a": 2}')
+        refused = False
+    except consumer.Refused:
+        refused = True
+    assert refused
+    assert consumer.digest(consumer.loads('{"b": [1, 2.5, "x", null, true]}')) == consumer.digest(
+        {"b": [1, 2.5, "x", None, True]})
+
+
+def test_a_value_that_is_not_a_map_digests_as_the_reference_does():
+    from cns.gate import subject_digest  # the reference, in this test process only (the consumer's process is isolated)
+    consumer = _consumer_module()
+    for value in ([1, "x"], "x", 7, None, 2.5, [{"k": []}]):
+        assert consumer.digest(value) == subject_digest(value), value

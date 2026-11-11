@@ -4,6 +4,10 @@
 not the sentences around them: at 3.0.0 the README still said "The newest tag, `v2.3.0`" and its status table still
 described 2.3.0, and the check passed. These tests read those sentences against `contracts/cns-releases.json`.
 
+What these tests do not cover: the counts and dates the status block states (test counts, scenario counts) are
+measurements and are held only by being re-measured; any other sentence can still drift; and inside a section that
+names UAI-2 a mistyped path is not caught.
+
 The path rule covers the documents that describe the tree as it is now. A section that names UAI-2 may cite UAI-2's
 paths (`cns_interop`, `interop/`, `docs/interop/...`), which left this repository with UAI-1. Dated records (the
 CHANGELOG, `docs/STATUS.md`, campaign reports, `docs/history`, `docs/evidence`, `docs/releases`) describe the tree on

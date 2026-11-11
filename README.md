@@ -4,10 +4,12 @@
 > `contracts/cns-releases.json`). Run here in a clean worktree: 2150 tests passed, none skipped; `ruff`, `mypy` and
 > `release --check` clean; `chains/spine_run.py` 164 of 164 at the commits `contracts/spine-manifest.json` names;
 > `chains/evidence_spine.py` 56 results, 3 of them recorded GAPs, exit 0. **Not done:** the library's move to 3.0.0 is
-> in progress ([runbook](docs/releases/v3.0.0-sweep-runbook.md)); on that day 10 of the 40 repositories pinned
-> `v3.0.0` and most still pin `v2.3.0`. Until the circuit is re-pinned (the runbook's last step, after the sweep),
-> `pip install -r contracts/install-stack.txt` does not resolve, because the circuit commits it names still require
-> CNS `v2.3.0`; the `stack` workflow is red for that reason. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`,
+> in progress ([runbook](docs/releases/v3.0.0-sweep-runbook.md)); on that day 10 of the 40 repositories checked
+> pinned `v3.0.0` and most still pin `v2.3.0`. Until the circuit is re-pinned (the runbook's last step, after the
+> sweep), `pip install -r contracts/install-stack.txt` does not resolve, because the circuit commits it names still
+> require CNS `v2.3.0`; the `stack` workflow is red for that reason. The `chains` job, which runs each repository's
+> floating `main`, was last red on the pull request run for #137 (delta's `main` did not yet have `delta.signing`; it
+> has since merged) and has not run on `main` since. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`,
 > `v2.0.0` and `v1.5.1`; `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release.
 
 The central nervous system of the library: one package holding

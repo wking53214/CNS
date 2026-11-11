@@ -1,7 +1,8 @@
 """The chains workflow holds a second-language digest (UAI-2's Node) to the vectors, through UAI-2's own reader.
 
-Node is on the GitHub runner but not in the `ci` job, so the check itself runs in `chains`; these tests hold the step
-and the script to what they claim, without running Node.
+Node is on the GitHub runner but not in the `ci` job, so the check runs in its own `chains` job
+(`digest-second-language`), which first runs it against a stub that digests wrongly and requires it to fail. These tests
+hold that job and the scripts to what they claim; they do not run Node themselves.
 """
 
 import ast
@@ -13,11 +14,26 @@ SCRIPT = ROOT / "chains" / "node_digest_agreement.py"
 CHECKER = (ROOT / "chains" / "node_digest_agreement.mjs").read_text(encoding="utf-8")
 
 
-def test_the_chains_job_runs_the_node_agreement_against_the_committed_vectors():
+def _job(name):
+    return WORKFLOW.split(f"\n  {name}:\n", 1)[1].split("\n  spine-pinned:\n", 1)[0]
+
+
+def test_a_job_of_its_own_runs_the_node_agreement_against_the_committed_vectors():
+    job = _job("digest-second-language")
     assert ("run: python hub/chains/node_digest_agreement.py stack/UAI-2/interop/node/uai.mjs "
-            "hub/contracts/digest-vectors.json") in WORKFLOW
-    assert "repository: ${{ github.repository_owner }}/UAI-2" in WORKFLOW
+            "hub/contracts/digest-vectors.json") in job
+    assert "repository: ${{ github.repository_owner }}/UAI-2" in job and "path: stack/UAI-2" in job
     assert "      - contracts/digest-vectors.json\n" in WORKFLOW, "a change to the vectors runs the check"
+    assert "node_digest_agreement" not in WORKFLOW.split("\n  digest-second-language:\n", 1)[0].split("\njobs:\n", 1)[1]
+
+
+def test_the_job_first_proves_the_checker_fails_a_wrong_digest():
+    job = _job("digest-second-language")
+    stub = "hub/conformance/node_stub/wrong_digest.mjs"
+    assert f"if python hub/chains/node_digest_agreement.py {stub}" in job and "exit 1" in job
+    assert job.index(stub) < job.index("stack/UAI-2/interop/node/uai.mjs hub/contracts")
+    text = (ROOT / "conformance" / "node_stub" / "wrong_digest.mjs").read_text(encoding="utf-8")
+    assert 'digest = () => "0".repeat(64)' in text
 
 
 def test_the_wrapper_imports_nothing_from_cns():

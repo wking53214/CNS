@@ -75,10 +75,23 @@ def term(value) -> str:
     raise Refused(f"a {type(value).__name__} is outside the domain")
 
 
-def digest(content: dict) -> str:
-    if type(content) is not dict:
-        raise Refused("the content is a map")
+def digest(content) -> str:
+    """SHA-256 of the rendering (DIGEST.md section 2). A verdict binds a map; any value in the domain renders."""
     return hashlib.sha256(term(content).encode("utf-8")).hexdigest()
+
+
+def _no_duplicate_keys(pairs):
+    out = {}
+    for key, value in pairs:
+        if key in out:
+            raise Refused(f"the key {key!r} appears twice")
+        out[key] = value
+    return out
+
+
+def loads(text: str):
+    """Read JSON text as DIGEST.md section 1 asks: a map that names a key twice is refused, not resolved."""
+    return json.loads(text, object_pairs_hook=_no_duplicate_keys)
 
 
 def check(vectors_path: str) -> dict:
@@ -102,7 +115,7 @@ def check(vectors_path: str) -> dict:
             not_receivable.append(refusal["name"])  # an int key or bytes cannot arrive as JSON text
             continue
         try:
-            digest(json.loads(refusal["lenient_json"]))
+            digest(loads(refusal["lenient_json"]))
         except Refused:
             refused.append(refusal["name"])
         else:

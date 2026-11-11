@@ -10,7 +10,8 @@ the exact float rendering (section 3), so an implementation does not need CPytho
 
 ## 1. Domain
 
-The content is a map whose keys are text. Values are:
+A verdict binds a map whose keys are text, and every vector is one. `subject_digest` renders any value in the domain
+by the same rules (a list or a single value too). Values are:
 
 - null;
 - boolean (distinct from the integers 0 and 1);
@@ -24,6 +25,15 @@ Refuse, and compute no digest for: NaN and both infinities; text holding a lone 
 value or a key; a map key that is not text; bytes or any other binary value. The Python reference also refuses
 subclasses of the built-in types and containers other than `dict`, `list` and `tuple`; an implementation working on
 parsed JSON never sees those.
+
+Reading JSON text, refuse a map that names a key twice. JSON leaves duplicates to the reader (many keep the last), so
+two readers could see two different maps in one text. A map in memory cannot hold a key twice, so the Python reference
+never meets this; an implementation that reads text must.
+
+The domain sets no bound on integer size or nesting depth. An implementation may refuse content beyond its own limits,
+and must then refuse it, never digest something else. The Python reference refuses an integer of more than about 4300
+decimal digits (CPython's conversion limit, a `ValueError`) and nesting of roughly 500 levels (a `RecursionError`);
+both fail closed.
 
 ## 2. Rendering
 
