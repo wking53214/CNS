@@ -253,3 +253,116 @@ def test_a_refusal_from_the_attack_call_is_evidence_and_is_not_an_extra_problem(
         raise ValueError(ATTACK)
     found, why = verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lambda: refused(thunk))
     assert why == [] and len(found) == 1
+
+
+# --- Step 7e (N10): the attempt evidence belongs to the scenario that is running, on the thread that is running it ----------
+
+def _made_up():
+    return [f"ValueError: {ATTACK}"]
+
+
+def test_n10_a_refusal_made_before_the_scenario_started_is_not_its_evidence():
+    # evidence left over from another scenario (a global counter kept it)
+    def earlier():
+        raise ValueError("an unrelated scenario's refusal")
+    assert refused(earlier)[0].startswith("ValueError:")
+    found, why = verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), _made_up)
+    assert any("no refusal was recorded" in w for w in why), why
+
+
+def test_n10_a_refusal_on_another_thread_is_not_evidence():
+    import threading
+
+    def lies():
+        t = threading.Thread(target=lambda: refused(lambda: int("y")))
+        t.start()
+        t.join()
+        return _made_up()
+    found, why = verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lies)
+    assert any("no refusal was recorded" in w for w in why), why
+
+
+def test_n10_a_thread_that_inherited_the_scenarios_context_is_still_not_evidence():
+    import contextvars
+    import threading
+
+    def lies():
+        ctx = contextvars.copy_context()
+        t = threading.Thread(target=lambda: ctx.run(refused, lambda: int("y")))
+        t.start()
+        t.join()
+        return _made_up()
+    found, why = verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lies)
+    assert any("no refusal was recorded" in w for w in why), why
+
+
+def test_n10_an_unrelated_refusal_inside_the_scenario_is_not_evidence_of_the_attack():
+    def lies():
+        refused(lambda: int("x"))  # a refusal of something else
+        return _made_up()          # the attack call was never made
+    found, why = verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), lies)
+    assert any("no refusal was recorded" in w for w in why), why
+
+
+def test_n10_one_scenarios_refusal_does_not_carry_into_the_next():
+    def real():
+        def thunk():
+            raise ValueError(ATTACK)
+        return refused(thunk)
+    expect = Expect("refused", required=(ATTACK,), raises=("ValueError",))
+    assert verdict(expect, real)[1] == []
+    assert verdict(expect, _made_up)[1], "the second scenario borrowed the first one's refusal"
+
+
+def test_n10_a_judge_inside_a_scenario_keeps_its_own_record():
+    expect = Expect("refused", required=(ATTACK,), raises=("ValueError",))
+
+    def outer():
+        verdict(expect, lambda: refused(lambda: (_ for _ in ()).throw(ValueError(ATTACK))))  # the inner judge sees its own refusal
+        return _made_up()                                                                    # the outer attack call was never made
+    assert any("no refusal was recorded" in w for w in verdict(expect, outer)[1])
+
+
+def test_n10_refused_still_works_outside_any_judge():
+    assert refused(lambda: None) == []
+    assert refused(lambda: (_ for _ in ()).throw(ValueError("x")))[0].startswith("ValueError:")
+
+
+def test_n10_a_scenario_may_hand_its_record_to_a_thread_it_started():
+    import threading
+
+    def honest():
+        mine = oracle.attempts()
+        out = []
+
+        def work():
+            def thunk():
+                raise ValueError(ATTACK)
+            out.append(refused(thunk, record=mine))
+        t = threading.Thread(target=work)
+        t.start()
+        t.join()
+        return out[0]
+    assert verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), honest)[1] == []
+
+
+def test_n10_a_record_kept_from_a_finished_scenario_counts_for_nothing():
+    kept = []
+
+    def first():
+        kept.append(oracle.attempts())
+        return []
+    verdict(Expect("clean"), first)
+    assert kept[0] is not None and oracle.attempts() is None
+
+    def second():
+        import threading
+
+        def thunk():
+            raise ValueError(ATTACK)
+        t = threading.Thread(target=lambda: refused(thunk, record=kept[0]))  # a stale record, on a thread that is not the scenario's
+        t.start()
+        t.join()
+        return _made_up()
+    assert any("no refusal was recorded" in w for w in verdict(Expect("refused", required=(ATTACK,), raises=("ValueError",)), second)[1])
+    assert kept[0].refusals == []

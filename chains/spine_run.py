@@ -47,7 +47,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
 
-from spine_oracle import Expect, check_table, entries_digest, judge
+from spine_oracle import Expect, attempts, check_table, entries_digest, judge
 from spine_oracle import refused as _refused
 
 import alpha.cns_connector as alpha_cns
@@ -252,11 +252,13 @@ def check(parts, *, verify_fingerprint: bool = True) -> List[str]:
     return found + ([f"delta issued no verification receipt: {refusal}"] if refusal else [])
 
 
-def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None, catch: Tuple[type, ...] = ()) -> List[str]:
+def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None, catch: Tuple[type, ...] = (),
+            record: Any = None) -> List[str]:
     """What a boundary refused, as a problem string, or nothing if it let the call through. `state` is compared before
     and after: a refusal that changed it is a second problem (see spine_oracle.refused). `catch` adds exception classes
-    beyond the ValueErrors, TypeErrors and OverflowErrors the oracle already treats as refusals."""
-    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError) + tuple(catch), state=state)
+    beyond the ValueErrors, TypeErrors and OverflowErrors the oracle already treats as refusals. `record` is the scenario's
+    own record (`attempts()`), handed to a thread the scenario started; see spine_oracle.attempts."""
+    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError) + tuple(catch), state=state, record=record)
 
 
 def ledger_state(ledger: DecisionLedger) -> Callable[[], Any]:
@@ -1135,8 +1137,10 @@ def a_sink_that_appends_to_its_own_ledger() -> List[str]:
     ledger = DecisionLedger(require_context=True, sink=sink)
     holder.append(ledger)
     result: List[List[str]] = []
+    mine = attempts()  # the worker thread is this scenario's own: it is handed the scenario's record explicitly
     worker = threading.Thread(
-        target=lambda: result.append(refused(lambda: ledger.append(p["decision"], context=CTX), ledger_state(ledger), catch=(RuntimeError,))),
+        target=lambda: result.append(refused(lambda: ledger.append(p["decision"], context=CTX), ledger_state(ledger), catch=(RuntimeError,),
+                                             record=mine)),
         daemon=True)
     worker.start()
     worker.join(timeout=10)
