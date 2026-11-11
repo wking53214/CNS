@@ -19,10 +19,11 @@ entry says so.
 
 Nothing yet.
 
-## [2.4.0] - 2026-11-05 (not yet tagged)
+## [2.4.0] - 2026-11-11
 
 The work merged to `main` after the `v2.3.0` tag (`41592fb`), plus the independent review's fixes. A minor version, by
-the owner's decision of 2026-11-05: it added a package (UAI-1) that has since moved to its own repository (see Moved),
+the owner's decision of 2026-11-05, tagged `v2.4.0` by the owner on 2026-11-11, an annotated tag at
+`2736deecd6dce60e6cbfe18b8f2869856388c010` (the merge of #127): it added a package (UAI-1) that has since moved to its own repository (see Moved),
 strengthens the strict decision-spine check, adds optional arguments to `SuperGate.decide` and `DecisionGuard`, fixes
 one command that failed its own test, and tightens a few checks for input that was already wrong (see Changed). One
 behaviour change is a refusal that was an acceptance at `v2.3.0`: `subject_digest` no longer digests a `bytearray`,
@@ -113,10 +114,11 @@ plain values digest as before).
   CNS. alpha's run is the reference the other stages are judged against.
 - `contracts/spine-manifest.json` names the four commits and the CNS tag the `spine-pinned` job runs and
   `cns_composition.spine_manifest` holds the repositories' pins and checkouts to.
-  It names the hardened tips (alpha `17bc5fd`, zeta `5762348`, beta `9b0f616`, delta `0402271`); `v2.3.0` and its
-  commit are unchanged. Delta's `pyproject.toml` at `0402271` pins zeta `5762348` and beta `9b0f616`. The manifest
-  check was verified on detached worktrees at exactly those commits and `chains/spine_run.py` ran 83 of 83 on them, with
-  every component imported from its worktree.
+  It named the hardened tips (alpha `17bc5fd`, zeta `5762348`, beta `9b0f616`, delta `0402271`) against `v2.3.0`; the
+  manifest check was verified on detached worktrees at exactly those commits and `chains/spine_run.py` ran 83 of 83 on
+  them, with every component imported from its worktree. At the `v2.4.0` record it names the re-pinned heads (alpha
+  `0a76c82`, zeta `95be445`, beta `1ba6004`, delta `78a5158`, which includes the fix at `0402271`), each pinning CNS
+  `v2.4.0`; `spine_manifest --stack` reads them clean and `chains/spine_run.py` ran 113 of 113 on them.
 
 - `cns_interop`, the universal AI interface layer (UAI-1, `docs/interop/UAI-1.md`): signed envelopes over the CNS
   subject digest with self-certifying Ed25519 identities, receiver-owned trust (pinning, domain-scoped expiring
