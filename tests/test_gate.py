@@ -12,6 +12,7 @@ exists so that it is one assertion rather than a code review.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import FrozenInstanceError
 
@@ -352,3 +353,69 @@ def test_every_refusal_from_subject_digest_is_a_type_error():
                 {"x": "\ud800"}, {"\udc00": 1}, {"x": object()}, {"x": {1, 2}}):
         with pytest.raises(TypeError):
             subject_digest(bad)
+
+
+# --- exact types only for what is rendered into a digest -----------------------------------------------------------
+
+class _Text(str):
+    def __format__(self, spec):
+        return "other"
+
+
+class _Real(float):
+    def __repr__(self):
+        return "0.99"
+
+
+class _Whole(int):
+    def __repr__(self):
+        return "7"
+
+
+class _Mapping(dict):
+    def keys(self):
+        return ["lie"]
+
+
+class _Listing(list):
+    def __iter__(self):
+        return iter(["lie"])
+
+
+class _Pair(tuple):
+    def __iter__(self):
+        return iter(("lie",))
+
+
+class _Enumerated(int, __import__("enum").Enum):
+    ONE = 1
+
+
+@pytest.mark.parametrize("make, name", [
+    (lambda: _Text("a"), "_Text"),
+    (lambda: _Real(0.5), "_Real"),
+    (lambda: _Whole(3), "_Whole"),
+    (lambda: _Mapping(a=1), "_Mapping"),
+    (lambda: _Listing([1]), "_Listing"),
+    (lambda: _Pair((1,)), "_Pair"),
+    (lambda: _Enumerated.ONE, "_Enumerated"),
+])
+def test_a_subclass_of_a_rendered_type_is_refused_by_name(make, name):
+    """A str, float, int, dict, list or tuple subclass is rendered through methods it can override (`__format__`,
+    `__repr__`, `keys`, `__iter__`) while json reads the raw data, so the digest and the ledger hash could disagree.
+    Refused, with the type named, as a value, a member and a key holder."""
+    for content in ({"x": make()}, {"x": [make()]}, {"x": {"y": make()}}):
+        with pytest.raises(TypeError, match=name):
+            subject_digest(content)
+
+
+def test_a_str_subclass_mapping_key_is_refused():
+    with pytest.raises(TypeError, match="_Text"):
+        subject_digest({_Text("k"): 1})
+
+
+def test_plain_values_digest_exactly_as_before():
+    plain = {"a": "s", "b": 1, "c": 0.5, "d": True, "e": None, "f": [1, (2, 3)], "g": {"h": "i"}}
+    assert subject_digest(plain) == hashlib.sha256(
+        b"d:7:" + b"s:1:as:1:s" + b"s:1:bi:1:" + b"s:1:cf:0.5:" + b"s:1:db:1" + b"s:1:en:"
+        + b"s:1:fl:2:i:1:l:2:i:2:i:3:" + b"s:1:gd:1:s:1:hs:1:i").hexdigest()
