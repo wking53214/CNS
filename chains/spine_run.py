@@ -2450,6 +2450,48 @@ def a_validly_signed_receipt_for_an_older_entry_is_refused_unless_entry_names_it
     return out
 
 
+def a_deeply_nested_input_is_exit_two_or_a_named_refusal_never_a_traceback() -> List[str]:
+    """Nesting past the interpreter's recursion limit, in the file being parsed (cannot be read: exit 2) and, at a depth the
+    parser takes, in what the digest steps then walk (a named refusal: exit 1). No traceback either way."""
+    out: List[str] = []
+    deep = "[" * 100000 + "]" * 100000
+    nested = "[" * 600 + "]" * 600
+
+    def judge(label: str, done: "subprocess.CompletedProcess[str]", code: int) -> None:
+        if done.returncode != code or "Traceback" in done.stderr or not done.stderr.strip() or done.stdout.strip():
+            out.append(f"{label}: exit {done.returncode} (wanted {code}), stderr {done.stderr.strip()[-200:]!r}")
+
+    def put(pkg: Package, name: str, change: Callable[[str], str]) -> None:
+        path = os.path.join(pkg.dir, name)
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(change(text))
+
+    for name, key in (("contents.json", "x"), ("export.json", "x"), ("receipt.json", "x"), ("signature.json", "x")):
+        with packages(()) as (pkg,):
+            put(pkg, name, lambda t: t.rstrip()[:-1] + ', "' + key + '": ' + deep + "}")
+            judge(f"{name} nested 100000 deep", pkg.verify(), 2)
+    with packages(()) as (pkg,):
+        with open(pkg.trust, "w", encoding="utf-8") as fh:
+            fh.write(deep)
+        judge("a trust list nested 100000 deep", pkg.verify(), 2)
+    with packages(()) as (pkg,):
+        with open(pkg.checkpoint, "w", encoding="utf-8") as fh:
+            fh.write(deep)
+        judge("a checkpoint nested 100000 deep", pkg.verify(), 1)
+    for where in ("beta", "alpha", "delta"):
+        with packages(()) as (pkg,):
+            def plant(d: Dict[str, Any], where: str = where) -> None:
+                d[where]["deep"] = json.loads(nested)
+            pkg.edit("contents.json", plant)
+            judge(f"contents.json with {where} holding a list nested 600 deep", pkg.verify(), 1)
+    with packages(()) as (pkg,):
+        pkg.edit("export.json", lambda d: d.update(deep=json.loads(nested)))
+        judge("export.json with a list nested 600 deep", pkg.verify(), 1)
+    return out
+
+
 def the_checkpoint_and_the_trust_list_must_live_outside_the_package() -> List[str]:
     """The checkpoint is independent only if the package's author cannot write it. Given a path whose REAL location is inside
     the package directory (a copy, a symlink in the package to a file outside, a symlink outside to a file inside, a hard
@@ -2850,6 +2892,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      a_duplicate_key_in_any_package_file_is_refused_naming_the_file_and_key, CLEAN),
     ("package: a validly signed receipt for an older entry is refused unless --entry names it",
      a_validly_signed_receipt_for_an_older_entry_is_refused_unless_entry_names_it, CLEAN),
+    ("package: a deeply nested input is exit 2 or a named refusal, never a traceback",
+     a_deeply_nested_input_is_exit_two_or_a_named_refusal_never_a_traceback, CLEAN),
     ("package: inputs that cannot be read, and usage errors, exit 2 and not 1", inputs_that_cannot_be_read_exit_two_not_one, CLEAN),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),

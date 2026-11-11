@@ -108,6 +108,8 @@ def read_json(path: str) -> Any:
         refuse([f"{path}: the key {exc.key!r} appears twice in one JSON object (duplicate keys are refused)"])
     except (OSError, ValueError) as exc:  # ValueError covers json.JSONDecodeError and UnicodeDecodeError
         unreadable(f"{path}: {type(exc).__name__}: {exc}")
+    except (RecursionError, MemoryError) as exc:  # nested or large past what the interpreter can parse: not a readable input
+        unreadable(f"{path}: {type(exc).__name__}: the JSON is nested or large beyond what can be read")
 
 
 def main(argv: List[str]) -> int:
@@ -139,6 +141,8 @@ def main(argv: List[str]) -> int:
             trust, revoked = receipt_keys.trust_from_json(fh.read())
     except (OSError, ValueError) as exc:
         unreadable(f"{a.public_keys}: {type(exc).__name__}: {exc}")
+    except (RecursionError, MemoryError) as exc:
+        unreadable(f"{a.public_keys}: {type(exc).__name__}: the JSON is nested or large beyond what can be read")
     verify = receipt_keys.make_verifier(trust, revoked)
 
     # 1. the checkpoint, from storage outside the package
@@ -148,7 +152,7 @@ def main(argv: List[str]) -> int:
             json.load(fh, object_pairs_hook=_no_duplicates)
     except DuplicateKey as exc:
         refuse([f"{a.checkpoint}: the key {exc.key!r} appears twice in one JSON object (duplicate keys are refused)"])
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError, MemoryError):
         pass
     try:
         checkpoint = store.read()
@@ -156,12 +160,16 @@ def main(argv: List[str]) -> int:
             checkpoint = store.read(verify=verify)
     except StoreError as exc:
         refuse([f"the checkpoint is refused: {exc}"])
+    except (RecursionError, MemoryError) as exc:
+        refuse([f"the checkpoint is refused: {type(exc).__name__}: it is nested or large beyond what can be read"])
 
     # 2. the export, rebuilt and held to the checkpoint
     try:
         ledger = verify_export(export, checkpoint, require_context=True)
     except (ValueError, TypeError) as exc:
         refuse([f"the ledger export is refused: {exc}"])
+    except (RecursionError, MemoryError) as exc:
+        refuse([f"the ledger export is refused: {type(exc).__name__}: it is nested or large beyond what can be checked"])
 
     # 3. the receipt Delta itself issues for this ledger and checkpoint, for the one entry being verified
     problems: List[str] = []
@@ -178,7 +186,7 @@ def main(argv: List[str]) -> int:
             ledger, checkpoint, context=beta["context"], decision_digest=subject_digest(beta), index=entry)
         if receipt != expected:
             problems.append("the receipt in the package is not the one Delta issues for this export and checkpoint")
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, RecursionError, MemoryError) as exc:
         problems.append(f"no receipt can be rebuilt from this export, checkpoint and contents: {type(exc).__name__}: {exc}")
         parts = {name: contents.get(name) if type(contents) is dict else None for name in ("alpha", "zeta", "beta", "delta")}
 
@@ -196,10 +204,13 @@ def main(argv: List[str]) -> int:
         chain=receipt, held_checkpoint=(checkpoint.length, checkpoint.head), keyset_fingerprint_of=zeta_keyset_fingerprint,
         require_keyset_verifier=True, receipt_signature=signature, verify_receipt_signature=None if allowed_absent else verify,
         require_signed_receipt=a.require_signed)
-    problems += strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
-    if problems:
-        refuse(problems)
-    root = strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
+    try:
+        problems += strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
+        if problems:
+            refuse(problems)
+        root = strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
+    except (RecursionError, MemoryError) as exc:
+        refuse(problems + [f"the contents cannot be digested: {type(exc).__name__}: they are nested or large beyond what can be checked"])
     context = receipt["context"]  # the receipt equals the one Delta issues, so this is a dict of four str
     print(f"verified: root={root} entries={len(ledger)} checkpoint={checkpoint.length} entry={entry} "
           f"run_id={context['run_id']} event_id={context['event_id']} receipt_signature={'verified' if signature is not None else 'absent (allowed)'}")
