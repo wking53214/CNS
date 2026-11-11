@@ -17,12 +17,17 @@ entry says so.
 
 ## [Unreleased]
 
-Work after the `v2.3.0` tag (`41592fb`). It added a package (UAI-1) that has since moved to its own repository (see
-Moved), strengthens the strict decision-spine check, fixes one
-command that failed its own test, and tightens a few checks for input that was already wrong (see Changed; no
-signature, root or outcome meaning moved); which version it
-ships in is the owner's decision, so `pyproject.toml` still says 2.3.0 and `release --check` reads this heading as
-not a release.
+Nothing yet.
+
+## [2.4.0] - 2026-11-05 (not yet tagged)
+
+The work merged to `main` after the `v2.3.0` tag (`41592fb`), plus the independent review's fixes. A minor version, by
+the owner's decision of 2026-11-05: it added a package (UAI-1) that has since moved to its own repository (see Moved),
+strengthens the strict decision-spine check, adds optional arguments to `SuperGate.decide` and `DecisionGuard`, fixes
+one command that failed its own test, and tightens a few checks for input that was already wrong (see Changed). One
+behaviour change is a refusal that was an acceptance at `v2.3.0`: `subject_digest` no longer digests a `bytearray`,
+`memoryview` or `array.array`. Every other root and outcome for valid input is unchanged. The `cns` package gains no
+new shape.
 
 ### Moved
 
@@ -297,8 +302,7 @@ Unreleased. Each line names the commit that holds it.
 - `Decision.allowed` and `reasons()` return False and a reason, and never raise, for a hand-built decision whose seat or
   gate name is not text; `digest_context` reads a mapping's items once and raises `ValueError` for text it cannot
   digest; `DecisionGuard(expected_seats=...)` raises `ValueError` for a non-collection or a mapping;
-  `consumers.drift(expect=...)` refuses a single string; `cns_interop` is now seen as a CNS import by
-  `consumers.scan`, so a repository that imports only it is named when unregistered.
+  `consumers.drift(expect=...)` refuses a single string.
 - `repo_gates.ENDS`: GEMS stands at ALPHA as well as OMEGA (its transport's `CnsInputGate` is an ALPHA gate). Two tests
   that used GEMS as the example of an OMEGA-only repository now use DIT; no assertion about GEMS's omega end changed.
 - `ResubmissionGuard`: a full table refuses a new subject instead of forgetting the oldest, and the same content is
