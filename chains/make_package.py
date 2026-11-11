@@ -2,7 +2,7 @@
 
     python chains/make_package.py PACKAGE_DIR --checkpoint-dir DIR --trust-out FILE [--entries N] [--run-offset K]
                                   [--receipt-key-id ID] [--no-receipt-signature] [--no-checkpoint-signature]
-                                  [--older-checkpoint-length K]
+                                  [--older-checkpoint-length K] [--package-entry K]
 
 PACKAGE_DIR gets export.json (Delta's ledger export), receipt.json (Delta's verification receipt for the last entry),
 signature.json (the deployer's signature over the receipt, made through Delta's `sign_receipt`), and contents.json (the four
@@ -17,7 +17,9 @@ case a second key is generated for it (and both public keys are in the trust lis
 that lacks, revokes or swaps the receipt's key without touching the checkpoint's. `--run-offset` shifts the run numbers so two
 packages describe different runs. The `--no-*-signature` flags write an unsigned receipt or checkpoint.
 `--older-checkpoint-length K` also writes older.json in the checkpoint directory: a genuinely signed checkpoint of the first K
-entries, for showing a consumer what a stale one does.
+entries, for showing a consumer what a stale one does. `--package-entry K` packages the receipt, signature and contents of
+entry K (0-based) instead of the last one, against the full ledger and its checkpoint: a validly signed receipt for an older
+entry, for showing a consumer what choosing the entry looks like.
 """
 
 from __future__ import annotations
@@ -31,7 +33,9 @@ from typing import Any, Dict, List
 import receipt_keys
 import spine_run
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cns.gate import subject_digest
 from delta import DecisionLedger
+from delta import cns_connector as delta_cns
 from delta import signing as delta_signing
 from delta.ledger import LedgerCheckpoint
 from delta.store import CheckpointStore
@@ -41,6 +45,14 @@ def _write(path: str, data: Any) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(json.dumps(data, sort_keys=True, indent=1) + "\n")
+
+
+def _receipt_for(ledger: DecisionLedger, checkpoint: LedgerCheckpoint, chosen: Dict[str, Any], index: int) -> Any:
+    try:
+        return delta_cns.verification_receipt(ledger, checkpoint, context=chosen["beta"]["context"],
+                                              decision_digest=subject_digest(chosen["beta"]), index=index), ""
+    except Exception as exc:  # noqa: BLE001 - delta refused: no receipt
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def main(argv: List[str]) -> int:
@@ -54,6 +66,7 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--no-receipt-signature", action="store_true")
     ap.add_argument("--no-checkpoint-signature", action="store_true")
     ap.add_argument("--older-checkpoint-length", type=int, default=0)
+    ap.add_argument("--package-entry", type=int, default=-1, help="package this entry (0-based) instead of the last")
     a = ap.parse_args(argv)
     if os.path.abspath(a.checkpoint_dir) == os.path.abspath(a.package):
         ap.error("the checkpoint must not be written into the package: it would not be independent")
@@ -62,16 +75,24 @@ def main(argv: List[str]) -> int:
         keys[a.receipt_key_id] = Ed25519PrivateKey.generate()
     ledger = DecisionLedger(require_context=True)
     parts: Dict[str, Any] = {}
+    runs: List[Dict[str, Any]] = []
     for i in range(a.entries):
         parts = spine_run.record(ledger, i + a.run_offset)
-    receipt, why = spine_run.chain_receipt(parts)
+        runs.append(parts)
+    chosen = parts
+    if a.package_entry >= 0:
+        if a.package_entry >= len(runs):
+            ap.error(f"--package-entry {a.package_entry} is not one of the {len(runs)} entries")
+        chosen = runs[a.package_entry]
+    receipt, why = (spine_run.chain_receipt(parts) if a.package_entry < 0
+                    else _receipt_for(ledger, parts["checkpoint"], chosen, a.package_entry))
     if receipt is None:
         print(f"the producer's own ledger issued no receipt: {why}", file=sys.stderr)
         return 1
     _write(os.path.join(a.package, "export.json"), ledger.export())
     _write(os.path.join(a.package, "receipt.json"), receipt)
     _write(os.path.join(a.package, "contents.json"),
-           {"alpha": parts["alpha"], "zeta": parts["zeta"], "beta": parts["beta"], "delta": parts["delta"]})
+           {"alpha": chosen["alpha"], "zeta": chosen["zeta"], "beta": chosen["beta"], "delta": chosen["delta"]})
     if not a.no_receipt_signature:
         sign = receipt_keys.make_signer(keys[a.receipt_key_id], a.receipt_key_id)
         _write(os.path.join(a.package, "signature.json"), {"receipt_signature": delta_signing.sign_receipt(receipt, sign).hex()})

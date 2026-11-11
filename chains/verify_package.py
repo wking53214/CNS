@@ -1,12 +1,18 @@
 """Verify a package made by `make_package.py`, from files alone: it trusts no object the producer ran.
 
     python chains/verify_package.py PACKAGE_DIR --checkpoint CHECKPOINT_FILE --public-keys TRUST_JSON [--require-signed | --allow-unsigned]
+                                          [--entry INDEX]
 
 Exit 0: verified, with a one-line summary carrying the root. Exit 1: refused, every named problem on stderr. Exit 2: usage
 error or an input that cannot be read (a missing file, text that is not JSON, a trust file of the wrong shape).
 
 The receipt must be signed: a package with no signature.json is refused (exit 1, naming why) unless `--allow-unsigned` is
 passed, and then the summary says `receipt_signature=absent (allowed)`. A signature that is present must always verify.
+
+The command verifies ONE entry of the ledger: the last, or the one `--entry INDEX` names (0-based). A receipt for any other
+entry is refused, naming both indexes, so a validly signed receipt for an older entry cannot be presented as the newest. The
+summary says which entry and run it verified: `entry=2 run_id=... event_id=...`. A JSON object with a key twice in any file
+is refused (exit 1, naming the file and the key): a reader that took the first value would see another file.
 
 What it does, in order, and stops at the first step that cannot go on:
   1. reads the checkpoint with Delta's `CheckpointStore` from CHECKPOINT_FILE, which must live outside the package (so must
@@ -79,10 +85,27 @@ def inside_package(path: str, package: str) -> bool:
     return False
 
 
+class DuplicateKey(ValueError):
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
+def _no_duplicates(pairs: List[Any]) -> Dict[str, Any]:
+    seen: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in seen:
+            raise DuplicateKey(key)
+        seen[key] = value
+    return seen
+
+
 def read_json(path: str) -> Any:
     try:
         with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
+            return json.load(fh, object_pairs_hook=_no_duplicates)
+    except DuplicateKey as exc:
+        refuse([f"{path}: the key {exc.key!r} appears twice in one JSON object (duplicate keys are refused)"])
     except (OSError, ValueError) as exc:  # ValueError covers json.JSONDecodeError and UnicodeDecodeError
         unreadable(f"{path}: {type(exc).__name__}: {exc}")
 
@@ -93,6 +116,7 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--checkpoint", required=True, help="the checkpoint file, kept outside the package")
     ap.add_argument("--public-keys", required=True, help="the trust list: JSON of public keys and revoked key ids")
     ap.add_argument("--require-signed", action="store_true", help="the checkpoint and the receipt must both carry a verifying signature")
+    ap.add_argument("--entry", type=int, default=None, help="the ledger entry to verify (0-based; default: the last)")
     ap.add_argument("--allow-unsigned", action="store_true",
                     help="accept a package that has no receipt signature (a signature that is present must still verify)")
     a = ap.parse_args(argv)  # a usage error exits 2
@@ -119,6 +143,13 @@ def main(argv: List[str]) -> int:
 
     # 1. the checkpoint, from storage outside the package
     store = CheckpointStore(a.checkpoint)
+    try:  # a checkpoint with a key twice is refused; any other trouble reading it is the store's to name below
+        with open(a.checkpoint, encoding="utf-8") as fh:
+            json.load(fh, object_pairs_hook=_no_duplicates)
+    except DuplicateKey as exc:
+        refuse([f"{a.checkpoint}: the key {exc.key!r} appears twice in one JSON object (duplicate keys are refused)"])
+    except (OSError, ValueError):
+        pass
     try:
         checkpoint = store.read()
         if a.require_signed or "signature" in read_json(a.checkpoint):
@@ -132,14 +163,19 @@ def main(argv: List[str]) -> int:
     except (ValueError, TypeError) as exc:
         refuse([f"the ledger export is refused: {exc}"])
 
-    # 3. the receipt Delta itself issues for this ledger and checkpoint
+    # 3. the receipt Delta itself issues for this ledger and checkpoint, for the one entry being verified
     problems: List[str] = []
+    entry = len(ledger) - 1 if a.entry is None else a.entry
+    if not 0 <= entry < len(ledger):
+        refuse([f"--entry {entry}: the ledger has no entry {entry} (it holds {len(ledger)}, numbered from 0)"])
     try:
         parts: Dict[str, Any] = {name: contents[name] for name in ("alpha", "zeta", "beta", "delta")}
         beta = parts["beta"]
-        index = receipt["index"] if type(receipt) is dict else None
+        if type(receipt) is dict and receipt.get("index") != entry:
+            problems.append(f"the receipt is for entry {receipt.get('index')!r}, but the entry being verified is entry {entry} "
+                            f"({'the last' if a.entry is None else 'named by --entry'}): pass --entry to verify another")
         expected = delta_cns.verification_receipt(
-            ledger, checkpoint, context=beta["context"], decision_digest=subject_digest(beta), index=index)
+            ledger, checkpoint, context=beta["context"], decision_digest=subject_digest(beta), index=entry)
         if receipt != expected:
             problems.append("the receipt in the package is not the one Delta issues for this export and checkpoint")
     except (KeyError, TypeError, ValueError) as exc:
@@ -164,8 +200,9 @@ def main(argv: List[str]) -> int:
     if problems:
         refuse(problems)
     root = strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
-    print(f"verified: root={root} entries={len(ledger)} checkpoint={checkpoint.length} "
-          f"receipt_signature={'verified' if signature is not None else 'absent (allowed)'}")
+    context = receipt["context"]  # the receipt equals the one Delta issues, so this is a dict of four str
+    print(f"verified: root={root} entries={len(ledger)} checkpoint={checkpoint.length} entry={entry} "
+          f"run_id={context['run_id']} event_id={context['event_id']} receipt_signature={'verified' if signature is not None else 'absent (allowed)'}")
     return 0
 
 

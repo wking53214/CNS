@@ -2252,7 +2252,7 @@ def refused_package(*makes: Tuple[str, ...], attack: Callable[..., Tuple[Tuple[s
 
 
 SIGNED = ("--require-signed",)
-SUMMARY = re.compile(r"verified: root=[0-9a-f]{64} entries=3 checkpoint=3 receipt_signature=(verified|absent \(allowed\))")
+SUMMARY = re.compile(r"verified: root=[0-9a-f]{64} entries=3 checkpoint=3 entry=2 run_id=run_2 event_id=event_2 receipt_signature=(verified|absent \(allowed\))")
 
 
 def an_honest_package_verifies_in_another_process() -> List[str]:
@@ -2388,6 +2388,65 @@ def inputs_that_cannot_be_read_exit_two_not_one() -> List[str]:
         inside = run_script(MAKE_PACKAGE, os.path.join(pkg.root, "q"), "--checkpoint-dir", os.path.join(pkg.root, "q"),
                             "--trust-out", os.path.join(pkg.root, "q.json"))
         expect2("a producer told to put the checkpoint in the package", inside)
+    return out
+
+
+def a_duplicate_key_in_any_package_file_is_refused_naming_the_file_and_key() -> List[str]:
+    """A JSON object with a key twice is read by Python as its last value; a reader that takes the first sees another file.
+    The command refuses it: exit 1, the file and the key named, nothing else said."""
+    out: List[str] = []
+    with packages(()) as (pkg,):
+        for name, key in (("export.json", "entries"), ("receipt.json", "index"), ("contents.json", "alpha"),
+                          ("signature.json", "receipt_signature")):
+            path = os.path.join(pkg.dir, name)
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            first = text.index("{") + 1
+            with open(path, "w", encoding="utf-8") as fh:  # the real object, with a decoy first value for the same key
+                fh.write("{" + json.dumps(key) + ": null, " + text[first:].lstrip())
+            done = pkg.verify()
+            if done.returncode != 1 or name not in done.stderr or f"'{key}'" not in done.stderr or "duplicate" not in done.stderr:
+                out.append(f"{name} with {key} twice: exit {done.returncode}, stderr {done.stderr.strip()[-200:]!r}")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        with open(pkg.checkpoint, encoding="utf-8") as fh:
+            cp_text = fh.read()
+        with open(pkg.checkpoint, "w", encoding="utf-8") as fh:
+            fh.write('{"length": 0, ' + cp_text.lstrip()[1:])
+        done = pkg.verify()
+        if done.returncode != 1 or "checkpoint.json" not in done.stderr or "'length'" not in done.stderr or "duplicate" not in done.stderr:
+            out.append(f"checkpoint.json with length twice: exit {done.returncode}, stderr {done.stderr.strip()[-200:]!r}")
+        with open(pkg.checkpoint, "w", encoding="utf-8") as fh:
+            fh.write(cp_text)
+        if pkg.verify().returncode != 0:
+            out.append("the package no longer verifies once the files are put back")
+    return out
+
+
+def a_validly_signed_receipt_for_an_older_entry_is_refused_unless_entry_names_it() -> List[str]:
+    out: List[str] = []
+    with packages(("--package-entry", "0")) as (pkg,):
+        done = pkg.verify()
+        if done.returncode != 1 or "receipt is for entry 0" not in done.stderr or "entry 2" not in done.stderr:
+            out.append(f"an older entry's receipt, no --entry: exit {done.returncode}, stderr {done.stderr.strip()[-250:]!r}")
+        done = pkg.verify("--entry", "0")
+        if done.returncode != 0 or not done.stdout.startswith("verified:") or " entry=0 run_id=run_0 event_id=event_0 " not in done.stdout:
+            out.append(f"the same package with --entry 0: exit {done.returncode}, {done.stdout.strip()!r} {done.stderr.strip()[-200:]!r}")
+        for wrong in ("1", "2"):
+            done = pkg.verify("--entry", wrong)
+            if done.returncode != 1 or "receipt is for entry 0" not in done.stderr or f"entry {wrong}" not in done.stderr:
+                out.append(f"--entry {wrong} on an entry 0 package: exit {done.returncode}, stderr {done.stderr.strip()[-250:]!r}")
+        for outside in ("3", "-1"):
+            done = pkg.verify("--entry", outside)
+            if done.returncode != 1 or "no entry" not in done.stderr:
+                out.append(f"--entry {outside} is outside the ledger: exit {done.returncode}, stderr {done.stderr.strip()[-250:]!r}")
+    with packages(()) as (last,):
+        done = last.verify("--entry", "2")
+        if done.returncode != 0 or " entry=2 " not in done.stdout:
+            out.append(f"--entry 2 on the last entry's package: exit {done.returncode}, {done.stdout.strip()!r}")
+        done = last.verify("--entry", "0")
+        if done.returncode != 1:
+            out.append(f"--entry 0 on the last entry's package: exit {done.returncode}, not 1")
     return out
 
 
@@ -2787,6 +2846,10 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("verify_package refused (exit 1)", 'the checkpoint signature does not verify'), raises=("ValueError",))),
     ("package: a checkpoint or trust list whose real path is inside the package exits 2",
      the_checkpoint_and_the_trust_list_must_live_outside_the_package, CLEAN),
+    ("package: a duplicate key in any package file is refused naming the file and the key",
+     a_duplicate_key_in_any_package_file_is_refused_naming_the_file_and_key, CLEAN),
+    ("package: a validly signed receipt for an older entry is refused unless --entry names it",
+     a_validly_signed_receipt_for_an_older_entry_is_refused_unless_entry_names_it, CLEAN),
     ("package: inputs that cannot be read, and usage errors, exit 2 and not 1", inputs_that_cannot_be_read_exit_two_not_one, CLEAN),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),

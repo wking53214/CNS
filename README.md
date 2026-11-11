@@ -317,7 +317,7 @@ producer ran. `chains/make_package.py` is the producer (it runs the real pipelin
 
 ```
 python chains/make_package.py PACKAGE_DIR --checkpoint-dir CHECKPOINT_DIR --trust-out TRUST_JSON
-python chains/verify_package.py PACKAGE_DIR --checkpoint CHECKPOINT_DIR/checkpoint.json --public-keys TRUST_JSON --require-signed
+python chains/verify_package.py PACKAGE_DIR --checkpoint CHECKPOINT_DIR/checkpoint.json --public-keys TRUST_JSON --require-signed [--entry INDEX]
 ```
 
 `PACKAGE_DIR` holds `export.json` (delta's ledger export), `receipt.json`, `signature.json` and `contents.json` (the four
@@ -327,11 +327,16 @@ protects is not independent; the consumer must be given it from storage the prod
 envelope (`key_id:` then the signature) are the reference deployer's in `chains/receipt_keys.py`, not delta's or CNS's.
 Run from a checkout with the four spine repositories importable (the same `PYTHONPATH` the runner uses).
 
+The command verifies one entry of the ledger: the last, or the one `--entry INDEX` names (0-based). A receipt for any
+other entry is refused, naming both indexes, so a validly signed receipt for an older entry cannot be presented as the
+newest; the summary line says which entry and run it verified. A JSON object with a key twice in any package file (or
+the checkpoint) is refused with exit 1, naming the file and the key.
+
 The rule is enforced, not a convention: if the real path of `--checkpoint` or `--public-keys` is inside `PACKAGE_DIR`
 (a copy, a symlink in the package to a file outside, a symlink outside to a file inside, a `..` path, or a hard link to a
 file the package holds), the command exits 2 with a message saying so, before it reads anything.
 
-Exit codes: `0` verified, with one line (`verified: root=... entries=N checkpoint=N receipt_signature=verified`, or `absent (allowed)` under `--allow-unsigned`); `1`
+Exit codes: `0` verified, with one line (`verified: root=... entries=N checkpoint=N entry=I run_id=... event_id=... receipt_signature=verified`, or `absent (allowed)` under `--allow-unsigned`); `1`
 refused, each named problem on stderr; `2` a usage error or an input that cannot be read (a missing file, text that is not
 JSON, a trust file of the wrong shape). The command reads the checkpoint with delta's `CheckpointStore` (its signature is
 verified under `--require-signed`, and whenever the file carries one), rebuilds the ledger with `delta.verify_export` against
