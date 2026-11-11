@@ -2047,6 +2047,27 @@ def consumer_answer(done: "subprocess.CompletedProcess[str]") -> Dict[str, Any]:
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
+def expected_root(w: World, *, signed: bool = True) -> str:
+    """The strict root computed IN THIS PROCESS from the same inputs the consumer was given (the store, the signed checkpoint,
+    the hand-off and its trust list), by this runner's own code and not by the worker's. `signed=False` leaves the signature
+    arguments out, which is the root a consumer that dropped them would print."""
+    with open(os.path.join(w.handoff, "trust.json"), encoding="utf-8") as fh:
+        trust, revoked = receipt_keys.trust_from_json(fh.read())
+    verify = receipt_keys.make_verifier(trust, revoked)
+    ledger, _ = delta_pkg.FileLedgerStore(w.ledger).load(require_context=True)
+    checkpoint = delta_pkg.CheckpointStore(w.checkpoint).read(verify=verify)
+    with open(os.path.join(w.handoff, "contents.json"), encoding="utf-8") as fh:
+        contents = json.load(fh)
+    with open(os.path.join(w.handoff, "receipt_signature.hex"), encoding="utf-8") as fh:
+        signature = bytes.fromhex(fh.read().strip())
+    beta = contents["beta"]
+    delta = delta_cns.entry_content(ledger.entries[checkpoint.length - 1], context=beta["context"], decision_digest=subject_digest(beta))
+    receipt = delta_cns.verification_receipt(ledger, checkpoint, context=beta["context"], decision_digest=subject_digest(beta))
+    kw: Dict[str, Any] = dict(receipt_signature=signature, verify_receipt_signature=verify, require_signed_receipt=True) if signed else {}
+    return strict_root(contents["alpha"], contents["zeta"], beta, delta, chain=receipt, held_checkpoint=(checkpoint.length, checkpoint.head),
+                       keyset_fingerprint_of=zeta_keyset_fingerprint, **kw)
+
+
 def a_producer_and_a_fresh_consumer_agree() -> List[str]:
     with world() as w:
         acked = w.produce(4)
@@ -2064,9 +2085,50 @@ def a_producer_and_a_fresh_consumer_agree() -> List[str]:
             out.append(f"the consumer reported {answer}")
         if not (isinstance(answer.get("root"), str) and len(answer["root"]) == 64):
             out.append("the consumer issued no root")
+        else:
+            want, unsigned = expected_root(w), expected_root(w, signed=False)
+            if want == unsigned:
+                out.append("the root with a verified signature equals the root without one, so the signature proves nothing here")
+            if answer["root"] != want:
+                out.append(f"the consumer's root {answer['root']} is not the strict_root {want} computed in-process from the same "
+                           f"inputs (the unsigned root would be {unsigned})")
         if w.state() != before:
             out.append("the consumer changed the store or the checkpoint")
         return out
+
+
+def a_tampered_handoff_is_refused_by_cns(change: Callable[[World], None]) -> List[str]:
+    """The store and the checkpoint are honest and the consumer is given a damaged hand-off. Every store check passes, so
+    the refusal can only be the consumer's CNS step (`strict check:`), and its named problem must be the one asked for."""
+    with world() as w:
+        w.produce(4)
+        change(w)
+        return refused(consumer_refusal(w), state=w.state)
+
+
+def _edit_handoff(w: World, name: str, change: Callable[[str], str]) -> None:
+    path = os.path.join(w.handoff, name)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(change(text))
+
+
+def _flip_last_hex_digit(text: str) -> str:
+    text = text.rstrip("\n")
+    return text[:-1] + ("0" if text[-1] != "0" else "1") + "\n"
+
+
+def _another_decision(text: str) -> str:
+    contents = json.loads(text)
+    contents["beta"]["instructions"] = "Send home."
+    return json.dumps(contents, sort_keys=True)
+
+
+def _another_keyset(text: str) -> str:
+    contents = json.loads(text)
+    contents["alpha"]["min_confidence"] = 0.5
+    return json.dumps(contents, sort_keys=True)
 
 
 def a_ledger_file_truncated_below_the_checkpoint() -> List[str]:
@@ -2889,6 +2951,18 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     # --- the durable store across separate processes: a producer, then a fresh consumer ---
     ("store: a producer's store, checkpoint and signature are accepted by a fresh consumer, which issues a root",
      a_producer_and_a_fresh_consumer_agree, CLEAN),
+    ("store: a hand-off signature with one digit changed",
+     lambda: a_tampered_handoff_is_refused_by_cns(lambda w: _edit_handoff(w, "receipt_signature.hex", _flip_last_hex_digit)),
+     Expect("refused", required=("the consumer exited 1", "strict check:", BAD_SIGNATURE), raises=("ValueError",))),
+    ("store: a hand-off signature that is empty",
+     lambda: a_tampered_handoff_is_refused_by_cns(lambda w: _edit_handoff(w, "receipt_signature.hex", lambda t: "\n")),
+     Expect("refused", required=("the consumer exited 1", "strict check:", "receipt_signature must be a non-empty bytes"), raises=("ValueError",))),
+    ("store: hand-off contents with another Decision",
+     lambda: a_tampered_handoff_is_refused_by_cns(lambda w: _edit_handoff(w, "contents.json", _another_decision)),
+     Expect("refused", required=("the consumer exited 1", "strict check:", "differs"), raises=("ValueError",))),
+    ("store: hand-off contents with another KeySet",
+     lambda: a_tampered_handoff_is_refused_by_cns(lambda w: _edit_handoff(w, "contents.json", _another_keyset)),
+     Expect("refused", required=("the consumer exited 1", "strict check:", "fingerprint"), raises=("ValueError",))),
     ("store: a ledger file truncated below the checkpoint", a_ledger_file_truncated_below_the_checkpoint,
      Expect("refused", required=("reconcile LOST",), raises=("ValueError",))),
     ("store: an entry rewritten and the file rechained", an_entry_rewritten_and_the_file_rechained,
