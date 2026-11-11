@@ -222,7 +222,7 @@ the strict check takes, and what each part is worth:
 - **An optional recomputation of alpha's KeySet fingerprint** (`keyset_fingerprint_of`, built by the caller from zeta, which
   owns the rule; CNS imports nothing from zeta). The runner supplies it. Without it only the fingerprint strings alpha,
   zeta and beta carry are compared, and substituted alpha content that copies the original string passes. The callable is
-  asked once per alpha content (a second evaluation of the same run reuses the answer), a root issued with it says so, and
+  asked once per evaluation (each `strict_problems` or `strict_root` call asks afresh and remembers nothing; a verifier that lies across two separate calls is the caller's trust), a root issued with it says so, and
   `require_keyset_verifier=True` makes its absence a named problem (the default keeps existing callers working).
 - **A KeySet fingerprint and a content fingerprint compared as carried.** Zeta records the fingerprint of the KeySet it
   evaluated; beta's `content_fingerprint` (13 of a Decision's 16 fields; `decision_fingerprint` covers five and is

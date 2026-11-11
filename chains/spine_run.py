@@ -537,10 +537,11 @@ def a_keyset_substituted_under_a_copied_fingerprint_is_recomputed() -> List[str]
     return substituted_alpha_content_under_the_original_fingerprint(verify_fingerprint=True)
 
 
-def a_verifier_that_answers_differently_the_second_time() -> List[str]:
-    """E55. A substituted alpha under a copied fingerprint, and a verifier that recomputes honestly once and then echoes alpha's
-    own fingerprint. `strict_problems` names the problem; `strict_root` used to ask again, be lied to, and issue a root for the
-    same run. The verifier is asked once, so no root is issued."""
+def a_verifier_is_asked_once_inside_one_root_evaluation() -> List[str]:
+    """E55, as far as it holds. A substituted alpha under a copied fingerprint, and a verifier that recomputes honestly the first
+    time it is asked and then echoes alpha's own fingerprint. `strict_root` evaluates once and uses that one answer, so no root
+    is issued. Two separate public calls are two evaluations and each asks afresh: a verifier that lies across them is the
+    caller's trust (stated in `strict_problems`' docstring), not something this scenario claims."""
     p = stages(SICK)
     other = alpha_cns.keyset_content(observe(SICK_ELSEWHERE), context=CTX)
     other["keyset_fingerprint"] = p["alpha"]["keyset_fingerprint"]
@@ -551,15 +552,14 @@ def a_verifier_that_answers_differently_the_second_time() -> List[str]:
     def flaky(alpha: Any) -> str:
         asked.append(1)
         return zeta_keyset_fingerprint(alpha) if len(asked) == 1 else alpha["keyset_fingerprint"]
-    args = (q["alpha"], q["zeta"], q["beta"], q["delta"])
-    found = strict_problems(*args, chain=receipt, keyset_fingerprint_of=flaky)
+    found: List[str] = []
     try:
-        strict_root(*args, chain=receipt, keyset_fingerprint_of=flaky)
-        found.append("a root was issued for a run strict_problems refused")
-    except ValueError:
-        pass
+        strict_root(q["alpha"], q["zeta"], q["beta"], q["delta"], chain=receipt, keyset_fingerprint_of=flaky)
+        found.append("a root was issued for a run whose verifier answered wrongly")
+    except ValueError as exc:
+        found += str(exc).split("the spine run does not hold together: ", 1)[-1].split("; ")
     if len(asked) != 1:
-        found.append(f"the verifier was asked {len(asked)} times for one run")
+        found.append(f"the verifier was asked {len(asked)} times inside one evaluation")
     return found
 
 
@@ -1891,7 +1891,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("the export says require_context=False; the verifier requires True",), raises=("ValueError",))),
     ("strict: zeta refuses a lock result bound to another entity's context", zeta_refuses_to_bind_a_lock_result_to_another_entitys_context,
      Expect("refused", required=("the LockResult was evaluated for entity 'patient_1'",), raises=("ValueError",))),
-    ("strict: a verifier that answers differently the second time cannot split problems from root", a_verifier_that_answers_differently_the_second_time,
+    ("strict: a verifier is asked once inside one root evaluation", a_verifier_is_asked_once_inside_one_root_evaluation,
      Expect("problems", required=("alpha's KeySet fingerprint does not match a recomputation from alpha's keys",))),
     ("strict: a required verifier that is missing is a named problem", a_required_verifier_that_is_missing,
      Expect("problems", required=("no keyset_fingerprint_of was supplied, and require_keyset_verifier is set",))),

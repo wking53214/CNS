@@ -184,9 +184,12 @@ Each item names the attack it answers. Nothing in `cns/` changed, no pin moved, 
   is refused with it and, as recorded, undetectable without it. A receipt whose entry is the last one its checkpoint
   covers must name that entry's hash as the checkpoint head (macg2 A1). A root issued against a held checkpoint carries
   that fact; without it every root is what it was.
-- `strict_problems` and `strict_root` (F-07). The keyset verifier is asked once per alpha content and the answer is
-  reused, so a verifier that answers differently the second time can no longer make `strict_problems` name a problem and
-  `strict_root` issue a root (hacker1 E55). A root issued with a verifier says so. `require_keyset_verifier=True` makes the
+- `strict_problems` and `strict_root` (F-07). The keyset verifier is asked once per evaluation: one `strict_problems` call
+  asks once, and one `strict_root` call evaluates once and uses that answer, so inside `strict_root` a verifier cannot
+  say yes to the check and no to the root (hacker1 E55). Nothing is remembered between calls (an earlier version of this
+  change kept a process-wide memo, which made a revoked verifier keep its stale pass and a transient failure permanent;
+  removed in Step 7d, N5). Two separate public calls are two evaluations, so a verifier that lies across them is the
+  caller's trust and E55 is not claimed fixed across calls. A root issued with a verifier says so. `require_keyset_verifier=True` makes the
   absence a named problem. An echo verifier (hacker1 E54) is still the caller's trust.
 - Documentation (F-17): "13 of a Decision's 15 fields" is 16 (README, `chains/spine_run.py`); the manifest docstring's
   Python floor and its success message; the scenario counts; the statement that no signature moved.
@@ -196,6 +199,13 @@ Each item names the attack it answers. Nothing in `cns/` changed, no pin moved, 
   `cns_composition/tests/test_composition_public_shape.py` (the strict signature gained `held_checkpoint` and
   `require_keyset_verifier`, F-04, F-07). `chains/spine_run.py` rows edited: the zeroed-heads row allows the checkpoint-head
   problem (F-04) and the checkpoint cause is worded "unmatched checkpoint" (F-08).
+  Step 7d (N5), edited because they encoded the process-wide verifier memo: in `test_spine_trace_strict.py`,
+  `test_a_verifier_that_lies_on_its_second_call_cannot_let_problems_report_and_root_issue` (now
+  `test_a_verifier_is_asked_once_inside_one_strict_root_evaluation`: one `strict_root` call asks once),
+  `test_the_verifier_is_asked_exactly_once_for_one_evaluation` (`strict_root` after `strict_problems` is a second
+  evaluation, so two questions in all, not one) and `test_a_verifier_that_is_a_bound_method_is_asked_once_too` (one
+  question per public call); and the `chains/spine_run.py` row "a verifier that answers differently the second time cannot
+  split problems from root" (now "a verifier is asked once inside one root evaluation", `strict_root` alone).
 
 ### Changed
 
