@@ -87,9 +87,8 @@ verdicts means.
 from __future__ import annotations
 
 import hashlib
-from array import array
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Protocol, Sequence, Tuple, runtime_checkable
+from typing import Any, Iterable, Mapping, Protocol, Tuple, runtime_checkable
 
 from cns.rowenum import RowEnum
 
@@ -273,8 +272,17 @@ def _canonical(value: Any) -> str:
     silently as a list of integers, so `bytearray(b"ab")` and `[97, 98]`
     were one subject. Binary content has no rendering here; a consumer that
     needs it encodes it as text first (hex, base64) and binds to that.
-    Any other sequence that is not text renders as a list, exactly like a
-    `list` or `tuple` of the same items.
+    Only the builtin containers are rendered (Step 2, N8, after 3.0.0): a
+    `dict`, and a `list` or `tuple`. Any other `Mapping` or `Sequence`
+    (`MappingProxyType`, `UserDict`, `ChainMap`, `deque`, `range`,
+    `UserList`, a class of the caller's own) is refused with a `TypeError`
+    naming the type. Its `keys`, `__getitem__` and `__iter__` are methods the
+    object controls, the same hazard the subclass rule below closes, and the
+    callers read for this change (the spine's four repositories, CNS, and
+    every other repository whose suite runs in the build environment) all
+    hand over plain `dict`, `list` and `tuple`, so refusing them breaks none
+    and no plain value digests differently. A caller holding one converts it
+    first (`dict(m)`, `list(s)`).
 
     Exact types only, added after 2.3.0 (a deliberate change limited to subclass
     inputs; no plain value digests differently). A subclass of `str`, `int`,
@@ -316,7 +324,7 @@ def _canonical(value: Any) -> str:
                     "cannot bind a verdict to text holding a lone surrogate; "
                     "it is not Unicode and has no UTF-8 encoding") from None
         return f"s:{len(value)}:{value}"
-    if isinstance(value, Mapping):
+    if kind is dict:
         keys = list(value.keys())  # read once: the checks and the rendering see the same keys
         for k in keys:
             if not isinstance(k, str):
@@ -330,15 +338,13 @@ def _canonical(value: Any) -> str:
             raise TypeError("mapping keys collide once stringified")
         body = "".join(_canonical(k) + _canonical(value[k]) for k in items)
         return f"d:{len(items)}:{body}"
-    if isinstance(value, (list, tuple)) or (
-            isinstance(value, Sequence)
-            and not isinstance(value, (str, bytes, bytearray, memoryview, array))):
+    if kind is list or kind is tuple:
         seq = list(value)  # read once: the count and the members come from the same read
         body = "".join(_canonical(v) for v in seq)
         return f"l:{len(seq)}:{body}"
     raise TypeError(
         f"cannot bind a verdict to {type(value).__name__}; use str, int, "
-        f"float, bool, None, or a mapping or sequence of those")
+        f"float, bool, None, or a dict, list or tuple of those")
 
 
 def subject_digest(content: Mapping[str, object]) -> str:

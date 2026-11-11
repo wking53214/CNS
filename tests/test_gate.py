@@ -344,8 +344,10 @@ def test_a_list_and_a_tuple_and_other_sequences_still_digest_alike():
     from collections import deque
     want = subject_digest({"a": [97, 98]})
     assert subject_digest({"a": (97, 98)}) == want
-    assert subject_digest({"a": range(97, 99)}) == want
-    assert subject_digest({"a": deque([97, 98])}) == want
+    with pytest.raises(TypeError, match="range"):
+        subject_digest({"a": range(97, 99)})
+    with pytest.raises(TypeError, match="deque"):
+        subject_digest({"a": deque([97, 98])})
 
 
 def test_every_refusal_from_subject_digest_is_a_type_error():
