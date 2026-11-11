@@ -124,7 +124,9 @@ REQUIRED: Mapping[str, Imports] = {
     "Resume_OS": {"cns.gate": ()},
 }
 
-_OURS = ("cns", "cns_composition", "cns_interop")
+#: The packages this repository provides. `cns_interop` (UAI-1) is not one of them: it lives in the UAI repository
+#: (github.com/wking53214/UAI-2), so a repository that imports only it takes nothing from CNS.
+_OURS = ("cns", "cns_composition")
 #: Folders that are not the repository's own running code. `archive` holds preserved records (GSA keeps an old
 #: file there that imports cns.governance on purpose); a record is not a consumer.
 _SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "site-packages", "__pycache__", "build", "dist", "archive"}

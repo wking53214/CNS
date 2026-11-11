@@ -51,10 +51,10 @@ def test_drift_refuses_a_single_string_as_the_expected_repositories(tmp_path):
         consumers.drift(tmp_path, required={}, expect="Link")
 
 
-def test_a_repository_that_imports_only_cns_interop_is_seen_as_a_consumer(tmp_path):
+def test_a_repository_that_imports_only_cns_interop_is_not_a_consumer_of_this_repository(tmp_path):
     repo = tmp_path / "Edge"
     repo.mkdir()
     (repo / "mod.py").write_text("from cns_interop.decision import from_super_gate\n")
-    assert "cns_interop.decision" in consumers.scan(repo)
+    assert "cns_interop.decision" not in consumers.scan(repo)   # UAI-1 lives in the UAI repository, not here
     problems = consumers.drift(tmp_path, required={}, expect=("Edge",))
-    assert any("Edge" in p and "not registered" in p for p in problems)
+    assert not any("Edge" in p and "not registered" in p for p in problems)

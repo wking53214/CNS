@@ -88,7 +88,7 @@ THE PERMISSION, PORTABLE
 
 `DecisionGuard` proves an approval with a key only this process holds, so on its own the spine's authorization ends
 at the process boundary. The PORTABLE scenarios carry the same roster decision across it with UAI-1
-(`cns_interop`, docs/interop/UAI-1.md). The party that acts (an operator identity) asks the roster, over signed JSON
+(`cns_interop`, in the UAI repository: github.com/wking53214/UAI-2, docs/interop/UAI-1.md there). The party that acts (an operator identity) asks the roster, over signed JSON
 messages, for a judgment of the document the roster already holds; the roster runs the same SuperGate and signs what
 it decided, root included (`from_super_gate` refuses a decision this process did not issue). The kernel's
 `root_guard` and CCC's `write_permission` are then a `RemoteDecisionGuard`: it holds the roster's public identity,
@@ -1389,7 +1389,10 @@ SPINE_CAPABILITY = Capability(name="evidence-spine", version=1,
                               accepts=(), requires=(), evidence=(), max_ttl_ms=60_000)
 
 HUB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ACT_PY = os.path.join(HUB, "interop", "act.py")
+#: UAI-1 (`cns_interop`, and the acting program beside it) lives in the UAI repository. The program is found next to
+#: the `cns_interop` that was imported, so the two are always the same checkout.
+UAI = os.path.dirname(os.path.dirname(os.path.abspath(sys.modules[Signer.__module__].__file__ or "")))
+ACT_PY = os.path.join(UAI, "interop", "act.py")
 
 
 @dataclasses.dataclass

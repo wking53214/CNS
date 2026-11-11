@@ -22,11 +22,25 @@ Nothing yet.
 ## [2.4.0] - 2026-11-05 (not yet tagged)
 
 The work merged to `main` after the `v2.3.0` tag (`41592fb`), plus the independent review's fixes. A minor version, by
-the owner's decision of 2026-11-05: it adds a package, strengthens the strict decision-spine check, adds optional
-arguments to `SuperGate.decide` and `DecisionGuard`, fixes one command that failed its own test, and tightens a few
-checks for input that was already wrong (see Changed). One behaviour change is a refusal that was an acceptance at
-`v2.3.0`: `subject_digest` no longer digests a `bytearray`, `memoryview` or `array.array`. Every other root and outcome
-for valid input is unchanged. The `cns` package gains no new shape.
+the owner's decision of 2026-11-05: it added a package (UAI-1) that has since moved to its own repository (see Moved),
+strengthens the strict decision-spine check, adds optional arguments to `SuperGate.decide` and `DecisionGuard`, fixes
+one command that failed its own test, and tightens a few checks for input that was already wrong (see Changed). One
+behaviour change is a refusal that was an acceptance at `v2.3.0`: `subject_digest` no longer digests a `bytearray`,
+`memoryview` or `array.array`. Every other root and outcome for valid input is unchanged. The `cns` package gains no
+new shape.
+
+### Moved
+
+- UAI-1 left this repository for github.com/wking53214/UAI-2, unchanged, from commit `03eca66`: `cns_interop/`,
+  `interop/`, `contracts/uai1/`, `contracts/uai-vectors.json`, `contracts/uai-interop-vectors.json`, `docs/interop/`
+  and the three `docs/migrations/uai-1-revision-*.md` notes. It was never in a tagged release, so no pin of this
+  repository could import it. `docs/interop/README.md` is the pointer left behind. The wheel is `cns` and
+  `cns_composition` again; the `postgres` extra and the `psycopg` and `jsonschema` development dependencies, which
+  only UAI-1 used, are gone. Entries below that describe `cns_interop` or `interop/` describe that code as it was
+  developed here; it is now maintained there.
+- `chains/evidence_spine.py` still signs its roster decision with UAI-1. It imports `cns_interop` from a UAI-2 checkout,
+  which the chains workflow now makes, and finds `interop/act.py` beside it.
+- `cns_composition.consumers` no longer counts `cns_interop` as a package this repository provides.
 
 ### Added
 
@@ -288,8 +302,7 @@ Unreleased. Each line names the commit that holds it.
 - `Decision.allowed` and `reasons()` return False and a reason, and never raise, for a hand-built decision whose seat or
   gate name is not text; `digest_context` reads a mapping's items once and raises `ValueError` for text it cannot
   digest; `DecisionGuard(expected_seats=...)` raises `ValueError` for a non-collection or a mapping;
-  `consumers.drift(expect=...)` refuses a single string; `cns_interop` is now seen as a CNS import by
-  `consumers.scan`, so a repository that imports only it is named when unregistered.
+  `consumers.drift(expect=...)` refuses a single string.
 - `repo_gates.ENDS`: GEMS stands at ALPHA as well as OMEGA (its transport's `CnsInputGate` is an ALPHA gate). Two tests
   that used GEMS as the example of an OMEGA-only repository now use DIT; no assertion about GEMS's omega end changed.
 - `ResubmissionGuard`: a full table refuses a new subject instead of forgetting the oldest, and the same content is
