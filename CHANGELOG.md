@@ -20,13 +20,16 @@ entry says so.
 - `cns_composition/repin.py` reads checkouts with `GIT_NO_REPLACE_OBJECTS=1` (its one git helper, `_git_env`), so a `git replace` ref cannot make a checkout look clean at a pinned commit while holding other content. Test: `cns_composition/tests/test_repin.py::test_a_replace_ref_does_not_make_a_checkout_look_clean`. The git helpers of `circuit_canary`, `circuit_refusals` and `release` are separate and were not changed.
 - The circuit manifest, the released-seats file and the install file are re-pinned (`repin --stack ... --released ...`, then the install renderer) to the heads the repositories pin: WARDEN 0.16.6 (`4869ca3`), JUDGE 0.5.7 (`92c2888`), ghost_tools `48d1a0f` (1.10.14), DRAFTER 0.2.20 (`7231bba`), BURNISH 0.3.22 (`edeee84`), WATCHER_MCU 0.3.17 (`2218473`). The `cns` package is unchanged. The CNS pin the repositories carry (`v2.3.0`) was not moved; `seat_pins` still reports it against the install file's `v2.4.0`, which is the owner's step.
 
-## [3.0.0] - not yet tagged
+## [3.0.0] - 2026-11-11
 
 The work merged to `main` after the `v2.4.0` tag (`2736dee`, the merge of #127): PR #128 and its follow-up #129, the
 2026-11-05 retest's remediation of the decision-spine check. A major version, by the owner's decision of 2026-11-11,
+tagged `v3.0.0` by the owner on 2026-11-11, an annotated tag at `31cb6f568219ef62cf3748701c895aa086abf1b8` (the merge of #132),
 because `subject_digest` now refuses input it used to digest (see Breaking). The impact scan found no consumer
-affected: every repository's own suite gives the same result against `v2.3.0` and against this tree, apart from the
-pin-comment test in BURNISH that asserts the installed release. `v2.4.0` does not contain any of this; the tag points
+affected: the own suites of the 36 repositories with tests give the same result against `v2.3.0` and against this
+tree, apart from three that do not come from the digest change (BURNISH's test that checks a pin comment against the
+installed release, observe-perceive's one test that pins the old `resolve` behaviour, and fortress-kernel's known
+lone-surrogate case, which did not reproduce on a second run). `v2.4.0` does not contain any of this; the tag points
 at the commit before #128 merged.
 
 ### Breaking
