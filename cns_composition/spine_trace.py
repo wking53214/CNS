@@ -601,6 +601,16 @@ def receipt_signing_input(receipt: Any) -> bytes:
                     raise TypeError(f"receipt field context.{field} must be a str; got {type(value[field]).__name__}")
         elif type(value) is not str:
             raise TypeError(f"receipt field {name} must be a str; got {type(value).__name__}")
+    # Two different strings must not share a signing input: with ensure_ascii a lone surrogate pair written apart and the
+    # one character it spells render as the same JSON text. A string with no strict UTF-8 encoding is not text; it is refused.
+    texts = [(name, receipt[name]) for name in _RECEIPT_FIELDS if name not in _RECEIPT_INTS and name != "context"]
+    texts += [(f"context.{field}", receipt["context"][field]) for field in _CONTEXT_FIELDS]
+    for label, text in texts:
+        try:
+            text.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ValueError(f"receipt field {label} is not text: it does not encode as strict UTF-8 "
+                             "(a lone surrogate)") from None
     body = json.dumps(receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
     return RECEIPT_SIGNATURE_DOMAIN + body.encode("ascii")
 
