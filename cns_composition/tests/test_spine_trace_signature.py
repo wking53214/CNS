@@ -381,3 +381,53 @@ def test_a_dict_subclass_receipt_is_read_once_into_a_plain_dict_and_signed_as_it
     class Sub(dict):
         pass
     assert problems(parts, Sub(receipt), receipt_signature=signed(receipt), verify_receipt_signature=VERIFY) == []
+
+
+def _mutating_verifier(receipt, value):
+    """A deployer callable that answers like the real verifier, then alters the CALLER's receipt (nested context)."""
+    real = VERIFY
+
+    def verify(signing_input, signature):
+        answer = real(signing_input, signature)
+        receipt["context"]["run_id"] = value
+        return answer
+    return verify
+
+
+@pytest.mark.parametrize("planted", ["run_FORGED", 12345, None, ["x"]])
+def test_a_verifier_that_mutates_the_callers_receipt_cannot_change_what_the_root_binds(planted):
+    parts, receipt = run()
+    signature = signed(receipt)
+    honest = root(parts, copy.deepcopy(receipt), receipt_signature=signature, verify_receipt_signature=VERIFY,
+                  require_signed_receipt=True)
+    caller_copy = copy.deepcopy(receipt)
+    got = root(parts, caller_copy, receipt_signature=signature,
+               verify_receipt_signature=_mutating_verifier(caller_copy, planted), require_signed_receipt=True)
+    assert caller_copy["context"]["run_id"] == planted  # the verifier really did alter the caller's object
+    assert got == honest
+
+
+def test_the_root_records_the_same_signing_input_bytes_that_were_verified():
+    parts, receipt = run()
+    signature = signed(receipt)
+    seen = []
+
+    def verify(signing_input, sig):
+        seen.append(signing_input)
+        return VERIFY(signing_input, sig)
+    got = root(parts, receipt, receipt_signature=signature, verify_receipt_signature=verify, require_signed_receipt=True)
+    assert len(seen) == 1
+    assert got == root(parts, receipt, receipt_signature=signature, verify_receipt_signature=VERIFY,
+                       require_signed_receipt=True)
+    assert seen[0] == receipt_signing_input(receipt)
+
+
+def test_a_planted_non_string_context_is_a_named_problem_not_a_type_error():
+    parts, receipt = run()
+    signature = signed(receipt)
+    bad = copy.deepcopy(receipt)
+    bad["context"]["run_id"] = 7
+    found = problems(parts, bad, receipt_signature=signature, verify_receipt_signature=VERIFY)
+    assert any("cannot be put into signing form" in p for p in found)
+    with pytest.raises(ValueError, match="cannot be put into signing form"):
+        root(parts, bad, receipt_signature=signature, verify_receipt_signature=VERIFY)

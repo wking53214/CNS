@@ -94,6 +94,7 @@ present, which Lock should open, or whether the Decision is right. `strict_root`
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -654,18 +655,29 @@ def _read_receipt(chain: Any) -> Any:
     check reports it). Both public entry points call this once, so the receipt checks and the signature see one read."""
     if isinstance(chain, Mapping):
         try:
-            return dict(chain)
+            snap = dict(chain)
         except Exception:  # noqa: BLE001 - the receipt check names the failure
             return chain
+        # The nested context is the caller's own object: copy it too, so nothing a deployer callable does to the caller's
+        # receipt after this read can change what is judged, signed or recorded.
+        context = snap.get("context")
+        if isinstance(context, Mapping):
+            try:
+                snap["context"] = copy.deepcopy(context)
+            except Exception:  # noqa: BLE001 - left as given, the receipt check names it
+                pass
+        return snap
     return chain
 
 
-def _signature_problems(receipt: Any, signature: Any, verifier: Any, required: bool) -> List[str]:
+def _signature_problems(receipt: Any, signature: Any, verifier: Any, required: bool,
+                        signing: Optional[Dict[str, bytes]] = None) -> List[str]:
     """What is wrong with the receipt signature, judged against the receipt snapshot. Empty if there is none or it verifies.
 
     The verifier is asked at most once, with `(signing_input, signature)`, and only when there is a well-formed signature,
     a callable verifier and a receipt that can be put into signing form. Its answer is `True` or the signature does not
-    verify: an exception, `False`, or any truthy value that is not `True` all mean it did not."""
+    verify: an exception, `False`, or any truthy value that is not `True` all mean it did not. The signing input is computed
+    once; when `signing` is given the bytes that were verified are left in it, so a root records exactly those bytes."""
     if signature is None:
         return [RECEIPT_SIGNATURE_REQUIRED] if required else []
     if type(signature) is not bytes or not signature:
@@ -680,6 +692,8 @@ def _signature_problems(receipt: Any, signature: Any, verifier: Any, required: b
         signing_input = receipt_signing_input(receipt)
     except (TypeError, ValueError) as exc:
         return [f"the ledger receipt cannot be put into signing form, so its signature was not verified: {exc}"]
+    if signing is not None:
+        signing["input"] = signing_input
     try:
         answer = verifier(signing_input, signature)
     except Exception:  # noqa: BLE001 - a verifier that raised has not verified
@@ -743,7 +757,8 @@ def _resolve_held(held_checkpoint: Any) -> Tuple[Optional[Tuple[int, str]], List
 def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any = None, bare_assertion: bool = False,
                      keyset_fingerprint_of: Any = None, held_snapshot: Tuple[Optional[Tuple[int, str]], List[str]] = (None, []),
                      require_keyset_verifier: bool = False, receipt_signature: Any = None,
-                     verify_receipt_signature: Any = None, require_signed_receipt: bool = False) -> List[str]:
+                     verify_receipt_signature: Any = None, require_signed_receipt: bool = False,
+                     signing: Optional[Dict[str, bytes]] = None) -> List[str]:
     out: List[str] = []
     stages = {"alpha": alpha, "beta": beta, "delta": delta}
     for name, content in stages.items():
@@ -919,7 +934,7 @@ def _strict_problems(alpha: Any, zeta: Any, beta: Any, delta: Any, *, chain: Any
     held_cp, held_issues = held_snapshot
     receipt_issues = [] if chain is None else _receipt_problems(chain, delta, dd, run, held_cp)
     out += held_issues + receipt_issues
-    out += _signature_problems(chain, receipt_signature, verify_receipt_signature, require_signed_receipt)
+    out += _signature_problems(chain, receipt_signature, verify_receipt_signature, require_signed_receipt, signing)
     if chain is None or receipt_issues or held_issues:
         out.append(CHAIN_NOT_SHOWN)
     stage_digests = [d for d in (da, db, dd) if d is not None]
@@ -957,12 +972,13 @@ def strict_root(
     (alpha, zeta, beta, delta), unread = _snapshot(alpha, zeta, beta, delta)
     chain = _read_receipt(chain)  # once: the receipt checks, the signature and the root's record use this one snapshot
     held_snapshot = _resolve_held(held_checkpoint)  # once: the comparison below and the root's record use this one snapshot
+    signing: Dict[str, bytes] = {}  # the signing input that is verified, kept so the root records those same bytes
     found = unread or _strict_problems(alpha, zeta, beta, delta, chain=chain, bare_assertion=chain_verified is not _UNSET,
                                        keyset_fingerprint_of=keyset_fingerprint_of, held_snapshot=held_snapshot,
                                        require_keyset_verifier=require_keyset_verifier,
                                        receipt_signature=receipt_signature,
                                        verify_receipt_signature=verify_receipt_signature,
-                                       require_signed_receipt=require_signed_receipt)
+                                       require_signed_receipt=require_signed_receipt, signing=signing)
     if found:
         raise ValueError("the spine run does not hold together: " + "; ".join(found))
     context = alpha["context"]
@@ -977,7 +993,7 @@ def strict_root(
         # No problem was found, so the signature was well formed and the one verifier call answered True. Present only
         # when a signature was verified: an unsigned root is exactly what it was.
         held_fact["receipt_signature"] = {
-            "receipt": hashlib.sha256(receipt_signing_input(chain)).hexdigest(),
+            "receipt": hashlib.sha256(signing["input"]).hexdigest(),
             "signature": hashlib.sha256(receipt_signature).hexdigest(),
         }
     return subject_digest({
