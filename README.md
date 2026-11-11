@@ -211,8 +211,21 @@ the strict check takes, and what each part is worth:
   digest of the delta content given, `entry_hash` and `previous_hash` are the delta content's own, the context is the
   run's, `0 <= index < checkpoint_length <= ledger_length`, the heads are 64 lowercase hex digits, the ledger head is the
   entry's hash when the entry is the last, and the checkpoint head is the ledger head when the checkpoint covers the whole
-  ledger, and the checkpoint head is the entry's own hash when the entry is the last one the checkpoint covers. The receipt
-  is not signed: a hand-built consistent one passes.
+  ledger, and the checkpoint head is the entry's own hash when the entry is the last one the checkpoint covers. Without a
+  signature (next bullet) the receipt is not authentic: a hand-built consistent one passes.
+- **An optional signature on the receipt** (`receipt_signature=`, `verify_receipt_signature=`, `require_signed_receipt=`; all
+  keyword-only and off by default, so an unsigned run and its root are exactly what they were). `receipt_signature` is an
+  exact non-empty `bytes` over `receipt_signing_input(chain)` (the domain `delta-ledger-receipt-signature/1\n` then the
+  receipt as canonical JSON, identical to delta's function; a string with no strict UTF-8 encoding is refused). The
+  deployer hands CNS `verify_receipt_signature`, a callable(signing_input, signature) -> bool built from the keys it
+  trusts; CNS holds no key, no trust list and no crypto, calls it once per evaluation, and counts only the answer `True`.
+  Each of these is a named problem: a signature without a verifier, a verifier that raises or answers anything but `True`
+  ("receipt signature does not verify"), a malformed signature, and `require_signed_receipt=True` with no signature. A root
+  issued with a verified signature records it and differs from the unsigned root of the same receipt. With
+  `require_signed_receipt=True` and a verifier that trusts only the real key, a hand-built consistent receipt is refused,
+  because its author cannot sign it. What remains: a holder of the key can sign a receipt for a ledger that does not exist
+  (the signature says who vouched, not that the ledger is real), and the key, the trust list and its revocation are the
+  deployer's, outside CNS.
 - **An optional checkpoint held outside the ledger** (`held_checkpoint=(length, head)` or `{"length": ..., "head": ...}`,
   supplied by the caller from storage the ledger's producer cannot write). The receipt's `checkpoint_length` and
   `checkpoint_head` must then equal it exactly; a ledger that was tampered with, rechained and given a fresh checkpoint is
@@ -236,7 +249,8 @@ the strict check takes, and what each part is worth:
 Recorded limits, none of them hidden, each one a scenario marked GAP or stated here:
 
 1. There is no authorship key. Contents made up by someone who recomputes every digest and fingerprint (all public and
-   keyless) and writes a consistent receipt pass, so a receipt detects mistakes and partial forgeries, not an author.
+   keyless) and writes a consistent receipt pass unless the caller requires a signed receipt and trusts only the real key
+   (`require_signed_receipt`), so an unsigned receipt detects mistakes and partial forgeries, not an author.
 2. `LockResult` fields (`keyset_fingerprint`, `stale`, `entity_id`) are caller-settable, and an empty `entity_id` is
    accepted as legacy: a lock result for another entity with the id stripped is decided. Beta refuses one that names
    another entity.
@@ -250,8 +264,8 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
    the result is refused when it is bound, recorded or verified, not when it is computed.
 7. A ledger's sink runs before the ledger changes, so a sink that writes to its own store and then fails leaves a write the
    ledger does not have (a scenario shows it). Delta's contract: the sink must be idempotent, keyed by the entry's hash, and
-   the caller reconciles; a retry hands it the same entry. And a receipt written by hand with fields that fit each other
-   (limit 1) passes: only where the checkpoint is kept tells it from delta's.
+   the caller reconciles; a retry hands it the same entry. And an unsigned receipt written by hand with fields that fit
+   each other (limit 1) passes: only where the checkpoint is kept, or a signature the deployer's key made, tells it from delta's.
 
 The `chains` workflow runs 113 scenarios: seven lenient, and 106 more (the strict ones, the oracle and the manifest checks
 held to account with real objects). Of the 113 in all, 21 are checks that hold, 82 are attacks
@@ -271,7 +285,7 @@ forbids, and whether it is clean, a problem, a refusal or a gap. A missing requi
 unexpected success, an undeclared crash, a refusal that changed the ledger it guarded, or a `refused` scenario with no refusal of its own attack call (recorded per scenario and per thread, so another scenario's or another thread's refusal does not count) fails the scenario; the oracle has
 its own tests in `tests/test_spine_oracle.py`. The scenario run on the manifest's commits is `spine-pinned`: a second job runs
 the same scenarios on exactly the four commits `contracts/spine-manifest.json` names, after `cns_composition.spine_manifest`
-has held every pin and checkout to that file. The checkout check refuses an edited, untracked, index-hidden (--skip-worktree, --assume-unchanged) or ignored importable file
+has held every pin and checkout to that file, on Python 3.10 (the floor) and 3.12. The checkout check refuses an edited, untracked, index-hidden (--skip-worktree, --assume-unchanged) or ignored importable file
 (a planted `__pycache__/x.pyc`); the 3.10 TOML fallback refuses any line separator TOML does not know (U+2028 and the like).
 
 ## The rule
@@ -764,6 +778,9 @@ Each line names the test or workflow job that holds it. A claim without one is n
 - `subject_digest` renders exact types only: a subclass of `str`, `int`, `float`, `dict`, `list` or `tuple` is refused with a
   `TypeError` naming the type, because it would be rendered through methods it can override while the ledger hash reads the
   raw data. No plain value digests differently (a deliberate contract change, for subclass inputs only; see CHANGELOG).
+  Only the builtin containers are rendered: any other `Mapping` or `Sequence` (`MappingProxyType`, `UserDict`, `deque`,
+  `range`, a class of the caller's own) is refused the same way, naming the type; convert it with `dict(...)` or `list(...)`
+  first. No caller read for this change passed one.
 - The digest answer key is exactly what `cns.gate.subject_digest` produces (`cns_composition/tests/test_digest_vectors.py`)
   and STACK-Kernel's vendored copy is compared with it in the `links` job.
 - The whole circuit installs from `contracts/install-stack.txt` with `pip check` clean and exactly one `cns`, runs on
