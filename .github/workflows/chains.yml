@@ -5,12 +5,12 @@
 #                        DGK's perimeter are shown differently, which `same_subject` refuses.
 # chains/spine_run.py    interconnected alpha, zeta, beta and delta run for real, then checked at their seams by
 #                        cns_composition.spine_trace, leniently (seven scenarios) and strictly, from each stage's content with a
-#                        pipeline context and a delta verification receipt. 151 scenarios in all, counted from the runner: 30 checks
-#                        that hold, 108 attacks each naming the problem or refusal that should answer it (55 problems, 53 refusals),
-#                        and 13 gaps the check does not close, recorded as facts. They include the receipt signature (signed:, 12,
+#                        pipeline context and a delta verification receipt. 164 scenarios in all, counted from the runner: 35 checks
+#                        that hold, 116 attacks each naming the problem or refusal that should answer it (57 problems, 59 refusals),
+#                        and 13 gaps the check does not close, recorded as facts. They include the receipt signature (signed:, 14, and keys:, 2,
 #                        with delta's signing hook and the reference keys in chains/receipt_keys.py), the durable store across
-#                        separate processes (store:, 10, through chains/store_worker.py, with a real SIGKILL) and the verify
-#                        command as two processes (package:, 15, chains/make_package.py and chains/verify_package.py). Each
+#                        separate processes (store:, 14, through chains/store_worker.py, with a real SIGKILL) and the verify
+#                        command as two processes (package:, 21, chains/make_package.py and chains/verify_package.py). Each
 #                        scenario declares an Expect (chains/spine_oracle.py): required problems, the only extras allowed, and
 #                        whether state may change.
 # chains/ecology_answer.py  an Ecology answer record judged by DIT's gates through cns_composition.super_gate, the
@@ -24,7 +24,7 @@
 # spine-pinned           the same decision spine, but on the four commits contracts/spine-manifest.json names and nothing else.
 #                        The `chains` job above runs each repository's floating default branch, which is the drift detector;
 #                        this job runs the set the four repositories declare. It first holds every pin and every checkout to
-#                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 151 scenarios, including the hardened
+#                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 164 scenarios, including the hardened
 #                        components' refusals, the delta receipt, its signature and the file store. The manifest names the tips
 #                        alpha 09bb3a1, zeta f778be1, beta 06001df and delta d84db7c. Individual green CI is not this. It runs on Python 3.10 (the floor in
 #                        pyproject.toml) and 3.12, so the floor is exercised and not only declared.

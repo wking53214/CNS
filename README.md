@@ -283,9 +283,9 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
    storage the checkpoint came from, and the trust list the keys came from. A checkpoint beside the ledger file it protects,
    or a trust list from the producer, agrees with whatever the producer wrote.
 
-The `chains` workflow runs 151 scenarios (counted from the runner): seven lenient, and 144 more (the strict ones, the oracle and
+The `chains` workflow runs 164 scenarios (counted from the runner): seven lenient, and 157 more (the strict ones, the oracle and
 the manifest checks held to account with real objects, the signed receipts, the durable store and the verify command). Of the
-151 in all, 30 are checks that hold, 108 are attacks
+164 in all, 35 are checks that hold, 116 are attacks (57 problems, 59 refusals)
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
 only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
 that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
@@ -294,10 +294,10 @@ fingerprint, a cited closed lock, a legacy lock result, a KeySet swapped when no
 own store, a rewritten ledger with a fresh checkpoint when none is held outside it, a truncated export and a rewritten, rechained export
 when no checkpoint is held outside, a holder of a trusted key signing a forged receipt, an older signed checkpoint, and a
 ledger rolled back to an older signed package: limits 1, 8 and 9); 13 of the first 106 verify delta's public `export` with `verify_export` and a checkpoint held
-outside the ledger, or follow zeta's entity check. Twelve scenarios (`signed:`) sign the receipt through delta's hook with the
+outside the ledger, or follow zeta's entity check. Fourteen scenarios (`signed:`, with two `keys:`) sign the receipt through delta's hook with the
 reference keys of `chains/receipt_keys.py` and hold the trust list, revocation, rotation, an edit of each of ten fields after
-signing, and the byte-equality of CNS's and delta's signing inputs; ten (`store:`) run a producer and a fresh consumer as
-separate processes through delta's file store and a separately kept signed checkpoint, including a `SIGKILL`; fifteen
+signing, and the byte-equality of CNS's and delta's signing inputs; fourteen (`store:`) run a producer and a fresh consumer as
+separate processes through delta's file store and a separately kept signed checkpoint, including a `SIGKILL` and a hand-off damaged in four ways, which only the consumer's CNS step can refuse (its printed root is also compared with a `strict_root` computed in-process); twenty-one
 (`package:`) run `make_package.py` and `verify_package.py` as two processes. The scenarios attack the receipt itself
 from delta's real one, and delta's refusal of a checkpoint (one sentence for five causes) is explained by the runner's own
 wrapper so each scenario requires its own cause. A scenario table row must be an `Expect`; a plain string is a `TypeError`
