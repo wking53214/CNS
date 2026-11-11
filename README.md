@@ -1,6 +1,15 @@
 # cns
 
-> **Check of 2026-11-10 (commit 03eca66).** Confirmed in this repository and on GitHub and PyPI: the 2.3.0 tag and its install pin, the four GitHub Releases (latest `v2.2.0`), and that PyPI has a `cns` release 2.3.50 (an unrelated project). Run in a clean environment: 3019 tests passed with none skipped, `ruff` and `mypy` clean, and the release check agrees. The test jobs on `main` pass. The `stack` workflow has failed since 2026-11-09 ("expected exactly one cns distribution") and is not yet fixed. The sibling repository rows were not re-measured.
+> **Status, checked 2026-11-11 at `main` `27b0bad`.** The current release is `v3.0.0` (tag at `31cb6f5`, recorded in
+> `contracts/cns-releases.json`). Run here in a clean worktree: 2150 tests passed, none skipped; `ruff`, `mypy` and
+> `release --check` clean; `chains/spine_run.py` 164 of 164 at the commits `contracts/spine-manifest.json` names;
+> `chains/evidence_spine.py` 56 results, 3 of them recorded GAPs, exit 0. **Not done:** the library's move to 3.0.0 is
+> in progress ([runbook](docs/releases/v3.0.0-sweep-runbook.md)); on that day 10 of the 40 repositories pinned
+> `v3.0.0` and most still pin `v2.3.0`. Until the circuit is re-pinned (the runbook's last step, after the sweep),
+> `pip install -r contracts/install-stack.txt` does not resolve, because the circuit commits it names still require
+> CNS `v2.3.0`; the `stack` workflow is red for that reason. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`,
+> `v2.0.0` and `v1.5.1`; `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release.
+
 The central nervous system of the library: one package holding
 the contracts every repo joins on.
 
@@ -111,7 +120,8 @@ The honest summary and the scored assessment are in `docs/interop/UAI1_R4_ASSESS
 
 ### Starting your own implementation
 
-Another team can implement UAI-1 without reading CNS code: `docs/interop/implementers/README.md` is the guide, and
+Another team can implement UAI-1 without reading CNS code. These paths are in github.com/wking53214/UAI-2:
+`docs/interop/implementers/README.md` is the guide, and
 `contracts/uai1/` holds the schema, the error registry, the conformance suite and `run_conformance.py`, which runs any
 implementation (given a small adapter program) against the suite using only the standard library. Runnable examples are
 in `interop/examples/` (Python, Node and a provider adapter). Security profiles, and which suit which deployment, are in
@@ -660,8 +670,8 @@ perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.5.1` (an oddity: it points at a commit older than `v1.5.0` whose
 package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and recorded so, see `CHANGELOG.md`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`), `v2.2.0` (the decision guard: `DecisionGuard`, `same_subject`, `Decision.subject` and the issuance proof; see `CHANGELOG.md`). `v2.3.0` (the evidence spine's fifth hop, CCC's write permission and the evidence guard, `SuperGate` binding and decision expiry; see `CHANGELOG.md`). `v2.4.0` (the strict decision-spine check, roster and context pins on `DecisionGuard`, `consumers.drift(expect=)`, and the `resolve` and `subject_digest` refusals; see `CHANGELOG.md`). `v3.0.0` (`subject_digest` refuses subclasses of `str`, `int`, `float`, `dict`, `list` and `tuple`, and the decision-spine check is hardened; see `CHANGELOG.md`). A raw commit SHA still
-works, but a tag says which contract you are joining on. The newest tag, `v2.3.0`, is the release a consumer pins; `main` has moved on
-since (see Unreleased in `CHANGELOG.md`), and what 2.3.0 adds is in `CHANGELOG.md`, and
+works, but a tag says which contract you are joining on. The newest tag, `v3.0.0`, is the release a consumer pins; `main` has moved on
+since (see Unreleased in `CHANGELOG.md`), and what 3.0.0 adds is in `CHANGELOG.md`, and
 `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
 
 ## Anthropic model-provider adapter
@@ -804,13 +814,13 @@ checker to trust these annotations, so it is asserted rather than assumed.
 ## Where the six spine repositories stand
 
 HERALD, TIE, Conservation_Kernel, Governance_Gateway, CCC and this repository. The CNS pins were read from each
-repository's `main` on 2026-11-04. The test counts and CI results of the five consumers are from 2026-10-30 and have
-not been re-measured since; CNS's own count was measured on 2026-11-04. For the consumers the first count is the
+repository's `main` on 2026-11-11. The test counts and CI results of the five consumers are from 2026-10-30 and have
+not been re-measured since; CNS's own row was measured on 2026-11-11. For the consumers the first count is the
 repository's own suite with CNS absent, the second with the `cns` extra installed.
 
 | Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
 |---|---|---|---|---|---|
-| CNS | 2.3.0, tagged; `main` is ahead of the tag | Tags `v0.1.0` to `v2.3.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`, published 2026-10-30 with the text in `docs/releases/`; `v2.3.0` has its text there and no Release yet. | test jobs green at `03eca66` on 2026-11-10; the `stack` workflow is red since 2026-11-09 (open) | 3019 passed, 0 skipped (measured 2026-11-10 in a clean environment with the dev extras) | not applicable |
+| CNS | 3.0.0, tagged; `main` is ahead of the tag | Tags `v0.1.0` to `v3.0.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`; `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release. | `ci` and `links` green at `27b0bad` on 2026-11-11; `stack` red (the install file does not resolve until the circuit is re-pinned) | 2150 passed, 0 skipped (measured 2026-11-11 at `27b0bad` in a clean worktree) | not applicable |
 | HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.3.0` |
 | TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.3.0` |
 | Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.3.0` |
@@ -819,15 +829,15 @@ repository's own suite with CNS absent, the second with the `cns` extra installe
 
 What this means, plainly:
 
-- Every repository that can use CNS pins the same tag, so the pins agree. The tag is older than `main`: `main` carries
-  work merged after it (2.3.0 in `CHANGELOG.md`, not yet tagged), including a change in `cns/gate.py` (CNS-008), so the five
-  consumers run the tag's behaviour, not `main`'s, until a new tag is made and they move to it. Tagging and the
-  version are the owner's decision.
+- The five consumers all pin the same tag, `v2.3.0`, so their pins agree with each other but are two releases behind
+  the current `v3.0.0`. They run 2.3.0's behaviour until each moves; the move is part of the 3.0.0 sweep
+  ([runbook](docs/releases/v3.0.0-sweep-runbook.md)). Tagging and the version are the owner's decision.
 - Only this repository has tags and releases. The other five have a version in their package and nothing tagged.
-- The evidence spine (`chains/evidence_spine.py`) ran end to end on 2026-11-08 at CNS `main` `fa40197`, with the five
-  consumer repositories at the default-branch copies cloned on 2026-11-07 (not their pins): 52 scenarios, 3 recorded
-  GAPs (listed in the evidence spine section above), no failures, exit code 0. The earlier 30-result, 1-GAP run from
-  2026-11-04 predates the second GAP added in #64 and is superseded.
+- The evidence spine (`chains/evidence_spine.py`) ran end to end on 2026-11-11 at CNS `main` `27b0bad`, with the five
+  consumer repositories at their `main` heads of that day (HERALD `c856899`, TIE `e0347af`, Conservation_Kernel
+  `02406f8`, Governance_Gateway `46b4602`, CCC `332d953`; UAI-2 `7745e59`), not their pins: 56 results, 3 of them
+  recorded GAPs (listed in the evidence spine section above), no failures, exit code 0. Earlier runs (52 on
+  2026-11-08, 30 on 2026-11-04) are superseded.
 - Where a repository writes records, who may call each door is its own README's business. CCC gates eleven
   doors with a caller's permission: the two that write a document, and nine that write a conclusion, finding, observation, or link. Conservation_Kernel guards its roots and lists the doors that are
   not yet protected. HERALD, TIE and Governance_Gateway create no governed record.
