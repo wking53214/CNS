@@ -17,11 +17,16 @@ entry says so.
 
 ## [Unreleased]
 
-Work after the `v2.3.0` tag (`41592fb`). It adds a package, strengthens the strict decision-spine check, fixes one
-command that failed its own test, and tightens a few checks for input that was already wrong (see Changed; no
-signature, root or outcome meaning moved); which version it
-ships in is the owner's decision, so `pyproject.toml` still says 2.3.0 and `release --check` reads this heading as
-not a release.
+Nothing yet.
+
+## [2.4.0] - 2026-11-05 (not yet tagged)
+
+The work merged to `main` after the `v2.3.0` tag (`41592fb`), plus the independent review's fixes. A minor version, by
+the owner's decision of 2026-11-05: it adds a package, strengthens the strict decision-spine check, adds optional
+arguments to `SuperGate.decide` and `DecisionGuard`, fixes one command that failed its own test, and tightens a few
+checks for input that was already wrong (see Changed). One behaviour change is a refusal that was an acceptance at
+`v2.3.0`: `subject_digest` no longer digests a `bytearray`, `memoryview` or `array.array`. Every other root and outcome
+for valid input is unchanged. The `cns` package gains no new shape.
 
 ### Added
 
