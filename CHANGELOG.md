@@ -168,22 +168,28 @@ Each item names the attack it answers. Nothing in `cns/` changed, no pin moved, 
 
 - `cns_composition/spine_manifest` (F-05, F-16). The pyproject is read as TOML (`tomllib` on 3.11 and later; on 3.10 a strict
   fallback that refuses what it cannot read completely: a multi-line string, a repeated section or key, a bracket in a comment
-  inside a list). A comment ending in `]` ended the dependency list early for the old reader, and a decoy list in a
+  inside a list, and, since Step 7a, any character Python's `splitlines` breaks a line on but TOML does not (U+2028, U+2029,
+  U+0085, CR alone, VT, FF, FS, GS, RS), any other control character, and a key it cannot split exactly). A comment ending in `]` ended the dependency list early for the old reader, and a decoy list in a
   multi-line string hid a dependency pinned to another owner at a branch; both are now named or refused. A checkout is
   refused when `git status --porcelain` lists anything, untracked files included, because HEAD at the pinned commit said
-  nothing about the files imported. Messages show whole 40 character commits. `--installed` holds each installed
+  nothing about the files imported. Since Step 7c it is also refused when an index entry is marked --skip-worktree or
+  --assume-unchanged (`git ls-files -v`), or when an ignored file Python can import (.py, .pyc, .so, .pth and the like,
+  `__pycache__` included, whether hidden by .gitignore or .git/info/exclude) is present; ignored logs and other tools' caches
+  are not named, and a checkout that was imported from before may need `git clean -fdx`. Messages show whole 40 character commits. `--installed` holds each installed
   distribution's `direct_url.json` commit (importlib.metadata, no network) to the manifest, and that the package imported
   is the installed one; it does not see an installed tree edited in place.
 - `chains/spine_oracle.py` and `chains/spine_run.py` (F-08). A `SystemExit` or `KeyboardInterrupt` from a scenario fails that
-  scenario and never ends the run; a refusal's returned text counts only when `refused()` recorded a refusal while the
-  scenario ran; the state a refusal must leave alone is a digest of the whole content of every entry, not its hash;
+  scenario and never ends the run; a refusal's returned text counts only when `refused()` recorded, in that scenario's own
+  record and on its own thread, a refusal that carries a text the scenario requires (Step 7e: a refusal of something else, an
+  earlier scenario's, or another thread's does not count; a thread the scenario starts is handed the record explicitly); the state a refusal must leave alone is a digest of the whole content of every entry, not its hash;
   `Expect` texts are exact, non-blank `str`; a checkpoint row cannot pass on a refusal for another reason; a same-ledger
   rewrite is no longer labelled a wrong ledger. Not changed: `raises` still matches by class name.
 - `strict_problems` and `strict_root` (F-04). Optional `held_checkpoint`, a checkpoint the caller keeps where the ledger's
   producer cannot write: the receipt must carry exactly it. A tampered, rechained ledger with a fresh checkpoint (macg2 A4)
   is refused with it and, as recorded, undetectable without it. A receipt whose entry is the last one its checkpoint
   covers must name that entry's hash as the checkpoint head (macg2 A1). A root issued against a held checkpoint carries
-  that fact; without it every root is what it was.
+  that fact; without it every root is what it was. Since Step 7b `strict_problems` and `strict_root` each read and validate
+  the held checkpoint once and use that one snapshot for the comparison and for what the root records.
 - `strict_problems` and `strict_root` (F-07). The keyset verifier is asked once per evaluation: one `strict_problems` call
   asks once, and one `strict_root` call evaluates once and uses that answer, so inside `strict_root` a verifier cannot
   say yes to the check and no to the root (hacker1 E55). Nothing is remembered between calls (an earlier version of this

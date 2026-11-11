@@ -337,6 +337,8 @@ def strict_problems(
     is the root it always was). With it, what stays undetectable is a tampering the held checkpoint does not cover
     (entries after its length), a held checkpoint the attacker could also rewrite, and a caller that supplies a
     checkpoint taken from the ledger it is checking. CNS holds no ledger and no storage: it compares what it is handed.
+    The held checkpoint is read and validated ONCE per call (`strict_problems` and `strict_root` share one normalisation),
+    and that one snapshot is both compared with the receipt and recorded in the root.
     A root issued against a held checkpoint carries that fact in its domain, so it differs from one issued without.
 
     `chain_verified` is a deprecated alias that is never evidence. Passing it, whatever the value, emits a
