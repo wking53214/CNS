@@ -25,8 +25,10 @@ entry says so.
 The work merged to `main` after the `v2.4.0` tag (`2736dee`, the merge of #127): PR #128 and its follow-up #129, the
 2026-11-05 retest's remediation of the decision-spine check. A major version, by the owner's decision of 2026-11-11,
 because `subject_digest` now refuses input it used to digest (see Breaking). The impact scan found no consumer
-affected: every repository's own suite gives the same result against `v2.3.0` and against this tree, apart from the
-pin-comment test in BURNISH that asserts the installed release. `v2.4.0` does not contain any of this; the tag points
+affected: the own suites of the 36 repositories with tests give the same result against `v2.3.0` and against this
+tree, apart from three that do not come from the digest change (BURNISH's test that checks a pin comment against the
+installed release, observe-perceive's one test that pins the old `resolve` behaviour, and fortress-kernel's known
+lone-surrogate case, which did not reproduce on a second run). `v2.4.0` does not contain any of this; the tag points
 at the commit before #128 merged.
 
 ### Breaking
