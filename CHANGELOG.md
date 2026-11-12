@@ -17,6 +17,22 @@ entry says so.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-12, not yet tagged
+
+The work merged to `main` after the `v3.0.0` tag (`31cb6f5`, the merge of #132): the decision-spine capability build of
+2026-11-11 (the ledger receipt signing hook, a verify-a-package command, delta's durable store scenarios, the Python 3.10
+leg, the digest exact types) and its independent reviews, the CNS v3.0.0 sweep's last re-pins, and the follow-up to two further
+reviews (#137, #141, #144). A major version by the owner's decision of 2026-11-12, because `subject_digest` now refuses
+input it used to digest (see Breaking). The tag, when the owner makes it, is `v4.0.0`.
+
+### Breaking
+
+- `cns.gate.subject_digest` refuses a `Mapping` that is not a `dict` and a non-text `Sequence` that is not a `list` or
+  `tuple` (`MappingProxyType`, `UserDict`, `deque`, `range`, ...) with a `TypeError` naming the type. At `v3.0.0` and
+  before they digested. Plain values digest exactly as before (`contracts/digest-vectors.json` is unchanged).
+
+### Changed
+
 - **Follow-up to an independent review of the merged store and verify command (CNS side).** The review found one High in delta
   (a checkpoint could be laundered after entries were deleted; fixed in delta, where `load(attach=True)` now has to say what
   it compares with and `CheckpointStore.write(history=...)` checks that a new checkpoint extends the stored one) and four Low.
@@ -33,11 +49,11 @@ entry says so.
   fails all three. The README and the runner docstring no longer say each scenario "requires its own cause": the label is the
   runner's inference.
 
-- **Release note for the owner (not decided here).** This section holds one change that refuses input 3.0.0 accepted:
-  `subject_digest` refuses a `Mapping` that is not a `dict` and a `Sequence` that is not a `list` or `tuple` (Step 2,
-  N8, below). Under the rule `tests/test_public_shape.py` states (a meaning change is a major version), the next
-  release is 4.0.0, unless the owner records why it is minor (for example: no caller passed one, which the scan below
-  that entry found). Until then `pyproject.toml` stays 3.0.0.
+- **Owner decision, 2026-11-12: a major version.** This release refuses input 3.0.0 accepted: `subject_digest` refuses a
+  `Mapping` that is not a `dict` and a `Sequence` that is not a `list` or `tuple` (Step 2, N8, below). Under the rule
+  `tests/test_public_shape.py` states (a meaning change is a major version) it is 4.0.0. The impact scan found no caller
+  that passed such a type (the CNS repository, the four spine repositories and 14 other repositories; seven could not run
+  here and were read only).
 - README: the banner, the "newest tag" sentence and the spine-repository status section now describe v3.0.0, the
   measurements of 2026-11-11 at `27b0bad` (2150 tests; spine runner 164 of 164; evidence spine 56, 3 GAPs), that the
   3.0.0 move is in progress, and why `pip install -r contracts/install-stack.txt` does not resolve until the circuit
