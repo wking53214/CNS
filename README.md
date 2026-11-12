@@ -1,16 +1,19 @@
 # cns
 
-> **Status, checked 2026-11-11 at `main` `27b0bad`.** The current release is `v3.0.0` (tag at `31cb6f5`, recorded in
-> `contracts/cns-releases.json`). Run here in a clean worktree: 2150 tests passed, none skipped; `ruff`, `mypy` and
-> `release --check` clean; `chains/spine_run.py` 164 of 164 at the commits `contracts/spine-manifest.json` names;
-> `chains/evidence_spine.py` 56 results, 3 of them recorded GAPs, exit 0. **Not done:** the library's move to 3.0.0 is
-> in progress ([runbook](docs/releases/v3.0.0-sweep-runbook.md)); on that day 10 of the 40 repositories checked
-> pinned `v3.0.0` and most still pin `v2.3.0`. Until the circuit is re-pinned (the runbook's last step, after the
-> sweep), `pip install -r contracts/install-stack.txt` does not resolve, because the circuit commits it names still
-> require CNS `v2.3.0`; the `stack` workflow is red for that reason. The `chains` job, which runs each repository's
-> floating `main`, was last red on the pull request run for #137 (delta's `main` did not yet have `delta.signing`; it
-> has since merged) and has not run on `main` since. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`,
-> `v2.0.0` and `v1.5.1`; `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release.
+> **Status, checked 2026-11-12 at `main` `038eae6`.** The current release is `v3.0.0` (tag at `31cb6f5`, recorded in
+> `contracts/cns-releases.json`). Run here in a clean checkout: 2170 tests passed, none skipped (`ruff`, `mypy` and
+> `release --check` were not re-run). `chains/spine_run.py` 164 of 164 and `chains/evidence_spine.py` 56 results, 3 of
+> them recorded GAPs, exit 0, both against the floating `main` of the sibling repositories; for beta and delta that is
+> newer than the commits `contracts/spine-manifest.json` names, and the `spine-pinned` job is the run at those commits.
+> `pip install -r contracts/install-stack.txt` resolves in a clean virtual environment. **Not done:** the library's
+> move to 3.0.0 is in progress ([runbook](docs/releases/v3.0.0-sweep-runbook.md)). Of the 36 repositories in
+> `contracts/cns-links.json` whose pin could be read, 25 pin `v3.0.0` on `main` and 10 still pin an older tag:
+> sentinel_os, fortress-kernel, ZTS, OBSERVE, observe-perceive, GSA-815, Ecology, GSA, ATS and experimental. Open pull
+> requests move four of them (GSA#15, ATS#15, Ecology#25, experimental#14). STACK-Kernel carries no CNS pin and
+> Resume_OS (private) was not checked. The `stack` workflow passed on the pull request run for #142. The `chains` job,
+> which runs each repository's floating `main`, last passed on 2026-11-11 (branch `ccr-271ac8e8-y0qkj4`) after failing
+> on the pull request run for #137. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`;
+> `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release.
 
 The central nervous system of the library: one package holding
 the contracts every repo joins on.
