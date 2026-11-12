@@ -298,9 +298,9 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
    storage the checkpoint came from, and the trust list the keys came from. A checkpoint beside the ledger file it protects,
    or a trust list from the producer, agrees with whatever the producer wrote.
 
-The `chains` workflow runs 172 scenarios (counted from the runner): seven lenient, and 165 more (the strict ones, the oracle and
+The `chains` workflow runs 174 scenarios (counted from the runner): seven lenient, and 167 more (the strict ones, the oracle and
 the manifest checks held to account with real objects, the signed receipts, the durable store and the verify command). Of the
-172 in all, 36 are checks that hold, 123 are attacks (57 problems, 66 refusals)
+174 in all, 37 are checks that hold, 124 are attacks (57 problems, 67 refusals)
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
 only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
 that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
@@ -311,14 +311,15 @@ when no checkpoint is held outside, a holder of a trusted key signing a forged r
 ledger rolled back to an older signed package: limits 1, 8 and 9); 13 of the first 106 verify delta's public `export` with `verify_export` and a checkpoint held
 outside the ledger, or follow zeta's entity check. Fourteen scenarios (`signed:`, with two `keys:`) sign the receipt through delta's hook with the
 reference keys of `chains/receipt_keys.py` and hold the trust list, revocation, rotation, an edit of each of ten fields after
-signing, and the byte-equality of CNS's and delta's signing inputs; eighteen (`store:`) use delta's file store and a separately kept signed checkpoint: fourteen run a producer and a fresh
-consumer as separate processes, including a `SIGKILL` and a hand-off damaged in four ways, which only the consumer's CNS step can refuse (its printed root is also compared with a `strict_root` computed in-process), and four make the store with a producer process and then try a restart and a checkpoint write in-process (a restart after entries were deleted or the history rewritten is refused, a checkpoint that does not extend the stored one is refused, an honest restart carries on); twenty-five
+signing, and the byte-equality of CNS's and delta's signing inputs; nineteen (`store:`) use delta's file store and a separately kept signed checkpoint: fourteen run a producer and a fresh
+consumer as separate processes, including a `SIGKILL` and a hand-off damaged in four ways, which only the consumer's CNS step can refuse (its printed root is also compared with a `strict_root` computed in-process), and five make the store with a producer process and then try a restart and a checkpoint write in-process (a restart after entries were deleted or the history rewritten is refused, a checkpoint that does not extend the stored one is refused, the README's own restart recipe after the file was deleted cannot launder the loss, an honest restart carries on); twenty-six
 (`package:`) run `make_package.py` and `verify_package.py` as two processes. The scenarios attack the receipt itself
 from delta's real one, and delta's refusal of a checkpoint (one sentence for five causes) is explained by the runner's own
 wrapper, which works the cause out from the ledger and the checkpoint it was given. That label is the runner's inference, not
 delta's statement, so it can name the intended cause while a different guard did the refusing. The empty-checkpoint scenarios
-are built so the length-0 guard is the only thing that can refuse them (a checkpoint of length 0 with the ledger's real
-head), and each guard they depend on was removed in a scratch copy of delta to see them fail. A scenario table row must be an `Expect`; a plain string is a `TypeError`
+are built so that removing the length-0 guard turns them red (a checkpoint of length 0 with the ledger's real head; delta's
+coverage check may still refuse such a checkpoint, and then they fail on the missing cause label instead), and each guard they
+depend on was removed in a scratch copy of delta to see them fail. A scenario table row must be an `Expect`; a plain string is a `TypeError`
 when the script loads.
 Each scenario declares an `Expect` (`chains/spine_oracle.py`): the problems it requires, the only extras it may add, texts it
 forbids, and whether it is clean, a problem, a refusal or a gap. A missing required problem, an unlisted extra problem, an

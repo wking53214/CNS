@@ -45,7 +45,7 @@ really issues, and the hardened ledger (a replay with the fingerprint blanked, a
 between reads, a datetime subclass, a sink that appends, a checkpoint that answers honestly once, a receipt for an entry
 the checkpoint does not cover). Delta's refusal of a checkpoint is one sentence for five causes; the runner's own wrapper
 (`ask_delta`) names the cause from what it can see, which is an inference and not delta's statement: a scenario is only as
-specific as the attack it builds (the empty-checkpoint ones carry the ledger's real head, so only the length-0 guard refuses).
+specific as the attack it builds (the empty-checkpoint ones carry the ledger's real head, so removing the length-0 guard turns them red).
 """
 
 from __future__ import annotations
@@ -462,7 +462,7 @@ def a_ledger_rolled_back_without_resetting_its_head() -> List[str]:
 
 def an_empty_checkpoint_against_an_honest_ledger() -> List[str]:
     ledger = three_decisions_in_a_ledger()
-    empty = LedgerCheckpoint(0, ledger.chain_head)  # the ledger's own head: only the length-0 guard can refuse it
+    empty = LedgerCheckpoint(0, ledger.chain_head)  # the ledger's own head: removing the length-0 guard turns this red
     return refused(lambda: ask_delta(ledger, empty, context=MIDDLE_CTX, decision_digest=subject_digest({})), ledger_state(ledger))
 
 
@@ -991,7 +991,7 @@ def GAP_a_truncated_export_without_a_held_checkpoint() -> List[str]:
 def an_export_checked_against_an_empty_checkpoint_is_refused() -> List[str]:
     p = stages(SICK)
     data = _through_json(p["ledger"].export())
-    empty = LedgerCheckpoint(0, data["chain_head"])  # the export's own head: only the length-0 guard can refuse it
+    empty = LedgerCheckpoint(0, data["chain_head"])  # the export's own head: removing the length-0 guard turns this red
     return refused(lambda: delta_pkg.verify_export(data, empty), _frozen(data))
 
 
@@ -1321,7 +1321,7 @@ def a_complete_rewrite_against_an_empty_checkpoint() -> List[str]:
     """Row 11b. The run is rewritten completely (ledger and exports) and verified against a checkpoint of length 0, which
     fits every self-consistent ledger. Delta refuses to issue a receipt against it."""
     q = rewrite_the_run_completely()
-    q["checkpoint"] = LedgerCheckpoint(0, q["ledger"].chain_head)  # the rewritten ledger's own head: only the length-0 guard can refuse it
+    q["checkpoint"] = LedgerCheckpoint(0, q["ledger"].chain_head)  # the rewritten ledger's own head: removing the length-0 guard turns this red
     return check(q)
 
 
@@ -2243,6 +2243,30 @@ def a_checkpoint_that_does_not_extend_the_stored_one_is_refused() -> List[str]:
                        catch=(delta_pkg.StoreError,), state=w.state)
 
 
+def a_restart_by_the_readme_recipe_after_the_file_was_deleted_cannot_launder_the_loss() -> List[str]:
+    """The ledger file is deleted. The restarted writer follows the README recipe (a fresh ledger recording to the same
+    store, with no load and so no comparison), records past the old length and takes a checkpoint of that ledger. The
+    checkpoint remembers the ledger it came from, so the store sees that it does not extend the one it holds."""
+    with world() as w:
+        w.produce(4)
+        os.remove(w.file)
+        ledger = DecisionLedger(require_context=True, sink=delta_pkg.FileLedgerStore(w.ledger).sink)
+        for i in range(10, 15):
+            record(ledger, i)
+        store = delta_pkg.CheckpointStore(w.checkpoint)
+        return refused(lambda: store.write(ledger.checkpoint(), verify=_store_verifier(w)), catch=(delta_pkg.StoreError,),
+                       state=lambda: _tree_digest(os.path.dirname(w.checkpoint)))
+
+
+def _tree_digest(base: str) -> Dict[str, str]:
+    found: Dict[str, str] = {}
+    for folder, _, names in os.walk(base):
+        for name in names:
+            with open(os.path.join(folder, name), "rb") as fh:
+                found[os.path.relpath(os.path.join(folder, name), base)] = hashlib.sha256(fh.read()).hexdigest()
+    return found
+
+
 def an_honest_restart_attaches_and_carries_on() -> List[str]:
     """The same restart over an intact file attaches, records another run, and the store loads back one entry longer."""
     with world() as w:
@@ -2513,6 +2537,21 @@ def a_receipt_signature_that_is_missing(a: Package):
 
 def a_receipt_signature_that_is_missing_with_no_flag(a: Package):
     return (), {}
+
+
+def a_dangling_link_named_signature_json_is_not_a_missing_file() -> List[str]:
+    """A link to nowhere named signature.json is a signature file that cannot be read, not a missing one: exit 2 with and
+    without --allow-unsigned, never exit 0."""
+    out: List[str] = []
+    with packages(()) as (pkg,):
+        path = os.path.join(pkg.dir, "signature.json")
+        os.remove(path)
+        os.symlink(os.path.join(pkg.root, "nowhere"), path)
+        for more in ((), ("--allow-unsigned",)):
+            done = pkg.verify(*more)
+            if done.returncode != 2:
+                out.append(f"a dangling signature.json with {more or 'no flag'}: exit {done.returncode}, not 2")
+    return out
 
 
 def a_signature_file_that_holds_null(a: Package):
@@ -3093,6 +3132,9 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("refused to attach: reconcile says DIVERGED",), raises=("StoreError",))),
     ("store: a checkpoint that does not extend the stored one is refused", a_checkpoint_that_does_not_extend_the_stored_one_is_refused,
      Expect("refused", required=("does not extend the stored one",), raises=("StoreError",))),
+    ("store: a restart by the README recipe after the file was deleted cannot launder the loss",
+     a_restart_by_the_readme_recipe_after_the_file_was_deleted_cannot_launder_the_loss,
+     Expect("refused", required=("does not extend the stored one",), raises=("StoreError",))),
     ("store: an honest restart attaches and carries on", an_honest_restart_attaches_and_carries_on, CLEAN),
     ("store: a torn final line is recovered, reported, and the root is issued", a_torn_final_line_is_recovered_and_reported, CLEAN),
     ("store: damage in the middle of the file", mid_file_damage_is_refused,
@@ -3126,6 +3168,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("verify_package refused (exit 1)", 'a verifier was supplied but the receipt has no signature'), raises=("ValueError",))),
     ("package: no receipt signature and no flag is refused, naming why", lambda: refused_package(("--no-receipt-signature",), attack=a_receipt_signature_that_is_missing_with_no_flag),
      Expect("refused", required=("verify_package refused (exit 1)", 'no signature.json', '--allow-unsigned'), raises=("ValueError",))),
+    ("package: a dangling link named signature.json is not a missing file", a_dangling_link_named_signature_json_is_not_a_missing_file, CLEAN),
     ("package: a signature file that holds null is wrong, not missing", lambda: refused_package((), attack=a_signature_file_that_holds_null),
      Expect("refused", required=("verify_package refused (exit 1)", 'signature.json is not {"receipt_signature": <hex>}'), forbidden=("no signature.json",), raises=("ValueError",))),
     ("package: --allow-unsigned does not excuse a signature file that holds null", lambda: refused_package((), attack=a_signature_file_that_holds_null_under_allow_unsigned),

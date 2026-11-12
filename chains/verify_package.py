@@ -133,7 +133,7 @@ def main(argv: List[str]) -> int:
     receipt = read_json(os.path.join(a.package, "receipt.json"))
     contents = read_json(os.path.join(a.package, "contents.json"))
     signature_path = os.path.join(a.package, "signature.json")
-    signature_present = os.path.exists(signature_path)
+    signature_present = os.path.lexists(signature_path)  # a dangling link is a signature file that cannot be read, not a missing one
     signature_file: Optional[Any] = read_json(signature_path) if signature_present else None
     if not os.path.isfile(a.checkpoint):
         unreadable(f"{a.checkpoint}: no such checkpoint file")
