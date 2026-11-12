@@ -2515,6 +2515,57 @@ def a_receipt_signature_that_is_missing_with_no_flag(a: Package):
     return (), {}
 
 
+def a_signature_file_that_holds_null(a: Package):
+    """`null` parses, and an earlier verify_package took it for a missing file: the message said so, and --allow-unsigned accepted it."""
+    with open(os.path.join(a.dir, "signature.json"), "w", encoding="utf-8") as fh:
+        fh.write("null")
+    return (), {}
+
+
+def a_signature_file_that_holds_null_under_allow_unsigned(a: Package):
+    a_signature_file_that_holds_null(a)
+    return ("--allow-unsigned",), {}
+
+
+def a_signature_file_with_an_extra_key(a: Package):
+    a.edit("signature.json", lambda d: d.update(note="ignored before"))
+    return SIGNED, {}
+
+
+def a_verifier_that_answers_differently_the_second_time() -> List[str]:
+    """A verifier that accepts the receipt signature once and then refuses it. strict_problems finds nothing, strict_root
+    then raises; the command must turn that into a named refusal, not a traceback."""
+    import io
+    from unittest import mock
+    import verify_package as command
+    with packages(()) as (a,):
+        real = receipt_keys.make_verifier
+
+        def flipping(trust, revoked):
+            inner = real(trust, revoked)
+            seen = [0]
+
+            def verify(data, signature):
+                ok = inner(data, signature)
+                if data.startswith(delta_signing.RECEIPT_SIGNATURE_DOMAIN):
+                    seen[0] += 1
+                    return ok and seen[0] == 1
+                return ok
+            return verify
+
+        def run() -> None:
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), mock.patch.object(receipt_keys, "make_verifier", flipping):
+                try:
+                    command.main([a.dir, "--checkpoint", a.checkpoint, "--public-keys", a.trust, "--require-signed"])
+                except SystemExit as exc:
+                    if exc.code == 0:
+                        return
+                    raise ValueError(f"verify_package refused (exit {exc.code}): {err.getvalue().strip()}") from None
+
+        return refused(run, state=a.state)
+
+
 def a_bad_receipt_signature_under_allow_unsigned(a: Package):
     a.edit_trust(lambda trust, revoked: trust.update(k2=Ed25519PrivateKey.generate().public_key()))
     return ("--allow-unsigned",), {}
@@ -3036,6 +3087,13 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("reconcile LOST",), raises=("ValueError",))),
     ("store: an entry rewritten and the file rechained", an_entry_rewritten_and_the_file_rechained,
      Expect("refused", required=("reconcile DIVERGED",), raises=("ValueError",))),
+    ("store: a restart after acknowledged entries were deleted is refused", a_restart_after_acknowledged_entries_were_deleted_is_refused,
+     Expect("refused", required=("refused to attach: reconcile says LOST",), raises=("StoreError",))),
+    ("store: a restart after the history was rewritten is refused", a_restart_after_the_history_was_rewritten_is_refused,
+     Expect("refused", required=("refused to attach: reconcile says DIVERGED",), raises=("StoreError",))),
+    ("store: a checkpoint that does not extend the stored one is refused", a_checkpoint_that_does_not_extend_the_stored_one_is_refused,
+     Expect("refused", required=("does not extend the stored one",), raises=("StoreError",))),
+    ("store: an honest restart attaches and carries on", an_honest_restart_attaches_and_carries_on, CLEAN),
     ("store: a torn final line is recovered, reported, and the root is issued", a_torn_final_line_is_recovered_and_reported, CLEAN),
     ("store: damage in the middle of the file", mid_file_damage_is_refused,
      Expect("refused", required=("StoreCorruptError", "damaged before the end of the file"), raises=("ValueError",))),
@@ -3068,6 +3126,14 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("verify_package refused (exit 1)", 'a verifier was supplied but the receipt has no signature'), raises=("ValueError",))),
     ("package: no receipt signature and no flag is refused, naming why", lambda: refused_package(("--no-receipt-signature",), attack=a_receipt_signature_that_is_missing_with_no_flag),
      Expect("refused", required=("verify_package refused (exit 1)", 'no signature.json', '--allow-unsigned'), raises=("ValueError",))),
+    ("package: a signature file that holds null is wrong, not missing", lambda: refused_package((), attack=a_signature_file_that_holds_null),
+     Expect("refused", required=("verify_package refused (exit 1)", 'signature.json is not {"receipt_signature": <hex>}'), forbidden=("no signature.json",), raises=("ValueError",))),
+    ("package: --allow-unsigned does not excuse a signature file that holds null", lambda: refused_package((), attack=a_signature_file_that_holds_null_under_allow_unsigned),
+     Expect("refused", required=("verify_package refused (exit 1)", 'signature.json is not {"receipt_signature": <hex>}'), raises=("ValueError",))),
+    ("package: a signature file with an extra key is refused", lambda: refused_package((), attack=a_signature_file_with_an_extra_key),
+     Expect("refused", required=("verify_package refused (exit 1)", 'signature.json is not {"receipt_signature": <hex>}'), raises=("ValueError",))),
+    ("package: a verifier that answers differently the second time is refused, not a traceback", a_verifier_that_answers_differently_the_second_time,
+     Expect("refused", required=("verify_package refused (exit 1)", "answered differently the second time"), raises=("ValueError",))),
     ("package: --allow-unsigned does not excuse a signature that is there and wrong", lambda: refused_package(("--receipt-key-id", "k2"), attack=a_bad_receipt_signature_under_allow_unsigned),
      Expect("refused", required=("verify_package refused (exit 1)", 'receipt signature does not verify'), raises=("ValueError",))),
     ("package: no checkpoint signature under --require-signed", lambda: refused_package(("--no-checkpoint-signature",), attack=a_checkpoint_signature_that_is_missing),
@@ -3087,13 +3153,6 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("package: a validly signed receipt for an older entry is refused unless --entry names it",
      a_validly_signed_receipt_for_an_older_entry_is_refused_unless_entry_names_it, CLEAN),
     ("package: a deeply nested input is exit 2 or a named refusal, never a traceback",
-    ("store: a restart after acknowledged entries were deleted is refused", a_restart_after_acknowledged_entries_were_deleted_is_refused,
-     Expect("refused", required=("refused to attach: reconcile says LOST",), raises=("StoreError",))),
-    ("store: a restart after the history was rewritten is refused", a_restart_after_the_history_was_rewritten_is_refused,
-     Expect("refused", required=("refused to attach: reconcile says DIVERGED",), raises=("StoreError",))),
-    ("store: a checkpoint that does not extend the stored one is refused", a_checkpoint_that_does_not_extend_the_stored_one_is_refused,
-     Expect("refused", required=("does not extend the stored one",), raises=("StoreError",))),
-    ("store: an honest restart attaches and carries on", an_honest_restart_attaches_and_carries_on, CLEAN),
      a_deeply_nested_input_is_exit_two_or_a_named_refusal_never_a_traceback, CLEAN),
     ("package: inputs that cannot be read, and usage errors, exit 2 and not 1", inputs_that_cannot_be_read_exit_two_not_one, CLEAN),
     # --- the oracle held to account with real objects ---
