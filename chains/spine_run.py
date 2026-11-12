@@ -2329,7 +2329,8 @@ def a_checkpoint_with_no_signature_when_one_is_required() -> List[str]:
     with world() as w:
         w.produce(4)
         store = delta_pkg.CheckpointStore(w.checkpoint)
-        store.write(store.read())  # the same value, written without a signature
+        history, _ = delta_pkg.FileLedgerStore(w.ledger).load(True)
+        store.write(store.read(), history=history)  # the same value, written without a signature
         return refused(consumer_refusal(w), state=w.state)
 
 
