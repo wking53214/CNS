@@ -270,6 +270,6 @@ implemented TLS 1.3 mutual-authentication profile (`SECURITY_PROFILES.md`); a No
 as Python (`interop/node/grants.mjs`); a selectable ledger backend and a shared PostgreSQL policy and audit store for the
 action runner; a JSON Schema, a versioned error registry and a conformance suite for independent implementers
 (`contracts/uai1/`); OpenAI and Copilot provider clients. Migration: `docs/migrations/uai-1-revision-4.md`. Assessment:
-`UAI1_R4_ASSESSMENT.md`. Open: no live call to Gemini, OpenAI or Copilot (Anthropic was called live on 2026-11-04 and
-every real answer was refused by the strict reader, see the assessment), no independent implementation, no multi-machine run, delegation
+`UAI1_R4_ASSESSMENT.md`. Open: no live call to Gemini, OpenAI or Copilot (Anthropic was called live and its answers accepted end to end, see the
+assessment), no independent implementation, no multi-machine run, delegation
 deliberately not specified.
