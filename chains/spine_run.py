@@ -44,7 +44,8 @@ hashes, a lying str-subclass digest or head, a key that only prints like a field
 really issues, and the hardened ledger (a replay with the fingerprint blanked, a lying entity id, a list that changes
 between reads, a datetime subclass, a sink that appends, a checkpoint that answers honestly once, a receipt for an entry
 the checkpoint does not cover). Delta's refusal of a checkpoint is one sentence for five causes; the runner's own wrapper
-(`ask_delta`) names the cause so each scenario requires its own.
+(`ask_delta`) names the cause from what it can see, which is an inference and not delta's statement: a scenario is only as
+specific as the attack it builds (the empty-checkpoint ones carry the ledger's real head, so only the length-0 guard refuses).
 """
 
 from __future__ import annotations
@@ -461,7 +462,7 @@ def a_ledger_rolled_back_without_resetting_its_head() -> List[str]:
 
 def an_empty_checkpoint_against_an_honest_ledger() -> List[str]:
     ledger = three_decisions_in_a_ledger()
-    empty = LedgerCheckpoint(0, DecisionLedger().chain_head)
+    empty = LedgerCheckpoint(0, ledger.chain_head)  # the ledger's own head: only the length-0 guard can refuse it
     return refused(lambda: ask_delta(ledger, empty, context=MIDDLE_CTX, decision_digest=subject_digest({})), ledger_state(ledger))
 
 
@@ -990,7 +991,7 @@ def GAP_a_truncated_export_without_a_held_checkpoint() -> List[str]:
 def an_export_checked_against_an_empty_checkpoint_is_refused() -> List[str]:
     p = stages(SICK)
     data = _through_json(p["ledger"].export())
-    empty = LedgerCheckpoint(0, DecisionLedger().chain_head)
+    empty = LedgerCheckpoint(0, data["chain_head"])  # the export's own head: only the length-0 guard can refuse it
     return refused(lambda: delta_pkg.verify_export(data, empty), _frozen(data))
 
 
@@ -1320,7 +1321,7 @@ def a_complete_rewrite_against_an_empty_checkpoint() -> List[str]:
     """Row 11b. The run is rewritten completely (ledger and exports) and verified against a checkpoint of length 0, which
     fits every self-consistent ledger. Delta refuses to issue a receipt against it."""
     q = rewrite_the_run_completely()
-    q["checkpoint"] = LedgerCheckpoint(0, DecisionLedger().chain_head)
+    q["checkpoint"] = LedgerCheckpoint(0, q["ledger"].chain_head)  # the rewritten ledger's own head: only the length-0 guard can refuse it
     return check(q)
 
 
