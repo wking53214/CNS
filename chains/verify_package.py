@@ -133,7 +133,8 @@ def main(argv: List[str]) -> int:
     receipt = read_json(os.path.join(a.package, "receipt.json"))
     contents = read_json(os.path.join(a.package, "contents.json"))
     signature_path = os.path.join(a.package, "signature.json")
-    signature_file: Optional[Any] = read_json(signature_path) if os.path.exists(signature_path) else None
+    signature_present = os.path.lexists(signature_path)  # a dangling link is a signature file that cannot be read, not a missing one
+    signature_file: Optional[Any] = read_json(signature_path) if signature_present else None
     if not os.path.isfile(a.checkpoint):
         unreadable(f"{a.checkpoint}: no such checkpoint file")
     try:
@@ -192,13 +193,15 @@ def main(argv: List[str]) -> int:
 
     # 4. CNS's strict check, with the receipt signature and the checkpoint held outside the package
     signature: Optional[bytes] = None
-    if signature_file is not None:
+    if signature_present:  # a file that holds `null` is a signature file that is wrong, not a missing one
         try:
+            if type(signature_file) is not dict or set(signature_file) != {"receipt_signature"}:
+                raise ValueError("not exactly one key")
             signature = bytes.fromhex(signature_file["receipt_signature"])
         except (KeyError, TypeError, ValueError):
             problems.append('signature.json is not {"receipt_signature": <hex>}')
-    allowed_absent = signature_file is None and a.allow_unsigned
-    if signature_file is None and not a.allow_unsigned:
+    allowed_absent = not signature_present and a.allow_unsigned
+    if not signature_present and not a.allow_unsigned:
         problems.append("the package has no signature.json, so its receipt is unsigned; pass --allow-unsigned to accept that")
     kw: Dict[str, Any] = dict(
         chain=receipt, held_checkpoint=(checkpoint.length, checkpoint.head), keyset_fingerprint_of=zeta_keyset_fingerprint,
@@ -208,7 +211,11 @@ def main(argv: List[str]) -> int:
         problems += strict_problems(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
         if problems:
             refuse(problems)
-        root = strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
+        try:
+            root = strict_root(parts["alpha"], parts["zeta"], parts["beta"], parts["delta"], **kw)
+        except ValueError as exc:  # strict_problems found nothing, so the second evaluation answered differently
+            refuse(problems + [f"the strict check answered differently the second time it ran, so the verifier or an input is "
+                               f"unstable and nothing is accepted: {exc}"])
     except (RecursionError, MemoryError) as exc:
         refuse(problems + [f"the contents cannot be digested: {type(exc).__name__}: they are nested or large beyond what can be checked"])
     context = receipt["context"]  # the receipt equals the one Delta issues, so this is a dict of four str

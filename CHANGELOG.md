@@ -17,6 +17,22 @@ entry says so.
 
 ## [Unreleased]
 
+- **Follow-up to an independent review of the merged store and verify command (CNS side).** The review found one High in delta
+  (a checkpoint could be laundered after entries were deleted; fixed in delta, where `load(attach=True)` now has to say what
+  it compares with and `CheckpointStore.write(history=...)` checks that a new checkpoint extends the stored one) and four Low.
+  Here: `chains/spine_run.py` gains ten scenarios (174 in all, 37 clean, 57 problems, 67 refusals, 13 gaps): `store:` a
+  restart after entries were deleted, a restart after the history was rewritten, a checkpoint that does not extend the stored
+  one, and an honest restart; `package:` a `signature.json` holding `null`, the same under `--allow-unsigned`, one with an
+  extra key, and a verifier that answers differently the second time. Each failed before its fix. `chains/verify_package.py`:
+  a signature file that is there but wrong is no longer taken for a missing one (it was accepted under `--allow-unsigned`),
+  and an unstable verifier ends in a named refusal instead of a traceback. A second independent review of the fix found a path the first fix left open (a fresh ledger recording to the same store after the file was deleted, checkpointed without `history=`); delta now has a checkpoint remember its ledger (the `store:` recipe scenario), and `verify_package` treats a dangling link named `signature.json` as unreadable (exit 2), not as a missing file. The manifest names delta `26640c8`.
+- **Three existing scenarios changed their input (not their expectation).** The empty-checkpoint scenarios (`strict: an empty
+  checkpoint against an honest ledger`, `strict: a complete rewrite against an empty checkpoint`, `strict: an export checked
+  against an empty checkpoint is refused`) used the empty ledger's head, which another check also refuses, so removing delta's
+  length-0 guard did not turn them red. They now carry the ledger's own head, and removing the guard in a scratch copy of delta
+  fails all three. The README and the runner docstring no longer say each scenario "requires its own cause": the label is the
+  runner's inference.
+
 - **Release note for the owner (not decided here).** This section holds one change that refuses input 3.0.0 accepted:
   `subject_digest` refuses a `Mapping` that is not a `dict` and a `Sequence` that is not a `list` or `tuple` (Step 2,
   N8, below). Under the rule `tests/test_public_shape.py` states (a meaning change is a major version), the next
