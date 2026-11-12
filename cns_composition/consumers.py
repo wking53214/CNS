@@ -43,9 +43,10 @@ Imports = Mapping[str, Tuple[str, ...]]
 #: repository -> CNS module -> the names it takes from that module (empty: the module itself).
 REQUIRED: Mapping[str, Imports] = {
     "Link": {
+        "cns.gate": ("GateOutcome",),
         "cns_composition.ccc_admission": ("TriadOutput",),
         "cns_composition.resubmission": ("ResubmissionGuard",),
-        "cns_composition.triad_admission": ("admit_candidates",),
+        "cns_composition.triad_admission": ("AdmissionReceipt", "admit_candidates", "admit_with_receipts", "recheck", "use"),
     },
     "sentinel_os": {
         "cns.gate": ("GateOutcome", "GatePosition", "subject_digest"),
@@ -65,7 +66,8 @@ REQUIRED: Mapping[str, Imports] = {
         "cns.governance": ("IdentityContext",),
     },
     "OBSERVE": {
-        "cns.gate": (),
+        "cns.gate": ("GateOutcome", "GatePosition", "subject_digest"),
+        "cns.perception": ("CallOutcome", "CallPercept", "EmotionalState", "FrictionEvent"),
     },
     "observe-perceive": {
         "cns": (),
