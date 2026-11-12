@@ -45,7 +45,7 @@ is unbooked migration debt: the majority of copies in the library disagree
 with the package that claims to be their contract, and no document says who
 has to move or when.
 
-One documentation defect (still open at d572b22: `cns/graph.py` line 3 says it). `cns/graph.py` says `Graph` was extracted from
+One documentation defect (resolved: `cns/graph.py` now says the note describes the repos as of 2026-09-11 and that GRAPH no longer defines its own `Graph`). `cns/graph.py` said `Graph` was extracted from
 four repos "that each carried it verbatim (Ecology, GRAPH,
 GSA-Master-Kernel, sentinel_os)". GRAPH defines no `Graph` today. That is
 the migration having succeeded rather than a false claim, but a provenance

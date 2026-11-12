@@ -86,7 +86,7 @@ shapes. It was developed here and now lives in its own repository, github.com/wk
 says what moved); its specification is `docs/interop/UAI-1.md` there. It exists so a system outside the process, in any language, can exchange requests, terms, selective disclosures and
 decisions. AI models and independent agents connect through **adapters**: an adapter turns a provider's answer into a
 `recommendation`, read by a strict parser that refuses anything beyond verdict, reasons, evidence and an escalation flag.
-The decider's own policy may lower the recommendation, a grant decides whether anything may be done, and a person may have to approve. UAI-1 provider clients exist for Anthropic, Google Gemini, OpenAI (ChatGPT models) and Copilot (through GitHub Models or Azure OpenAI). Their local wire-format tests do not establish live interoperability. The separate Anthropic composition-layer adapter documented below has been exercised with one explicitly authorized live request. That result does not establish live interoperability for the UAI-1 clients or other providers.
+The decider's own policy may lower the recommendation, a grant decides whether anything may be done, and a person may have to approve. UAI-1 provider clients exist for Anthropic, Google Gemini, OpenAI (ChatGPT models), Copilot (through GitHub Models or Azure OpenAI), Groq and Cloudflare Workers AI. Their local wire-format tests do not establish live interoperability. On 2026-11-12 the Anthropic, Gemini, Groq and Cloudflare Workers AI routes each answered one live call, recorded in UAI-2's `docs/EVIDENCE.md`; the OpenAI, GitHub Models and Azure OpenAI routes have not been run live. The separate Anthropic composition-layer adapter documented below has been exercised with one explicitly authorized live request. That result is separate from the UAI-1 live runs above and does not establish live interoperability for other providers.
 
 ### Where it sits in ≡TACK
 
@@ -115,8 +115,8 @@ The rows about UAI-1 and provider clients describe code that now lives, and is t
 | Replay protection in the real action path: file, SQLite or PostgreSQL ledgers, leases and fencing tokens | No HSM or OS keystore support (an external signer hook exists; nothing hardware-backed was tested) |
 | Receiver policy and audit shared across hosts through PostgreSQL | Not distributed consensus: one PostgreSQL primary, as available as that node; asynchronous standbys can lose a write |
 | Transport profiles, with TLS 1.3 mutual authentication implemented and tested over real handshakes | OCSP, certificate transparency, post-quantum and traffic-analysis resistance are not provided |
-| JSON Schema, a versioned error registry and a stand-alone conformance runner (`contracts/uai1/`) | Provider interoperability is untested against any live provider |
-| Provider clients for Anthropic, Gemini, OpenAI and Copilot, behind the adapter boundary | Authenticated transport is not required for same-host use (`local-process` profile) |
+| JSON Schema, a versioned error registry and a stand-alone conformance runner (`contracts/uai1/`) | Provider interoperability: live for 4 of 7 routes (one run, 2026-11-12); OpenAI, GitHub Models and Azure OpenAI not run live |
+| Provider clients for Anthropic, Gemini, OpenAI, Copilot, Groq and Cloudflare Workers AI, behind the adapter boundary | Authenticated transport is not required for same-host use (`local-process` profile) |
 
 The honest summary and the scored assessment are in `docs/interop/UAI1_R4_ASSESSMENT.md` in UAI-2.
 
