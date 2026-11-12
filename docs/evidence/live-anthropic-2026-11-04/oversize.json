@@ -1,0 +1,41 @@
+{
+ "control_default_cap": {
+  "options": {},
+  "provenance": [
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 732,
+    "model_reported": "claude-haiku-5-5",
+    "model_requested": "claude-haiku-5-5",
+    "outcome": "pending",
+    "provider": "anthropic",
+    "reason": "",
+    "request_sha256": "df7268feaa9d6a29fc68b6602e7618639146fbfd42fd64e3d3c724c94fa9f592",
+    "response_sha256": "32b28810c1cf1f0f88582df91e4a625b286e329f4891bceb0b8066cbf22244c5"
+   }
+  ],
+  "returned": "A paystub is a document that details an employee's earnings for a pay period, including gross pay, deductions, taxes withheld, and net pay."
+ },
+ "prompt": "In one short sentence, what is a paystub?",
+ "tiny_cap_64_bytes": {
+  "options": {
+   "max_response_bytes": 64
+  },
+  "provenance": [
+   {
+    "call": "the provider's answer is larger than 64 bytes",
+    "finish_reason": "",
+    "latency_ms": 660,
+    "model_reported": "",
+    "model_requested": "claude-haiku-5-5",
+    "outcome": "rejected",
+    "provider": "anthropic",
+    "reason": "provider: the provider's answer is larger than 64 bytes",
+    "request_sha256": "df7268feaa9d6a29fc68b6602e7618639146fbfd42fd64e3d3c724c94fa9f592",
+    "response_sha256": "f989dcdee88f082c1e0cd558493226db5e17f1de1359ee1d2e8f8c155510fdb6"
+   }
+  ],
+  "refused": "provider: the provider's answer is larger than 64 bytes"
+ }
+}
