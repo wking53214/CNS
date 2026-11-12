@@ -1,7 +1,9 @@
 """cns.graph: the code-graph substrate.
 
 Extracted 2026-09-11 from four repos that each carried it verbatim
-(Ecology, GRAPH, GSA-Master-Kernel, sentinel_os). `Node` and `Edge` were
+(Ecology, GRAPH, GSA-Master-Kernel, sentinel_os). That describes the
+repos on that date: GRAPH no longer defines its own `Graph` (checked
+2026-11-06, docs/PRODUCTION_READINESS.md section 1). `Node` and `Edge` were
 byte-for-byte identical everywhere. `Graph` had two variants: GRAPH and
 Ecology added `total_row_count`; the others did not. The canonical shape
 is the superset, with the added field defaulted so every existing
