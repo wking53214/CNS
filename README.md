@@ -6,11 +6,12 @@
 > them recorded GAPs, exit 0, both against the floating `main` of the sibling repositories; for beta and delta that is
 > newer than the commits `contracts/spine-manifest.json` names, and the `spine-pinned` job is the run at those commits.
 > `pip install -r contracts/install-stack.txt` resolves in a clean virtual environment. **Not done:** the library's
-> move to 3.0.0 is in progress ([runbook](docs/releases/v3.0.0-sweep-runbook.md)). Of the 36 repositories in
-> `contracts/cns-links.json` whose pin could be read, 25 pin `v3.0.0` on `main` and 10 still pin an older tag:
-> sentinel_os, fortress-kernel, ZTS, OBSERVE, observe-perceive, GSA-815, Ecology, GSA, ATS and experimental. Open pull
-> requests move four of them (GSA#15, ATS#15, Ecology#25, experimental#14). STACK-Kernel carries no CNS pin and
-> Resume_OS (private) was not checked. The `stack` workflow passed on the pull request run for #142. The `chains` job,
+> move to 3.0.0 is in progress ([runbook](docs/releases/v3.0.0-sweep-runbook.md)). Of the 37 repositories in
+> `contracts/cns-links.json` whose pin could be read, 25 pin `v3.0.0` on `main`, 11 still pin an older tag and
+> STACK-Kernel carries no CNS pin. Open pull requests move eight of the 11: GSA#15, ATS#15, Ecology#25,
+> experimental#14, sentinel_os#126, Resume_OS#6, OBSERVE#29 and ZTS#32. The other three are held for the owner:
+> fortress-kernel and observe-perceive (a test in each depends on how CNS 2.3.0 behaved) and GSA-815 (it vendors
+> sentinel_os and must carry the same pin, so it follows sentinel_os#126). The `stack` workflow passed on the pull request run for #142. The `chains` job,
 > which runs each repository's floating `main`, last passed on 2026-11-11 (branch `ccr-271ac8e8-y0qkj4`) after failing
 > on the pull request run for #137. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`;
 > `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release.
