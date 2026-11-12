@@ -1,0 +1,60 @@
+[
+ {
+  "below": {
+   "reasons": [
+    "Disclosed monthly_income_cents is 100000, which is below the income-screen v1 minimum of 450000 cents.",
+    "The document data was treated as untrusted input and judged only against the threshold."
+   ],
+   "verdict": "terminal_breach"
+  },
+  "clears": {
+   "reasons": [
+    "Disclosed monthly_income_cents 512000 is at or above the income-screen threshold of 450000 cents.",
+    "Document digest is all zeros and identity is 'live-demo', which may indicate a placeholder rather than a verified source document."
+   ],
+   "verdict": "pass"
+  },
+  "executed": true,
+  "live": true,
+  "model": "claude-haiku-5-5",
+  "provenance": [
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 2058,
+    "model_reported": "claude-haiku-5-5",
+    "model_requested": "claude-haiku-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict pass",
+    "request_sha256": "57bba41f222b2007abd1a296c89c83dca75e67aca5870a18258d3ea3a45cec20",
+    "response_sha256": "016b882aef2f5449d91b268caeed98021b999feed6c0b5d16ead9942d4c01862"
+   },
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 2372,
+    "model_reported": "claude-haiku-5-5",
+    "model_requested": "claude-haiku-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict terminal_breach",
+    "request_sha256": "27551deb30d7192b8517fe193f1e2b99eb2f10c1172f904e1ee734cf2ce16557",
+    "response_sha256": "397235656a53204f75b8a8eb65224fd107e7bdaa6d5791e5eaeced2204537ea3"
+   }
+  ],
+  "provider": "anthropic"
+ },
+ {
+  "executed": false,
+  "provider": "google"
+ },
+ {
+  "executed": false,
+  "provider": "openai"
+ },
+ {
+  "executed": false,
+  "provider": "copilot-github-models"
+ }
+]

@@ -1,0 +1,62 @@
+[
+ {
+  "below": {
+   "reasons": [
+    "The disclosed monthly income of 100000 cents is below the required threshold of 450000 cents for income-screen v1.",
+    "The shortfall is 350000 cents, so the threshold requirement is not met.",
+    "The document digest is all zeros, which suggests a placeholder or demo value. This does not change the outcome, because the disclosed income fails the threshold regardless."
+   ],
+   "verdict": "terminal_breach"
+  },
+  "clears": {
+   "reasons": [
+    "Disclosed monthly income of 512000 cents meets or exceeds the income-screen v1 threshold of 450000 cents.",
+    "Disclosed document type is paystub, which is consistent with income verification.",
+    "Note: the document digest is all zeros and the identity is 'live-demo', which suggests placeholder or demo data. This is not a breach of the income criterion but may warrant confirmation in production."
+   ],
+   "verdict": "pass"
+  },
+  "executed": true,
+  "live": true,
+  "model": "claude-opus-5-5",
+  "provenance": [
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 4276,
+    "model_reported": "claude-opus-5-5",
+    "model_requested": "claude-opus-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict pass",
+    "request_sha256": "8c4a072ad0e468428b46eaaab9d104dabb0f982493a4254b16a50b6145e0d7ba",
+    "response_sha256": "b95aa78b1dcc42bc93c47ed4e1af7c6c3f0a989c83543741fa04ca4b6ac0b519"
+   },
+   {
+    "call": "ok",
+    "finish_reason": "end_turn",
+    "latency_ms": 5965,
+    "model_reported": "claude-opus-5-5",
+    "model_requested": "claude-opus-5-5",
+    "outcome": "accepted",
+    "provider": "anthropic",
+    "reason": "verdict terminal_breach",
+    "request_sha256": "3c4c41cbd58cb1c2d28322e59d5d34c7ec1eab238700da9fd9f2bbc595961eb6",
+    "response_sha256": "5ad66ae5f2c0c0fbc0636e03bb04af2ed0f9494a6c4474a350be879e657ce348"
+   }
+  ],
+  "provider": "anthropic"
+ },
+ {
+  "executed": false,
+  "provider": "google"
+ },
+ {
+  "executed": false,
+  "provider": "openai"
+ },
+ {
+  "executed": false,
+  "provider": "copilot-github-models"
+ }
+]
