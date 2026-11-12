@@ -2188,6 +2188,74 @@ def mid_file_damage_is_refused() -> List[str]:
         return refused(consumer_refusal(w), state=w.state)
 
 
+def _store_verifier(w: World) -> Callable[[bytes, bytes], bool]:
+    """The consumer's checkpoint verifier, from the trust list the producer handed over."""
+    with open(os.path.join(w.handoff, "trust.json"), encoding="utf-8") as fh:
+        trust, revoked = receipt_keys.trust_from_json(fh.read())
+    return receipt_keys.make_verifier(trust, revoked)
+
+
+def _restart(w: World) -> Callable[[], None]:
+    """A producer restarting the documented way: rebuild its ledger from the store and attach, against the checkpoint it
+    keeps on separate storage."""
+    def thunk() -> None:
+        delta_pkg.FileLedgerStore(w.ledger).load(True, attach=True, against=delta_pkg.CheckpointStore(w.checkpoint),
+                                                 verify=_store_verifier(w))
+    return thunk
+
+
+def a_restart_after_acknowledged_entries_were_deleted_is_refused() -> List[str]:
+    """Two acknowledged entries are deleted from the file. A producer that rebuilt its ledger from it and carried on would
+    record past the old checkpoint's length, and a checkpoint written then would make the loss look ordinary."""
+    with world() as w:
+        w.produce(4)
+        w.write_lines(w.lines()[:2])
+        return refused(_restart(w), catch=(delta_pkg.StoreError,), state=w.state)
+
+
+def a_restart_after_the_history_was_rewritten_is_refused() -> List[str]:
+    """Entry 1 is a different Decision and the file is rechained, so it verifies on its own and is as long as before."""
+    with world() as w:
+        w.produce(4)
+        with tempfile.TemporaryDirectory() as other:
+            ledger = DecisionLedger(require_context=True, sink=delta_pkg.FileLedgerStore(other).sink)
+            for i in range(4):
+                record(ledger, i, SICK_ELSEWHERE if i == 1 else None)
+            with open(os.path.join(other, "ledger.jsonl"), "rb") as fh:
+                rewritten = fh.read()
+        if rewritten == b"".join(w.lines()):
+            return ["the rewrite equals the honest file, so nothing was rewritten"]
+        with open(w.file, "wb") as fh:
+            fh.write(rewritten)
+        return refused(_restart(w), catch=(delta_pkg.StoreError,), state=w.state)
+
+
+def a_checkpoint_that_does_not_extend_the_stored_one_is_refused() -> List[str]:
+    """A rewritten history one entry longer than the stored checkpoint, checkpointed on its own: forward by length, but not
+    an extension of what the stored checkpoint vouches for."""
+    with world() as w:
+        w.produce(4)
+        ledger = DecisionLedger(require_context=True)
+        for i in range(5):
+            record(ledger, i, SICK_ELSEWHERE if i == 1 else None)
+        store = delta_pkg.CheckpointStore(w.checkpoint)
+        return refused(lambda: store.write(ledger.checkpoint(), history=ledger, verify=_store_verifier(w)),
+                       catch=(delta_pkg.StoreError,), state=w.state)
+
+
+def an_honest_restart_attaches_and_carries_on() -> List[str]:
+    """The same restart over an intact file attaches, records another run, and the store loads back one entry longer."""
+    with world() as w:
+        w.produce(3)
+        ledger, _ = delta_pkg.FileLedgerStore(w.ledger).load(True, attach=True, against=delta_pkg.CheckpointStore(w.checkpoint),
+                                                             verify=_store_verifier(w))
+        record(ledger, 3)
+        again, _ = delta_pkg.FileLedgerStore(w.ledger).load(True)
+        if len(again) != 4:
+            return [f"the restarted producer recorded one more entry, but the store holds {len(again)}"]
+        return []
+
+
 def a_checkpoint_replaced_by_an_older_signed_one(*more: str, expect_refusal: bool = True) -> List[str]:
     with world() as w:
         with tempfile.TemporaryDirectory() as old:
@@ -3019,6 +3087,13 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("package: a validly signed receipt for an older entry is refused unless --entry names it",
      a_validly_signed_receipt_for_an_older_entry_is_refused_unless_entry_names_it, CLEAN),
     ("package: a deeply nested input is exit 2 or a named refusal, never a traceback",
+    ("store: a restart after acknowledged entries were deleted is refused", a_restart_after_acknowledged_entries_were_deleted_is_refused,
+     Expect("refused", required=("refused to attach: reconcile says LOST",), raises=("StoreError",))),
+    ("store: a restart after the history was rewritten is refused", a_restart_after_the_history_was_rewritten_is_refused,
+     Expect("refused", required=("refused to attach: reconcile says DIVERGED",), raises=("StoreError",))),
+    ("store: a checkpoint that does not extend the stored one is refused", a_checkpoint_that_does_not_extend_the_stored_one_is_refused,
+     Expect("refused", required=("does not extend the stored one",), raises=("StoreError",))),
+    ("store: an honest restart attaches and carries on", an_honest_restart_attaches_and_carries_on, CLEAN),
      a_deeply_nested_input_is_exit_two_or_a_named_refusal_never_a_traceback, CLEAN),
     ("package: inputs that cannot be read, and usage errors, exit 2 and not 1", inputs_that_cannot_be_read_exit_two_not_one, CLEAN),
     # --- the oracle held to account with real objects ---
