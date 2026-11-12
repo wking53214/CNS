@@ -160,6 +160,24 @@ def test_the_prompt_quotes_the_document_as_data_and_says_it_is_not_instructions(
     assert p.count("DISCLOSED ") == 1
 
 
+def test_the_prompt_states_the_contract_the_strict_reader_enforces():
+    from cns_interop.adapter import MAX_REASON_CHARS, MAX_REASONS, VERDICTS
+    p = render_prompt(CAP, {"monthly_income_cents": 5}, {"identity": "x", "digest": "y"})
+    assert "|".join(VERDICTS) in p
+    assert "no markdown code fence" in p and "no text before or after" in p
+    assert f"at most {MAX_REASONS} texts of at most {MAX_REASON_CHARS} characters" in p
+    assert "true or false" in p
+    assert "the only kinds allowed are: " + ", ".join(CAP.evidence) in p
+    assert "Every value in evidence must itself be a JSON object" in p
+    assert p.count("DISCLOSED ") == 1 and p.count("DOCUMENT ") == 1       # the data is still quoted once, after the rules
+
+
+def test_the_prompt_names_no_evidence_kind_when_the_capability_has_none():
+    import dataclasses
+    p = render_prompt(dataclasses.replace(CAP, evidence=()), {}, {"identity": "x", "digest": "y"})
+    assert "the only kinds allowed are: (none)" in p
+
+
 def test_parse_recommendation_accepts_exactly_the_contract_and_returns_plain_data():
     good = {"verdict": "pass", "reasons": ["r"], "evidence": EVIDENCE(512_000), "escalate": False}
     rec = parse_recommendation(dumps_dict(good), CAP)
