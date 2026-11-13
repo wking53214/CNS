@@ -202,7 +202,10 @@ cover ZTS, sentinel_os or GSA-815, and it speaks for CCC only as far as CCC's ga
 
 `chains/spine_run.py` runs `interconnected_alpha`, `interconnected_zeta`, `interconnected_beta` and `interconnected_delta`
 for real (Keys, Locks, a Decision, a hash-chained ledger entry) and checks their seams with `cns_composition.spine_trace`,
-in two modes.
+in two modes. Alpha is a domain-blind core plus packs (`alpha.packs.pediatric_vitals`, the reference pack, and
+`alpha.packs.service_health`, an unrelated second one); the `domain:` scenarios run the second pack through all four stages and
+refuse an invalid pack, an out-of-bounds threshold, an undeclared key and a repeated name. A pack's identity travels in the existing
+`origin.transformation` text, so it is bound by the digest but is the producer's own claim: nothing here authenticates it.
 
 - **Lenient** (`problems`, `root`): takes the digests and summaries a caller read off the objects. It cannot tell a run
   from a fabricated account of one: four stages stating whatever agrees with itself return no problems and a root.
@@ -299,17 +302,18 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
    storage the checkpoint came from, and the trust list the keys came from. A checkpoint beside the ledger file it protects,
    or a trust list from the producer, agrees with whatever the producer wrote.
 
-The `chains` workflow runs 174 scenarios (counted from the runner): seven lenient, and 167 more (the strict ones, the oracle and
-the manifest checks held to account with real objects, the signed receipts, the durable store and the verify command). Of the
-174 in all, 37 are checks that hold, 124 are attacks (57 problems, 67 refusals)
+The `chains` workflow runs 183 scenarios (counted from the runner): seven lenient, and 176 more (the strict ones, the oracle and
+the manifest checks held to account with real objects, the signed receipts, the durable store, the verify command and the
+domain packs). Of the
+183 in all, 40 are checks that hold, 129 are attacks (58 problems, 71 refusals)
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
 only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
 that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
-change), and the thirteen gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
+change), and the fourteen gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
 fingerprint, a cited closed lock, a legacy lock result, a KeySet swapped when no recomputation is supplied, the sink's
 own store, a rewritten ledger with a fresh checkpoint when none is held outside it, a truncated export and a rewritten, rechained export
 when no checkpoint is held outside, a holder of a trusted key signing a forged receipt, an older signed checkpoint, and a
-ledger rolled back to an older signed package: limits 1, 8 and 9); 13 of the first 106 verify delta's public `export` with `verify_export` and a checkpoint held
+ledger rolled back to an older signed package: limits 1, 8 and 9, and a pack identity that is the producer's own claim); 13 of the first 106 verify delta's public `export` with `verify_export` and a checkpoint held
 outside the ledger, or follow zeta's entity check. Fourteen scenarios (`signed:`, with two `keys:`) sign the receipt through delta's hook with the
 reference keys of `chains/receipt_keys.py` and hold the trust list, revocation, rotation, an edit of each of ten fields after
 signing, and the byte-equality of CNS's and delta's signing inputs; nineteen (`store:`) use delta's file store and a separately kept signed checkpoint: fourteen run a producer and a fresh

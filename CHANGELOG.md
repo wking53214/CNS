@@ -17,6 +17,14 @@ entry says so.
 
 ## [Unreleased]
 
+Domain packs: the spine is no longer a pediatric tool. Not yet tagged.
+
+- Step 6.1: `chains/spine_run.py` imports the reference pack from `alpha.packs.pediatric_vitals`. Alpha moved its vitals code there (clean break: the old top-level names are gone) and now holds a domain-blind core (`alpha.core`: `DomainPack`, `Parameter`, `PackRegistry`, total fail-loud validation, `pack_identity`) beside two packs.
+- Step 6.2: `contracts/spine-manifest.json` names alpha `4c3e122` and delta `e722497`. Zeta stays `7cee0a3` and beta stays `b247397`: their later mains (`57e8c3e`, `f716990`) are docs only, and the other repositories still pin the older commits, which the manifest check requires to match. Checked on detached exact checkouts: `spine_manifest --stack` exits 0; the runner passes on Python 3.13 and 3.10.20.
+- Step 6.3: a `domain:` scenario group, nine rows (183 scenarios, was 174: 40 checks that hold, 129 attacks, 14 gaps). The `service_health` pack runs through all four stages with free-form decisions; its identity is recorded in `origin.transformation` and bound by alpha's digest; an out-of-bounds threshold, an unapproved parameter, an undeclared key, a repeated pack name and keys of one pack under another run's stages are each refused; one new recorded gap states that a pack identity is the producer's claim.
+- Pre-existing tests edited in this wave: none.
+- Not changed: every digest, vector and contract. The pediatric pack's output is held identical by a golden digest over 20,160 readings in Alpha's tests.
+
 ## [4.0.0] - 2026-11-12
 
 The work merged to `main` after the `v3.0.0` tag (`31cb6f5`, the merge of #132): the decision-spine capability build of
