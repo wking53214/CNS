@@ -648,14 +648,14 @@ Pin a tag, the way sentinel_os already pins Conservation_Kernel. In a requiremen
 `pyproject.toml` dependency list the line is:
 
 ```
-cns @ git+https://github.com/wking53214/CNS.git@v3.0.0
+cns @ git+https://github.com/wking53214/CNS.git@v4.0.0
 ```
 
 and to put it in an environment by hand:
 
 ```
 python3 -m venv .venv
-.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v3.0.0"
+.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v4.0.0"
 ```
 
 Then `from cns.graph import Node, Edge, Graph` and delete the vendored
