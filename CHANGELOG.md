@@ -17,13 +17,14 @@ entry says so.
 
 ## [Unreleased]
 
-## [4.0.0] - 2026-11-12, not yet tagged
+## [4.0.0] - 2026-11-12
 
 The work merged to `main` after the `v3.0.0` tag (`31cb6f5`, the merge of #132): the decision-spine capability build of
 2026-11-11 (the ledger receipt signing hook, a verify-a-package command, delta's durable store scenarios, the Python 3.10
 leg, the digest exact types) and its independent reviews, the CNS v3.0.0 sweep's last re-pins, and the follow-up to two further
 reviews (#137, #141, #144). A major version by the owner's decision of 2026-11-12, because `subject_digest` now refuses
-input it used to digest (see Breaking). The tag, when the owner makes it, is `v4.0.0`.
+input it used to digest (see Breaking). Tagged `v4.0.0` by the owner on 2026-11-12, a lightweight tag at
+`eabe6c72d71557b6327b80b42b0afab572acce80` (the merge of #148).
 
 ### Breaking
 
