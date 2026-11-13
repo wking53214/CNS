@@ -304,3 +304,13 @@ def test_every_spine_scenario_declares_an_expect_and_none_is_a_plain_string():
         assert (isinstance(third, ast.Call) and getattr(third.func, "id", "") == "Expect") or \
             (isinstance(third, ast.Name) and third.id in ("CLEAN", "GAP")), ast.get_source_segment(SPINE_RUN.read_text(encoding="utf-8"), row)
     assert "check_table(SCENARIOS)" in SPINE_RUN.read_text(encoding="utf-8")
+
+
+def test_the_uai_to_ccc_script_runs_in_the_workflow_with_the_evidence_spines_repositories_and_states_what_each_scenario_must_produce():
+    step = WORKFLOW.split("name: A model's answer to CCC's store over UAI-1\n", 1)[1]
+    assert "run: python hub/chains/uai_to_ccc.py" in step.split("\n      - ", 1)[0]
+    same = WORKFLOW.split("name: One document through the evidence spine\n", 1)[1]
+    assert re.search(r"PYTHONPATH: (.+)", step).group(1) == re.search(r"PYTHONPATH: (.+)", same).group(1)
+    text = (ROOT / "chains" / "uai_to_ccc.py").read_text(encoding="utf-8")
+    assert "SCENARIOS" in text and "return 1 if wrong else 0" in text and "raise SystemExit(main())" in text
+    assert "grants=table, action=ACTION" in text      # CCC's only write permission is built from the receiver's own grants

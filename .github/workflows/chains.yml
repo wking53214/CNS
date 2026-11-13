@@ -169,6 +169,10 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD:${{ github.workspace }}/stack/TIE/src:${{ github.workspace }}/stack/Conservation_Kernel/src:${{ github.workspace }}/stack/Governance_Gateway/src:${{ github.workspace }}/stack/ccc:${{ github.workspace }}/stack/UAI-2
         run: python hub/chains/evidence_spine.py
+      - name: A model's answer to CCC's store over UAI-1
+        env:
+          PYTHONPATH: ${{ github.workspace }}/stack/HERALD:${{ github.workspace }}/stack/TIE/src:${{ github.workspace }}/stack/Conservation_Kernel/src:${{ github.workspace }}/stack/Governance_Gateway/src:${{ github.workspace }}/stack/ccc:${{ github.workspace }}/stack/UAI-2
+        run: python hub/chains/uai_to_ccc.py
 
   digest-second-language:
     name: digest-second-language
