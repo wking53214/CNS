@@ -1,13 +1,13 @@
 {
   "schema": "spine-manifest/1",
   "repos": {
-    "interconnected_alpha": "09bb3a16edc6548fd574d180efff9630a56eabf1",
-    "interconnected_zeta": "f778be1f5ac27372df8ce61dbe0a8c42f9dc8c3b",
-    "interconnected_beta": "06001dfee40afcd8688688ffbab2a09a7dce721a",
-    "interconnected_delta": "717b614d125700c646c99176e4956061a7ea0d48"
+    "interconnected_alpha": "b966a82e114c8e91dbbdb5a601330485f3cb70f7",
+    "interconnected_zeta": "7cee0a35be741c6f299ffcd2a024c4edfcbaa80d",
+    "interconnected_beta": "b24739715dd49bb19e0413e9a8f9bf20bd897e10",
+    "interconnected_delta": "67055224e5fe56660d348b7362c76990836af4c3"
   },
   "cns": {
-    "tag": "v3.0.0",
-    "commit": "31cb6f568219ef62cf3748701c895aa086abf1b8"
+    "tag": "v4.0.0",
+    "commit": "eabe6c72d71557b6327b80b42b0afab572acce80"
   }
 }
