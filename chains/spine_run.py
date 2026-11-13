@@ -78,7 +78,7 @@ import delta as delta_pkg
 import delta.signing as delta_signing
 import delta.context as delta_context
 import zeta.cns_connector as zeta_cns
-from alpha import VitalsObservation, observe
+from alpha.packs.pediatric_vitals import VitalsObservation, observe
 from beta import (
     Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError,
     StaleLockResultError, decision_fingerprint)
