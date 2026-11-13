@@ -314,3 +314,13 @@ def test_the_ecology_checkout_may_fail_without_failing_the_job_and_its_step_runs
     assert "if: steps.ecology.outcome == 'success'" in step and "run: python hub/chains/ecology_answer.py" in step
     others = WORKFLOW.split("name: Four repositories, one chain", 1)[1]
     assert "continue-on-error" not in others.replace(step, "").split("digest-second-language", 1)[0]
+
+
+def test_the_uai_to_ccc_script_runs_in_the_workflow_with_the_evidence_spines_repositories_and_states_what_each_scenario_must_produce():
+    step = WORKFLOW.split("name: A model's answer to CCC's store over UAI-1\n", 1)[1]
+    assert "run: python hub/chains/uai_to_ccc.py" in step.split("\n      - ", 1)[0]
+    same = WORKFLOW.split("name: One document through the evidence spine\n", 1)[1]
+    assert re.search(r"PYTHONPATH: (.+)", step).group(1) == re.search(r"PYTHONPATH: (.+)", same).group(1)
+    text = (ROOT / "chains" / "uai_to_ccc.py").read_text(encoding="utf-8")
+    assert "SCENARIOS" in text and "return 1 if wrong else 0" in text and "raise SystemExit(main())" in text
+    assert "grants=table, action=ACTION" in text      # CCC's only write permission is built from the receiver's own grants
