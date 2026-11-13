@@ -78,7 +78,10 @@ import delta as delta_pkg
 import delta.signing as delta_signing
 import delta.context as delta_context
 import zeta.cns_connector as zeta_cns
-from alpha import VitalsObservation, observe
+from alpha import PackError, PackRegistry, PackValidationError, pack_identity
+from alpha.packs.pediatric_vitals import VitalsObservation, observe
+from alpha.packs.pediatric_vitals import PediatricVitalsPack
+from alpha.packs.service_health import ServiceHealthPack, ServiceObservation
 from beta import (
     Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError,
     StaleLockResultError, decision_fingerprint)
@@ -2799,6 +2802,162 @@ def the_checkpoint_and_the_trust_list_must_live_outside_the_package() -> List[st
     return out
 
 
+# --- domain packs: a second, unrelated domain runs through the same four stages (alpha.packs, alpha.core) ----------------
+
+DOMAIN_CTX = {"schema": CONTEXT_SCHEMA, "entity_id": "checkout_service", "event_id": "event_d1", "run_id": "run_d1"}
+SERVICE_BAD = ServiceObservation(latency_p95_ms=1500.0, error_rate=0.10, queue_depth=500, tier="interactive")
+SERVICE_OK = ServiceObservation(latency_p95_ms=120.0, error_rate=0.001, queue_depth=5, tier="interactive")
+
+
+def domain_registry() -> PackRegistry:
+    registry = PackRegistry()
+    registry.register(PediatricVitalsPack())
+    registry.register(ServiceHealthPack())
+    return registry
+
+
+def domain_build():
+    """Locks and rules for the service pack. Beta's decisions are free-form text: nothing here is clinical."""
+    locks = LockRegistry([
+        LockSpec(lock_id="outage_lock", required_keys=("latency_critical", "error_burst", "degraded_service"),
+                 combination=Combination.OR, dwell_threshold=1, force=True, lock_seconds=3600),
+        LockSpec(lock_id="slow_lock", required_keys=("latency_high", "queue_backlog"), combination=Combination.OR, dwell_threshold=1),
+    ])
+    rules = DecisionRuleRegistry([
+        DecisionRule(decision_id="page_oncall", decision="PAGE_ONCALL", open_locks=("outage_lock",), priority=10,
+                     reasoning_template="{decision}: outage", instructions="Page the on-call engineer."),
+        DecisionRule(decision_id="watch", decision="WATCH", open_locks=("slow_lock",), closed_locks=("outage_lock",), priority=5,
+                     reasoning_template="{decision}: slow", instructions="Watch the dashboards."),
+        DecisionRule(decision_id="normal", decision="NORMAL", closed_locks=("outage_lock", "slow_lock"), priority=0,
+                     reasoning_template="{decision}: healthy", instructions="No action."),
+    ])
+    return locks, DecisionEngine(rules, locks)
+
+
+def domain_origin(identity: str, at: datetime = T0 - timedelta(seconds=30)) -> Dict[str, str]:
+    """An origin as a service-health producer states it. `transformation` carries the pack's identity, the producer's own claim."""
+    return {"source": "metrics gateway 2", "producer": "service-ingest 1.0", "observed_at": at.isoformat(),
+            "collection_context": "production, 1 minute window", "transformation": identity}
+
+
+def domain_stages(raw=SERVICE_BAD, pack: str = "service_health", registry: Optional[PackRegistry] = None,
+                  identity: Optional[str] = None, ctx=DOMAIN_CTX) -> Dict[str, Any]:
+    """The four stages run for real on a pack's output, bound as `stages` binds them, with the pack's identity in origin."""
+    registry = registry or domain_registry()
+    locks, engine = domain_build()
+    ledger = DecisionLedger(require_context=True)
+    entity = ctx["entity_id"]
+    keys = registry.observe(pack, raw)
+    claimed = pack_identity(registry.get(pack)) if identity is None else identity
+    alpha = alpha_cns.keyset_content(keys, context=ctx, origin=domain_origin(claimed))
+    da = subject_digest(alpha)
+    results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
+    zeta = {lid: zeta_cns.lock_result_content(r, context=ctx, keyset_digest=da) for lid, r in results.items()}
+    decision = engine.decide(entity, keys, results, T0)
+    beta = beta_cns.decision_content(
+        decision, context=ctx, keyset_digest=da,
+        lock_result_digests={lid: zeta_cns.lock_result_digest(r, context=ctx, keyset_digest=da) for lid, r in results.items()})
+    entry = ledger.append(decision, context=ctx)
+    delta = delta_cns.entry_content(entry, context=ctx, decision_digest=subject_digest(beta))
+    return {"alpha": alpha, "zeta": zeta, "beta": beta, "delta": delta, "ledger": ledger, "decision": decision, "keys": keys,
+            "checkpoint": ledger.checkpoint()}
+
+
+def a_service_health_run_is_accepted_by_the_strict_check() -> List[str]:
+    """A domain with no clinical word in it, through alpha's pack, zeta's locks, beta's decision and delta's ledger, and the same
+    strict check that accepts the pediatric run. The decision is the free-form text the rules gave it."""
+    p = domain_stages(SERVICE_BAD)
+    out = check(p)
+    if p["decision"].decision != "PAGE_ONCALL":
+        out.append(f"the bad service reading did not page: {p['decision'].decision}")
+    if domain_stages(SERVICE_OK)["decision"].decision != "NORMAL":
+        out.append("the healthy service reading was not NORMAL")
+    return out
+
+
+def the_pack_identity_is_recorded_in_origin_and_bound_by_the_digest() -> List[str]:
+    out: List[str] = []
+    p = domain_stages(SERVICE_BAD)
+    want = "pack:service_health/0.1.0"
+    if p["alpha"].get("origin", {}).get("transformation") != want:
+        out.append(f"origin.transformation is {p['alpha'].get('origin', {}).get('transformation')!r}, not {want!r}")
+    other = domain_stages(SERVICE_BAD, identity="pack:service_health/0.2.0")
+    if subject_digest(other["alpha"]) == subject_digest(p["alpha"]):
+        out.append("a different pack identity did not change alpha's content digest, so a decision would not state which pack ran")
+    return out
+
+
+def the_pediatric_pack_runs_through_the_registry_with_its_identity() -> List[str]:
+    """The reference pack, reached through the registry and recorded the same way: the second pack changed nothing for the first."""
+    registry = domain_registry()
+    keys = registry.observe("pediatric_vitals", SICK)
+    identity = pack_identity(registry.get("pediatric_vitals"))
+    alpha = alpha_cns.keyset_content(keys, context=CTX, origin={**origin_observed(T0 - timedelta(seconds=30)), "transformation": identity})
+    direct = alpha_cns.keyset_content(observe(SICK), context=CTX)
+    out = []
+    if alpha["keys"] != direct["keys"]:
+        out.append("the registry gave the pediatric pack's keys different from calling it directly")
+    if alpha["origin"]["transformation"] != "pack:pediatric_vitals/0.2.0":
+        out.append(f"unexpected pack identity {alpha['origin']['transformation']!r}")
+    return out
+
+
+def a_pack_with_an_out_of_bounds_threshold_is_refused() -> List[str]:
+    class Loose(ServiceHealthPack):
+        NAME = "loose_service"
+
+        def parameters(self):
+            first, *rest = super().parameters()
+            return (dataclasses.replace(first, value=first.maximum * 10.0), *rest)
+
+    return refused(lambda: PackRegistry().register(Loose()), catch=(PackValidationError,))
+
+
+def a_pack_with_no_approval_is_refused() -> List[str]:
+    class Unapproved(ServiceHealthPack):
+        NAME = "unapproved_service"
+
+        def parameters(self):
+            first, *rest = super().parameters()
+            return (dataclasses.replace(first, approved_by="", approval_date=""), *rest)
+
+    return refused(lambda: PackRegistry().register(Unapproved()), catch=(PackValidationError,))
+
+
+def a_pack_that_emits_an_undeclared_key_is_refused() -> List[str]:
+    class Rogue(ServiceHealthPack):
+        NAME = "rogue_service"
+
+        def observe(self, raw):
+            return KeySet([Key("surprise", present=True, confidence=1.0, reason="not declared")])
+
+    registry = PackRegistry()
+    registry.register(Rogue())
+    return refused(lambda: registry.observe("rogue_service", SERVICE_BAD), catch=(PackError,))
+
+
+def a_pack_name_cannot_be_registered_twice() -> List[str]:
+    registry = domain_registry()
+    return refused(lambda: registry.register(ServiceHealthPack()), catch=(PackError,))
+
+
+def keys_of_one_pack_under_the_digest_of_another_are_refused() -> List[str]:
+    """The pediatric run's alpha content presented with the service run's zeta, beta and delta: the stages do not describe one run."""
+    service = domain_stages(SERVICE_BAD)
+    pediatric_keys = domain_registry().observe("pediatric_vitals", SICK)
+    swapped = {**service, "alpha": alpha_cns.keyset_content(pediatric_keys, context=DOMAIN_CTX,
+                                                           origin=domain_origin("pack:pediatric_vitals/0.2.0"))}
+    return check(swapped)
+
+
+def GAP_a_pack_identity_is_the_producers_claim() -> List[str]:
+    """KNOWN GAP, stated as a fact. origin.transformation names the pack, and the digest binds that text, but nothing authenticates
+    it: keys the service pack produced under a run whose origin claims the pediatric pack are accepted. No problem is found when
+    the fact holds; one is reported if CNS ever starts checking the claim."""
+    p = domain_stages(SERVICE_BAD, identity="pack:pediatric_vitals/0.2.0")
+    return check(p)
+
+
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
@@ -3199,6 +3358,29 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("package: a deeply nested input is exit 2 or a named refusal, never a traceback",
      a_deeply_nested_input_is_exit_two_or_a_named_refusal_never_a_traceback, CLEAN),
     ("package: inputs that cannot be read, and usage errors, exit 2 and not 1", inputs_that_cannot_be_read_exit_two_not_one, CLEAN),
+    # --- domain packs: a second, unrelated domain through the same four stages, and the pack contract's refusals ---
+    ("domain: a service-health run is accepted by the strict check, with a free-form decision",
+     a_service_health_run_is_accepted_by_the_strict_check, CLEAN),
+    ("domain: the pack identity is recorded in origin and bound by alpha's digest",
+     the_pack_identity_is_recorded_in_origin_and_bound_by_the_digest, CLEAN),
+    ("domain: the pediatric pack reached through the registry gives the same keys and records its identity",
+     the_pediatric_pack_runs_through_the_registry_with_its_identity, CLEAN),
+    ("domain: a pack with a threshold outside its bounds is refused at registration", a_pack_with_an_out_of_bounds_threshold_is_refused,
+     Expect("refused", required=("outside",), raises=("PackValidationError",))),
+    ("domain: a pack whose parameter has no approval is refused at registration", a_pack_with_no_approval_is_refused,
+     Expect("refused", required=("approved_by",), raises=("PackValidationError",))),
+    ("domain: a pack that emits a key it did not declare is refused", a_pack_that_emits_an_undeclared_key_is_refused,
+     Expect("refused", required=("surprise",), raises=("PackError",))),
+    ("domain: a pack name cannot be registered twice", a_pack_name_cannot_be_registered_twice,
+     Expect("refused", required=("already registered",), raises=("PackError",))),
+    ("domain: keys of one pack presented with another run's stages are refused", keys_of_one_pack_under_the_digest_of_another_are_refused,
+     Expect("problems", required=("zeta lock outage_lock was evaluated from a different KeySet than alpha produced",
+                                  "beta's Decision was made from a different KeySet than alpha produced",
+                                  "the Decision cites key(s) alpha did not list as present: latency_critical"),
+            allowed_extra=("zeta lock slow_lock was evaluated from a different KeySet than alpha produced",
+                           "its recorded KeySet fingerprint differs from alpha's"))),
+    ("domain: GAP, a pack identity is the producer's claim and nothing authenticates it",
+     GAP_a_pack_identity_is_the_producers_claim, GAP),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),
     ("oracle: a refusal that edited an entry's content is a state change", the_oracle_flags_a_refusal_that_edited_an_entrys_content, CLEAN),
