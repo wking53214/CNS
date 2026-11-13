@@ -304,3 +304,13 @@ def test_every_spine_scenario_declares_an_expect_and_none_is_a_plain_string():
         assert (isinstance(third, ast.Call) and getattr(third.func, "id", "") == "Expect") or \
             (isinstance(third, ast.Name) and third.id in ("CLEAN", "GAP")), ast.get_source_segment(SPINE_RUN.read_text(encoding="utf-8"), row)
     assert "check_table(SCENARIOS)" in SPINE_RUN.read_text(encoding="utf-8")
+
+
+def test_the_ecology_checkout_may_fail_without_failing_the_job_and_its_step_runs_only_when_it_worked():
+    """Ecology was deleted on 2026-11-13 and is to be brought back: the other chains must keep running meanwhile."""
+    checkout = WORKFLOW.split("      - id: ecology\n", 1)[1].split("\n      - ", 1)[0]
+    assert "continue-on-error: true" in checkout and "/Ecology" in checkout and "path: stack/Ecology" in checkout
+    step = WORKFLOW.split("name: An Ecology answer, judged by DIT\n", 1)[1].split("\n      - ", 1)[0]
+    assert "if: steps.ecology.outcome == 'success'" in step and "run: python hub/chains/ecology_answer.py" in step
+    others = WORKFLOW.split("name: Four repositories, one chain", 1)[1]
+    assert "continue-on-error" not in others.replace(step, "").split("digest-second-language", 1)[0]

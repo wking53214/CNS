@@ -116,7 +116,12 @@ jobs:
           repository: ${{ github.repository_owner }}/interconnected_delta
           path: stack/interconnected_delta
           persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Ecology answered 404 on 2026-11-13 (deleted, to be brought back). Its checkout may fail without failing the job, and the
+      # Ecology step below runs only when this checkout worked, so the other chains keep running and Ecology's chain comes
+      # back by itself the day the repository does. Nothing else depends on it.
+      - id: ecology
+        continue-on-error: true
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ github.repository_owner }}/Ecology
           path: stack/Ecology
@@ -162,6 +167,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/stack/interconnected_alpha:${{ github.workspace }}/stack/interconnected_zeta:${{ github.workspace }}/stack/interconnected_beta:${{ github.workspace }}/stack/interconnected_delta
         run: python hub/chains/spine_run.py
       - name: An Ecology answer, judged by DIT
+        if: steps.ecology.outcome == 'success'
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/Ecology:${{ github.workspace }}/stack/DIT/src
         run: python hub/chains/ecology_answer.py
