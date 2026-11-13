@@ -109,11 +109,16 @@ class Parties:
 
 
 def exchange(parties: Parties, held_text: str, asked: Tuple[str, str], complete: Callable[[str], str],
-             live: bool = False) -> Dict[str, Any]:
+             live: bool = False, seen: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The UAI-1 exchange. The operator asks the decider to judge `asked` = (identity, digest); the decider judges the document
     it holds, with the model and its policy. Every message crosses as JSON. Returns the decision as it arrives."""
+    def noting_policy(cap: Any, disclosed: Dict[str, Any], subject: Any, rec: Recommendation) -> Recommendation:
+        if seen is not None:
+            seen["model_verdict"] = rec.verdict               # what the model recommended, before the policy re-checked
+        return policy(cap, disclosed, subject, rec)
+
     inner = AdapterJudge(PromptedModelAdapter(CAPABILITY, complete, ProviderInfo("uai-to-ccc", "stand-in", "stand-in", "provider",
-                                                                                  live=live)), policy)
+                                                                                  live=live)), noting_policy)
 
     def judge(cap: Any, disclosed: Dict[str, Any], subject: Dict[str, str]) -> Any:
         if subject["digest"] != es.sha256(held_text):                 # a document this decider does not hold is not judged
@@ -172,13 +177,15 @@ def run_path(held: str, to_ingest: str, complete: Callable[[str], str], *, asked
     parties = Parties()
     with tempfile.TemporaryDirectory() as tmp:
         guard, system = receiver(parties, tmp, **receiver_kw)
-        signed = exchange(parties, held, (SOURCE_ID, es.sha256(asked_text if asked_text is not None else held)), complete, live)
+        noted: Dict[str, Any] = {}
+        signed = exchange(parties, held, (SOURCE_ID, es.sha256(asked_text if asked_text is not None else held)), complete, live,
+                          noted)
         verdict = loads(signed["wire"])["body"].get("verdict")
         opened = open_guard(guard, signed)
         first = ingest(system, to_ingest)
         second = ingest(system, to_ingest)
-        return {"verdict": verdict, "guard": opened or "opened", "ingested": first, "ingested_again": second,
-                "ccc_artifacts": len(system.store.artifacts)}
+        return {"verdict": verdict, "model_verdict": noted.get("model_verdict"), "guard": opened or "opened",
+                "ingested": first, "ingested_again": second, "ccc_artifacts": len(system.store.artifacts)}
 
 
 # ------------------------------------------------------------------------------------------ scenarios
@@ -305,28 +312,52 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, Any]], Dict[str, Any]]] = [
 
 
 # ------------------------------------------------------------------------------------------ live
+REFUSED = {"verdict": "retry", "guard": "refused", "ingested": False, "ccc_artifacts": 0}
+LIVE_DOCUMENTS = (("invoice", es.INVOICE, PASSED), ("bank statement", STATEMENT, REFUSED),
+                  ("inflated invoice", es.INFLATED, REFUSED))
+
+
 def live(opts: argparse.Namespace) -> int:
-    """The same path with a real provider's model, for the two documents that matter: the invoice, and the bank statement
-    a model is most likely to pass."""
+    """The same path with a real provider's model, for three documents: the invoice, a bank statement, and the invoice with its
+    amount inflated tenfold (the two a model is most likely to pass wrongly). Calls are paced as UAI-2's jury paces them, so a
+    free tier is not rate-limited, and each result is a row in --out when given."""
     uai = os.path.dirname(os.path.dirname(os.path.abspath(sys.modules[Signer.__module__].__file__ or "")))
     sys.path.insert(0, os.path.join(uai, "interop"))
-    from jury import jurors_from_env  # type: ignore[import-not-found]
+    import time
 
-    jurors = jurors_from_env(dict(os.environ), [], None)
+    from cns_interop.providers import ProvenanceLog
+    from jury import SPACING_S, jurors_from_env  # type: ignore[import-not-found]
+
+    jurors = jurors_from_env(dict(os.environ), [], opts.stub)
     if not jurors:
         print("NOT EXECUTED: no model has both a key and a model name (see UAI-2's interop/jury.py for the variables)")
         return 3
     wrong: List[str] = []
+    rows: List[Dict[str, Any]] = []
     for juror in jurors[: opts.models]:
         print(f"model {juror['provider']}:{juror['model']}")
-        from cns_interop.providers import ProvenanceLog
-        complete = juror["make"](ProvenanceLog())
-        for name, held, wanted in (("invoice", es.INVOICE, PASSED), ("bank statement", STATEMENT,
-                                    {"verdict": "retry", "guard": "refused", "ingested": False, "ccc_artifacts": 0})):
-            seen = run_path(held, held, complete, live=True)
+        wait = SPACING_S.get(juror["provider"], 1.0) if opts.spacing is None else opts.spacing
+        for name, held, wanted in LIVE_DOCUMENTS:
+            log = ProvenanceLog()
+            try:
+                seen = run_path(held, held, juror["make"](log), live=True)
+            except Exception as exc:                   # the path itself failed: a result, kept as one
+                seen = {"verdict": f"failed:{getattr(exc, 'code', type(exc).__name__)}"}
+            rec = log.records[-1] if log.records else None
             differs = [k for k in wanted if seen.get(k) != wanted[k]]
-            print(f"  {'ok  ' if not differs else 'FAIL'} {name}: " + " ".join(f"{k}={seen.get(k)!r}" for k in wanted))
+            print(f"  {'ok  ' if not differs else 'FAIL'} {name}: model said {seen.get('model_verdict')!r}; "
+                  + " ".join(f"{k}={seen.get(k)!r}" for k in wanted))
+            rows.append({"juror": f"{juror['provider']}:{juror['model']}", "document": name, "wanted": wanted, "seen": seen,
+                         "ok": not differs, "http_status": rec.http_status if rec else None,
+                         "request_sha256": rec.request_sha256 if rec else "", "response_sha256": rec.response_sha256 if rec else ""})
             wrong += [f"{juror['model']} {name}: {k} was {seen.get(k)!r}, wanted {wanted[k]!r}" for k in differs]
+            time.sleep(wait)
+    if opts.out:
+        with open(opts.out, "w", encoding="utf-8") as fh:
+            fh.writelines(json.dumps(r, sort_keys=True) + "\n" for r in rows)
+    lowered = sum(1 for r in rows if r["seen"].get("model_verdict") == "pass" and r["seen"].get("verdict") != "pass")
+    print(f"\n{len(rows)} paths, {sum(r['ok'] for r in rows)} as wanted; a model said pass and the signed decision did not: {lowered}; "
+          f"documents CCC took in that should not have been: {sum(1 for r in rows if r['seen'].get('ingested') and not r['wanted']['ingested'])}")
     for line in wrong:
         print(f"chain: {line}", file=sys.stderr)
     return 1 if wrong else 0
@@ -336,6 +367,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--live", action="store_true", help="run the path with a real provider's model instead of the stand-ins")
     ap.add_argument("--models", type=int, default=1, help="with --live, how many of the configured models to use")
+    ap.add_argument("--spacing", type=float, default=None, help="with --live, seconds between calls (default per company)")
+    ap.add_argument("--out", default=None, help="with --live, write one JSON row per path to this file")
+    ap.add_argument("--stub", default=None, help="with --live, a local test server for every model; never a real provider")
     opts = ap.parse_args()
     if opts.live:
         return live(opts)
