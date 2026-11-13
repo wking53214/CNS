@@ -306,6 +306,16 @@ def test_every_spine_scenario_declares_an_expect_and_none_is_a_plain_string():
     assert "check_table(SCENARIOS)" in SPINE_RUN.read_text(encoding="utf-8")
 
 
+def test_the_ecology_checkout_may_fail_without_failing_the_job_and_its_step_runs_only_when_it_worked():
+    """Ecology was deleted on 2026-11-13 and is to be brought back: the other chains must keep running meanwhile."""
+    checkout = WORKFLOW.split("      - id: ecology\n", 1)[1].split("\n      - ", 1)[0]
+    assert "continue-on-error: true" in checkout and "/Ecology" in checkout and "path: stack/Ecology" in checkout
+    step = WORKFLOW.split("name: An Ecology answer, judged by DIT\n", 1)[1].split("\n      - ", 1)[0]
+    assert "if: steps.ecology.outcome == 'success'" in step and "run: python hub/chains/ecology_answer.py" in step
+    others = WORKFLOW.split("name: Four repositories, one chain", 1)[1]
+    assert "continue-on-error" not in others.replace(step, "").split("digest-second-language", 1)[0]
+
+
 def test_the_uai_to_ccc_script_runs_in_the_workflow_with_the_evidence_spines_repositories_and_states_what_each_scenario_must_produce():
     step = WORKFLOW.split("name: A model's answer to CCC's store over UAI-1\n", 1)[1]
     assert "run: python hub/chains/uai_to_ccc.py" in step.split("\n      - ", 1)[0]
