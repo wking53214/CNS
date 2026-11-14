@@ -104,7 +104,8 @@
     },
     "Ecology": {
       "to_cns": "ecology_cns_connector.py",
-      "from_cns": "cns_composition/consumers.py"
+      "from_cns": "cns_composition/consumers.py",
+      "private": true
     },
     "GSA": {
       "to_cns": "gsa_cns_connector.py",
