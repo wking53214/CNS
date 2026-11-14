@@ -14,5 +14,5 @@ cns @ git+https://github.com/wking53214/CNS.git@v4.0.0
 ghost-tools @ git+https://github.com/wking53214/ghost_tools@572fb31790f702c5503e4ffb3a6dd7e7ce7147cc  # 1.10.14
 swizzle @ git+https://github.com/wking53214/SWIZZLE.git@1b884ff4bfe502f400d606f9374873afb7406293  # 0.8.13
 assay @ git+https://github.com/wking53214/ASSAY.git@4f854ca7ae8d774101ff5351ac9b0e6c51657104  # 0.11.10
-warden @ git+https://github.com/wking53214/Warden.git@2abe51635c6a69ba0d8f0da6346928cd40872464  # 1.0.0
-judge @ git+https://github.com/wking53214/JUDGE.git@ff3c4453efb42d7603a6e9df93cdfefacf63f6aa  # 0.6.0
+warden @ git+https://github.com/wking53214/Warden.git@3ed76136a8ad8c8a78ea8aaec4c5350026073f97  # 1.0.0
+judge @ git+https://github.com/wking53214/JUDGE.git@97ac378f2340ce0efeef1a92a14e0cbbc143fa01  # 0.6.0
