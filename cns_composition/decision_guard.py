@@ -25,6 +25,16 @@ One decision opens one action: every decision carries a nonce, and the first gua
 for the whole process. A second guard handed the same decision, however fresh, is refused. That is in-process only:
 the spent set lives in this module, so two processes can each spend the same decision.
 
+WHERE ONE USE HOLDS, AND WHAT A DEPLOYMENT MUST DO ABOUT IT
+
+One use holds inside one process (this module's spent set) and, for the `RemoteDecisionGuard` that acts on a signed
+decision, inside one ledger. It does not hold between ledgers: a process acting for the same operator with a ledger of
+its own accepts a decision another process already spent (the spine records this as a GAP, with the decision signed and
+carried between the two). So a deployment must have every process that can act on one decision share ONE ledger, one
+file or one store, and must not start a second ledger for the same operator. CNS cannot enforce that: the ledger's
+identity belongs to the party that keeps it (UAI-2's `RemoteDecisionGuard`) and to the deployment. This is a
+requirement on the deployment, not a property of this class.
+
 Anything else is False: nothing authorized, a refused or unbound decision, a second use, another document, a reader
 that raises. A refusal does not spend the permission; only a yes does.
 

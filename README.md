@@ -188,6 +188,11 @@ message (`cns_interop`), and the kernel and CCC act on it through a `RemoteDecis
 roster's public identity, the identity it acts for and a shared ledger file, so a separate program can check the
 approval and spend it once. Neither the kernel nor CCC changed.
 
+One use holds per ledger, not across ledgers. A deployment must have every process that can act on one decision share
+ONE ledger, and must not start a second ledger for the same operator: a process with its own ledger accepts an approval
+another one already spent, and the spine records that as a GAP. CNS cannot enforce this, because a ledger's identity
+belongs to the party that keeps it and to the deployment.
+
 The script then breaks the run at each seam (a document relabelled, an inflated invoice, an export edited after it was
 signed, a decision copied by hand, a direct write after a "no") and states what must happen. A seam that holds is a
 scenario that must keep holding. A seam that nothing checks is stated as a GAP, an assertion and not a skip, so the day
