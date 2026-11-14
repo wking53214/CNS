@@ -50,14 +50,15 @@ class GuardedCccRecordGate:
     position = GatePosition.ALPHA
 
     def __init__(self, lookup: RecordLookup, guard: ResubmissionGuard, *,
-                 attestation_key: Optional[bytes] = None) -> None:
+                 attestation_key: Optional[bytes] = None, source: str = SOURCE) -> None:
         if not isinstance(guard, ResubmissionGuard):
             raise TypeError(
                 "GuardedCccRecordGate needs a ResubmissionGuard; "
                 f"got {type(guard).__name__}."
             )
-        self._record_gate = CccRecordGate(lookup, attestation_key=attestation_key)
+        self._record_gate = CccRecordGate(lookup, attestation_key=attestation_key, source=source)
         self._guard = guard
+        self._source = source
 
     def check(self, candidate: object) -> GateResult:
         if not isinstance(candidate, TriadOutput):
@@ -66,7 +67,7 @@ class GuardedCccRecordGate:
                 f"got {type(candidate).__name__}"
             )
         submission = Resubmission(
-            subject=f"{SOURCE}:{candidate.candidate_id}",
+            subject=f"{self._source}:{candidate.candidate_id}",
             content_digest=subject_digest(
                 {"text_digest": text_digest(candidate.text)}
             ),
@@ -79,10 +80,10 @@ class GuardedCccRecordGate:
 
 def guarded_admit(
     output: TriadOutput, lookup: RecordLookup, guard: ResubmissionGuard, *,
-    attestation_key: Optional[bytes] = None,
+    attestation_key: Optional[bytes] = None, source: str = SOURCE,
 ) -> TriadOutput:
     """The door, with the resubmission guard in front. Raises unless it passes."""
-    result = GuardedCccRecordGate(lookup, guard, attestation_key=attestation_key).check(output)
+    result = GuardedCccRecordGate(lookup, guard, attestation_key=attestation_key, source=source).check(output)
     if result.outcome is not GateOutcome.PASS:
         raise UnrecordedTriadOutput(result)
     return output
