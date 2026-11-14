@@ -154,7 +154,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 3
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 47
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 48
 
 
 def test_the_evidence_script_carries_the_roster_decision_across_the_process_boundary():
@@ -357,3 +357,17 @@ def test_the_evidence_script_checks_what_kind_of_gate_stands_in_every_seat_and_i
     assert "gate_types" in {k.arg for k in gate.keywords}
     assert next(a for a in functions["decide"].args.kwonlyargs + functions["decide"].args.args if a.arg == "type_checked")
     assert [d.value for d in functions["decide"].args.defaults if isinstance(d, ast.Constant) and d.value is True] == [True]
+
+
+def test_the_evidence_scripts_reader_binding_and_gate_type_tables_name_exactly_the_required_seats():
+    """A seat added to the required roster but not to every policy table would be judged without being read, bound or
+    type-checked, and a seat in a table but not the roster would be dead policy. TIE's intake seat is the case that made
+    this worth pinning: it was added to all four together."""
+    tree = ast.parse(EVIDENCE.read_text(encoding="utf-8"))
+
+    def keys(name):
+        node = next(n for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == name)
+        return {k.value for k in node.value.keys}
+    required = set(_required_seats(EVIDENCE)[0]) - {"CNS:same_subject"}
+    assert "TIE:tie_intake" in required
+    assert keys("READERS") == keys("BINDINGS") == keys("GATE_TYPES") == required

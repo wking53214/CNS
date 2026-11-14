@@ -180,6 +180,7 @@ from herald.handoff import export_public_pem
 from herald.source import STANDING_ATTESTATION, STANDING_RECORD, SourceDocument
 from tie.evidence.herald_intake import HeraldIntakeRefused, evidence_from_herald_export, signoffs_from_herald_export
 from tie.evidence.herald_intake import export_key_id as tie_export_key_id
+from tie.cns_connector import INTAKE_SUBJECT, HeraldIntake, TieIntakeGate, intake_digest
 from tie.models import SourceRecord
 
 PASS, BREACH = GateOutcome.PASS.value, GateOutcome.TERMINAL_BREACH.value
@@ -207,6 +208,7 @@ def spine_gateway_gate() -> GatewayGate:
 #: both. Dropping or renaming a gate must fail here, so changing this list is a policy change made in review.
 REQUIRED_SEATS = (
     "HERALD:herald_source",
+    "TIE:tie_intake",
     "Conservation_Kernel:root_admission",
     "Governance_Gateway:governance_gateway",
     "HERALD:herald_confidence",
@@ -262,6 +264,11 @@ def tie(export: dict, source_id: str, text: str) -> Tuple[list, str]:
                                            trusted_keys=TRUSTED_KEYS), ""
     except HeraldIntakeRefused as exc:
         return [], str(exc)
+
+
+def tie_intake(export: dict, source_id: str, text: str) -> HeraldIntake:
+    """What TIE's seat is handed: the source and the export, as `tie()` is given them."""
+    return HeraldIntake(SourceRecord(source_id=source_id, content=text), export)
 
 
 class TieEvidenceGuard:
@@ -413,6 +420,11 @@ def reads_door(entry: DoorArtifact) -> Judged:
     return Judged(entry.provenance["source_id"], entry.payload["content_sha256"])
 
 
+def reads_intake(intake: HeraldIntake) -> Judged:
+    """The source TIE is asked to take the export in for, and the digest of that source's text."""
+    return Judged(intake.source.source_id, sha256(intake.source.content))
+
+
 def reads_attempt(att: Attempt) -> Judged:
     """The source CCC is asked to record the document under, and the digest of the text it is asked to ingest."""
     return Judged(att.kwargs["metadata"]["source_id"], sha256(att.args[0]))
@@ -485,7 +497,7 @@ def reads_claim(claim) -> Judged:
 
 
 #: How each seat's candidate says which document it is about. Policy, like REQUIRED_SEATS: reviewed with it.
-READERS = {"HERALD:herald_source": reads_document, "Conservation_Kernel:root_admission": reads_root,
+READERS = {"HERALD:herald_source": reads_document, "TIE:tie_intake": reads_intake, "Conservation_Kernel:root_admission": reads_root,
            "Governance_Gateway:governance_gateway": reads_door, "HERALD:herald_confidence": reads_claim,
            "CCC:ccc.transition": reads_attempt}
 
@@ -508,13 +520,20 @@ def binds_attempt(att: Attempt) -> Tuple[str, str]:
     return att.subject, attempt_digest(att)
 
 
+def binds_intake(intake: HeraldIntake) -> Tuple[str, str]:
+    """What TIE's verdict on an intake is bound to: the source and the evidence ids TIE produces from this export. Reading
+    it takes the intake in again, so an export TIE refuses cannot be read and a PASS for it would be unproven."""
+    records = evidence_from_herald_export(intake.source, intake.export, trusted_keys=TRUSTED_KEYS)
+    return INTAKE_SUBJECT, intake_digest(intake.source, records)
+
+
 def binds_claim(claim) -> Tuple[str, str]:
     return DEFAULT_SUBJECT, claim_digest(claim)
 
 
 #: What each seat's verdict must be bound to, read with the digest function that seat's own repository exports. With
 #: `strict_binding` a verdict bound to anything else is a breach. Policy, like READERS: reviewed with it.
-BINDINGS = {"HERALD:herald_source": binds_document, "Conservation_Kernel:root_admission": binds_root,
+BINDINGS = {"HERALD:herald_source": binds_document, "TIE:tie_intake": binds_intake, "Conservation_Kernel:root_admission": binds_root,
             "Governance_Gateway:governance_gateway": binds_door, "HERALD:herald_confidence": binds_claim,
             "CCC:ccc.transition": binds_attempt}
 
@@ -531,6 +550,7 @@ def binds_write(request: WriteRequest) -> Tuple[str, str]:
 #: What kind of gate belongs in each seat: the class its own repository ships. A seat's name says which gate is meant;
 #: this says the object there is one. Policy, like READERS: reviewed with it.
 GATE_TYPES = {"HERALD:herald_source": lambda gate: isinstance(gate, HeraldSourceGate),
+              "TIE:tie_intake": lambda gate: isinstance(gate, TieIntakeGate),
               "Conservation_Kernel:root_admission": lambda gate: isinstance(gate, CnsRootAdmissionGate),
               "Governance_Gateway:governance_gateway": lambda gate: isinstance(gate, GatewayGate),
               "HERALD:herald_confidence": lambda gate: isinstance(gate, HeraldConfidenceGate),
@@ -663,7 +683,7 @@ def is_write_permission(permission: object) -> bool:
 
 def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: DoorArtifact, drop: str = "",
            ccc: Optional[Attempt] = None, system: Optional[CCCSystem] = None, ttl: Optional[float] = SPINE_TTL,
-           lookalike: str = "", type_checked: bool = True):
+           lookalike: str = "", type_checked: bool = True, intake: Optional[HeraldIntake] = None):
     """The whole roster, decided once. Returns the decision and how many claims HERALD judged without their document.
 
     CCC judges `ccc` (by default, the document HERALD read) against `system` (by default, an empty store that carries
@@ -671,8 +691,11 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
     The decision stops counting `ttl` seconds after it is issued (`SPINE_TTL`). `lookalike` names a seat whose gate is
     replaced by one that has the same name and position and passes whatever it is handed, bound correctly;
     `type_checked=False` builds the roster without the check of what kind of gate stands in each seat. Both exist so a
-    scenario can show what the check is for."""
+    scenario can show what the check is for. TIE's seat judges `intake` (by default the read's own export and document,
+    which is what almost every scenario gives TIE); a scenario that hands TIE something else passes it."""
     steps = [("HERALD", HeraldSourceGate(), read.document),
+             ("TIE", TieIntakeGate(TRUSTED_KEYS),
+              intake or tie_intake(read.export, read.document.source_id, read.document.text)),
              ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True,
                                                           accept_guard=is_root_guard,
                                                           accept_evidence_guard=is_evidence_guard,
@@ -773,7 +796,8 @@ def export_relabelled() -> Dict[str, object]:
     evidence, refusal = tie(read.export, "doc-7", INVOICE)
     kernel, root = kernel_root(evidence, "doc-7", INVOICE)
     entry = door(root, "doc-7")
-    return facts(decide(read, kernel, root, entry), evidence, refusal, trace(read, "doc-7", INVOICE, evidence, root, entry))
+    return facts(decide(read, kernel, root, entry, intake=tie_intake(read.export, "doc-7", INVOICE)), evidence, refusal,
+                 trace(read, "doc-7", INVOICE, evidence, root, entry))
 
 
 def mixed_run() -> Dict[str, object]:
@@ -783,8 +807,8 @@ def mixed_run() -> Dict[str, object]:
     evidence, refusal = tie(inflated_read.export, "doc-1", INFLATED)
     kernel, root = kernel_root(evidence, "doc-1", INFLATED)
     entry = door(root, "doc-1")
-    return facts(decide(true_read, kernel, root, entry), evidence, refusal,
-                 trace(true_read, "doc-1", INFLATED, evidence, root, entry),
+    return facts(decide(true_read, kernel, root, entry, intake=tie_intake(inflated_read.export, "doc-1", INFLATED)),
+                 evidence, refusal, trace(true_read, "doc-1", INFLATED, evidence, root, entry),
                  root_text_is_what_herald_read=root.content == true_read.document.text)
 
 
@@ -1411,6 +1435,19 @@ def roster_without_gate_types_cannot_open_the_guard() -> Dict[str, object]:
                  registered_on_unchecked=registered, refused_by_guard=by_guard, guard_opened=opened)
 
 
+def tie_refusal_blocks_the_decision() -> Dict[str, object]:
+    """TIE's seat is handed an export edited after it was signed, and every other seat is handed the honest document.
+    The roster does not allow, and the seat that says no is TIE's: a decision can now say that TIE's intake ran, and what
+    it found."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    edited = {**read.export, "admitted": [{**read.export["admitted"][0], "raw": "INV-9999"}, *read.export["admitted"][1:]]}
+    decided = decide(read, kernel, root, door(root, "doc-1"), intake=tie_intake(edited, "doc-1", INVOICE))
+    why = next((r.reason for r in decided[0].run.blocking() if r.gate == "tie_intake"), "")
+    return facts(decided, evidence, refusal, tie_reason=why.split(":", 1)[0])
+
+
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
     """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
@@ -1428,7 +1465,7 @@ def dropped_agreement_is_refused() -> str:
     read = herald(INVOICE, "doc-1")
     evidence, _ = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
-    seats = [("HERALD", HeraldSourceGate()),
+    seats = [("HERALD", HeraldSourceGate()), ("TIE", TieIntakeGate(TRUSTED_KEYS)),
              ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True,
                                                           require_statement_binding=True)),
              ("Governance_Gateway", spine_gateway_gate()), ("CCC", CccGate(CCCSystem())),
@@ -1787,6 +1824,9 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      roster_without_gate_types_cannot_open_the_guard,
      {**HELD, "unchecked_allowed": True, "unchecked_checked": False, "unchecked_guard_opened": False,
       "registered_on_unchecked": False, "refused_by_guard": True, "guard_opened": True}),
+    ("SEAM HOLDS: TIE's intake is handed an export edited after it was signed while every other seat is handed the honest document; TIE's own seat refuses the decision",
+     tie_refusal_blocks_the_decision,
+     {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["tie_intake"], "tie_reason": "HeraldIntakeRefused"}),
     ("GAP: the roster says no, yet a kernel built with the explicit allow_unguarded_roots opt-out and called directly registers the root (not passing the flag is the deployment's)",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,
@@ -1930,6 +1970,7 @@ def main() -> int:
             wrong.append(f"{name}: {key} was {seen.get(key)!r}, wanted {wanted[key]!r}")
     for what, check in (("a gate is dropped from the roster", dropped_gate_is_refused),
                         ("CCC's gate is dropped from the roster", lambda: dropped_gate_is_refused("CCC:ccc.transition")),
+                        ("TIE's intake gate is dropped from the roster", lambda: dropped_gate_is_refused("TIE:tie_intake")),
                         ("the same_subject check is dropped from the roster", dropped_agreement_is_refused)):
         refused = check()
         print(f"{'ok  ' if not refused else 'FAIL'} {what}: refused at construction")
