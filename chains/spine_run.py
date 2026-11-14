@@ -60,6 +60,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unicodedata
 import threading
 import warnings
@@ -78,7 +79,7 @@ import delta as delta_pkg
 import delta.signing as delta_signing
 import delta.context as delta_context
 import zeta.cns_connector as zeta_cns
-from alpha import PackError, PackRegistry, PackValidationError, pack_identity
+from alpha import PackError, PackRegistry, PackValidationError
 from alpha.packs.pediatric_vitals import VitalsObservation, observe
 from alpha.packs.pediatric_vitals import PediatricVitalsPack
 from alpha.packs.service_health import ServiceHealthPack, ServiceObservation
@@ -2848,7 +2849,7 @@ def domain_stages(raw=SERVICE_BAD, pack: str = "service_health", registry: Optio
     ledger = DecisionLedger(require_context=True)
     entity = ctx["entity_id"]
     keys = registry.observe(pack, raw)
-    claimed = pack_identity(registry.get(pack)) if identity is None else identity
+    claimed = registry.identity(pack) if identity is None else identity  # the identity read and validated at registration
     alpha = alpha_cns.keyset_content(keys, context=ctx, origin=domain_origin(claimed))
     da = subject_digest(alpha)
     results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
@@ -2891,7 +2892,7 @@ def the_pediatric_pack_runs_through_the_registry_with_its_identity() -> List[str
     """The reference pack, reached through the registry and recorded the same way: the second pack changed nothing for the first."""
     registry = domain_registry()
     keys = registry.observe("pediatric_vitals", SICK)
-    identity = pack_identity(registry.get("pediatric_vitals"))
+    identity = registry.identity("pediatric_vitals")
     alpha = alpha_cns.keyset_content(keys, context=CTX, origin={**origin_observed(T0 - timedelta(seconds=30)), "transformation": identity})
     direct = alpha_cns.keyset_content(observe(SICK), context=CTX)
     out = []
@@ -2939,6 +2940,78 @@ def a_pack_that_emits_an_undeclared_key_is_refused() -> List[str]:
 def a_pack_name_cannot_be_registered_twice() -> List[str]:
     registry = domain_registry()
     return refused(lambda: registry.register(ServiceHealthPack()), catch=(PackError,))
+
+
+def a_pack_that_changes_its_name_after_the_check_cannot_replace_a_registered_pack() -> List[str]:
+    """Alpha's registry reads a pack's NAME once. A pack whose NAME answers differently on each read is admitted under the name it
+    gave when validated, and the honest pack registered under the other name stays what it was."""
+    registry = PackRegistry()
+    honest = ServiceHealthPack()
+    registry.register(honest)
+    reads: List[int] = []
+
+    class Shifty(ServiceHealthPack):
+        @property
+        def NAME(self):  # noqa: N802
+            reads.append(1)
+            return "shifty_service" if len(reads) == 1 else "service_health"
+
+    registry.register(Shifty())
+    out = []
+    if registry.get("service_health") is not honest:
+        out.append("a pack whose name changed after the check replaced the registered service_health pack")
+    if registry.names() != ["service_health", "shifty_service"]:
+        out.append(f"unexpected registered names {registry.names()}")
+    return out
+
+
+def a_version_edited_after_registration_does_not_change_the_recorded_identity() -> List[str]:
+    registry = PackRegistry()
+    pack = ServiceHealthPack()
+    registry.register(pack)
+    pack.VERSION = "0.1.0 (approved by someone)\n"
+    recorded = domain_stages(SERVICE_BAD, registry=registry)["alpha"]["origin"]["transformation"]
+    return [] if recorded == "pack:service_health/0.1.0" else [f"the recorded identity followed the edit: {recorded!r}"]
+
+
+def a_keyset_that_hides_an_undeclared_key_from_all_keys_is_refused() -> List[str]:
+    class Hider(ServiceHealthPack):
+        NAME = "hider_service"
+
+        def observe(self, raw):
+            ks = KeySet([Key("latency_high", present=False, reason="x"), Key("surprise", present=True, reason="hidden")])
+            ks.all_keys = lambda: (Key("latency_high", present=False, reason="x"),)  # shadow the method on the instance
+            return ks
+
+    registry = PackRegistry()
+    registry.register(Hider())
+    return refused(lambda: registry.observe("hider_service", SERVICE_BAD), catch=(PackError,))
+
+
+def a_declared_threshold_is_the_one_the_pack_uses() -> List[str]:
+    """A pack that declares another in-bounds threshold gets that threshold applied: the validated value is the used value."""
+    class Looser(ServiceHealthPack):
+        NAME = "looser_service"
+
+        def parameters(self):
+            return tuple(dataclasses.replace(p, value=2000.0) if p.name == "interactive_latency_high" else p
+                         for p in super().parameters())
+
+    registry = PackRegistry()
+    registry.register(Looser())
+    keys = registry.observe("looser_service", SERVICE_BAD)  # 1500 ms is under the declared 2000
+    out = []
+    if "latency_high" in keys.names_present():
+        out.append("latency_high fired at 1500 ms although the declared threshold is 2000: the detector used another value")
+    if "latency_critical" not in keys.names_present():
+        out.append("latency_critical (declared 1000) did not fire at 1500 ms")
+    return out
+
+
+def a_look_alike_observation_is_refused_at_the_pack() -> List[str]:
+    registry = domain_registry()
+    return refused(lambda: registry.observe("service_health", types.SimpleNamespace(
+        latency_p95_ms=float("nan"), error_rate=0.0, queue_depth=0, tier="interactive")), catch=(TypeError,))
 
 
 def keys_of_one_pack_under_the_digest_of_another_are_refused() -> List[str]:
@@ -3373,12 +3446,21 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("surprise",), raises=("PackError",))),
     ("domain: a pack name cannot be registered twice", a_pack_name_cannot_be_registered_twice,
      Expect("refused", required=("already registered",), raises=("PackError",))),
-    ("domain: keys of one pack presented with another run's stages are refused", keys_of_one_pack_under_the_digest_of_another_are_refused,
+    ("domain: keys of one pack presented with another run's stages are refused (a strict-check row, not a pack-contract row)", keys_of_one_pack_under_the_digest_of_another_are_refused,
      Expect("problems", required=("zeta lock outage_lock was evaluated from a different KeySet than alpha produced",
                                   "beta's Decision was made from a different KeySet than alpha produced",
                                   "the Decision cites key(s) alpha did not list as present: latency_critical"),
             allowed_extra=("zeta lock slow_lock was evaluated from a different KeySet than alpha produced",
                            "its recorded KeySet fingerprint differs from alpha's"))),
+    ("domain: a pack whose name changes after the check cannot replace a registered pack",
+     a_pack_that_changes_its_name_after_the_check_cannot_replace_a_registered_pack, CLEAN),
+    ("domain: a version edited after registration does not change the recorded identity",
+     a_version_edited_after_registration_does_not_change_the_recorded_identity, CLEAN),
+    ("domain: a KeySet that hides an undeclared key from all_keys is refused", a_keyset_that_hides_an_undeclared_key_from_all_keys_is_refused,
+     Expect("refused", required=("surprise",), raises=("PackError",))),
+    ("domain: a declared threshold is the one the pack uses", a_declared_threshold_is_the_one_the_pack_uses, CLEAN),
+    ("domain: a look-alike observation is refused at the pack", a_look_alike_observation_is_refused_at_the_pack,
+     Expect("refused", required=("needs exactly a ServiceObservation",), raises=("TypeError",))),
     ("domain: GAP, a pack identity is the producer's claim and nothing authenticates it",
      GAP_a_pack_identity_is_the_producers_claim, GAP),
     # --- the oracle held to account with real objects ---

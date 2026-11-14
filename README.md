@@ -302,10 +302,10 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
    storage the checkpoint came from, and the trust list the keys came from. A checkpoint beside the ledger file it protects,
    or a trust list from the producer, agrees with whatever the producer wrote.
 
-The `chains` workflow runs 183 scenarios (counted from the runner): seven lenient, and 176 more (the strict ones, the oracle and
+The `chains` workflow runs 188 scenarios (counted from the runner): seven lenient, and 181 more (the strict ones, the oracle and
 the manifest checks held to account with real objects, the signed receipts, the durable store, the verify command and the
 domain packs). Of the
-183 in all, 40 are checks that hold, 129 are attacks (58 problems, 71 refusals)
+188 in all, 43 are checks that hold, 131 are attacks (58 problems, 73 refusals)
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
 only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
 that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
