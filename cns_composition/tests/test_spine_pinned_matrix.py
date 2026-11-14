@@ -8,7 +8,7 @@ from pathlib import Path
 
 WORKFLOW = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "chains.yml").read_text(encoding="utf-8")
 JOB = WORKFLOW.split("\n  spine-pinned:\n", 1)[1]
-SETUP_PYTHON = "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0"
+SETUP_PYTHON = "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0"
 
 
 def test_the_pinned_job_is_a_matrix_over_python_3_10_and_3_12():
