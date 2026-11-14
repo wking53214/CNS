@@ -7,9 +7,7 @@ at an older commit than ghost_tools' head. Moving WARDEN alone is not enough; th
 
 import json
 import subprocess
-from pathlib import Path
 
-import pytest
 
 from cns_composition import cns_versions, repin, seat_pins
 
