@@ -35,6 +35,7 @@ import argparse
 import atexit
 import json
 import os
+import re
 import shutil
 import subprocess  # nosec B404 - git is run with a fixed argument list, never through a shell
 import sys
@@ -45,7 +46,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from cns.stack import StackManifest, StackPin
 from cns_composition import delivery
 
-__all__ = ["RepinError", "DEFAULT_MANIFEST", "DEFAULT_RELEASED", "stack_folders", "load_manifest", "manifest_names",
+__all__ = ["RepinError", "ConvergeError", "CONVERGE_ROUNDS", "converge", "DEFAULT_MANIFEST", "DEFAULT_RELEASED", "stack_folders", "load_manifest", "manifest_names",
            "load_released", "released_beside", "released_text", "released_drift", "unread", "uncovered_notes",
            "read_heads", "uncommitted", "repin_text", "changes", "render_install", "main"]
 
@@ -94,6 +95,14 @@ def _git_env() -> Dict[str, str]:
 
 class RepinError(Exception):
     """A pin could not be updated, and why. Never raised for a manifest that is simply up to date."""
+
+
+class ConvergeError(RepinError):
+    """`--converge` cannot reach a set of checkouts the repositories agree on. The command exits 1 and writes nothing."""
+
+
+#: How many times `--converge` moves checkouts and looks again before it gives up.
+CONVERGE_ROUNDS = 12
 
 
 def _git(folder: Path, *args: str) -> str:
@@ -314,6 +323,88 @@ def released_drift(consumers: Path, released: Mapping[str, str]) -> List[str]:
     return problems
 
 
+def _has_commit(folder: Path, sha: str) -> bool:
+    try:
+        _git(folder, "cat-file", "-e", f"{sha}^{{commit}}")
+    except RepinError:
+        return False
+    return True
+
+
+def _move_checkout(folder: Path, sha: str) -> None:
+    """Detach a checkout at `sha`, fetching it first when the checkout does not hold it."""
+    if not _has_commit(folder, sha):
+        try:
+            _git(folder, "fetch", "--quiet", "origin", sha)
+        except RepinError:
+            pass
+        if not _has_commit(folder, sha):
+            raise ConvergeError(f"{folder.name} has no commit {sha[:12]} and it could not be fetched")
+    try:
+        _git(folder, "checkout", "--quiet", "--detach", sha)
+    except RepinError as err:
+        raise ConvergeError(f"{folder.name} could not be moved to {sha[:12]}") from err
+
+
+def converge(stack: Path, manifest_path: Path, *, allow_dirty: bool = False) -> List[str]:
+    """Move the checkouts in `stack` until the pins a re-pin would propose agree with the pins the repositories hold.
+
+    Each round reads the heads, renders the install file the re-pin would write (into a scratch folder: nothing
+    is written beside the manifest) and runs `seat_pins.agreement_problems` over the repositories' pins plus that
+    install file. For a package that the repositories (not the install file) all pin at one different full commit,
+    the checkout of the repository that package comes from is moved to that commit and the heads are read again.
+    Raises ConvergeError when the repositories disagree among themselves, a pin cannot be walked to (a tag, such
+    as the cns pin, or a repository outside the manifest), or there is no fixpoint after CONVERGE_ROUNDS moves.
+    Returns one line per move, printed as it was made."""
+    from cns_composition import cns_versions, install_stack, seat_pins  # here, not at the top: they import repin
+    stack = Path(stack)
+    text = delivery.read_text(manifest_path)
+    _, manifest = _load(text)
+    names = [p.name for p in manifest.repos]
+    install = manifest_path.with_name("install-stack.txt")
+    install_text = delivery.read_text(install) if install.exists() else None
+    table = cns_versions.load_table() if install_text is not None else None
+    lines: List[str] = []
+    with tempfile.TemporaryDirectory(prefix="cns-converge-") as scratch:
+        for rounds in range(CONVERGE_ROUNDS + 1):
+            heads = read_heads(stack, names, allow_dirty=allow_dirty)
+            proposed = json.loads(repin_text(text, heads))["repos"]
+            repo_pins = seat_pins.read_pins(stack)
+            pins = list(repo_pins)
+            if install_text is not None and table is not None:
+                try:
+                    rendered = install_stack.render(install_text, proposed, table, install_stack.stack_versions(stack, names))
+                except install_stack.RenderError as err:
+                    raise RepinError(f"{str(install)!r} cannot be rendered from the pins: {err}") from err
+                scratch_install = Path(scratch) / install.name
+                scratch_install.write_text(rendered, encoding="utf-8")
+                pins += seat_pins.read_install(scratch_install)
+            problems = seat_pins.agreement_problems(pins)
+            if not problems:
+                return lines
+            if rounds == CONVERGE_ROUNDS:
+                raise ConvergeError(f"no agreement after {CONVERGE_ROUNDS} rounds of moving checkouts: {problems[0]}")
+            moves: Dict[str, Tuple[str, str]] = {}
+            for package in sorted({p.package for p in pins if len({q.text for q in pins if q.package == p.package}) > 1}):
+                held = [p for p in repo_pins if p.package == package]
+                if len({p.text for p in held}) != 1:
+                    raise ConvergeError(f"the repositories disagree about {package}: "
+                                        + "; ".join(f"{p.repo} pins {p.text}" for p in held))
+                pin = held[0]
+                holders = ", ".join(sorted({p.repo for p in held}))
+                name = pin.url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+                target = next((n for n in names if n.casefold() == name.casefold()), None)
+                if not re.fullmatch(r"[0-9a-f]{40}", pin.ref) or target is None or heads[target] == pin.ref:
+                    raise ConvergeError(f"{package} is pinned by {holders} at {pin.ref}, which the stack cannot be moved "
+                                        "to: it is not a commit of a repository the manifest names, or only its spelling differs")
+                moves[target] = (pin.ref, holders)
+            for name, (sha, holders) in moves.items():
+                _move_checkout(_folder_for(stack, name), sha)
+                lines.append(f"{name} -> {sha[:7]} ({holders} pins it)")
+                print(lines[-1])
+    return lines  # unreachable: the loop returns or raises
+
+
 def _main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m cns_composition.repin",
@@ -324,6 +415,10 @@ def _main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--check", action="store_true",
                         help="write nothing; exit 1 if any pin is stale, 0 if all are current")
     parser.add_argument("--allow-dirty", action="store_true", help="pin a checkout that has uncommitted changes")
+    parser.add_argument("--converge", action="store_true",
+                        help="before reading the heads, move each checkout to the one commit the other repositories "
+                             "pin it at, until seat_pins would agree with the proposed manifest and install file; "
+                             "exit 1 and write nothing if the repositories disagree or there is no fixpoint")
     parser.add_argument("--released", type=Path, default=None, metavar="DIR",
                         help="a folder holding a checkout of each repository released from the circuit: the "
                              "released-seats file beside the manifest is re-pinned to their HEADs the same way (and "
@@ -335,6 +430,12 @@ def _main(argv: Optional[List[str]] = None) -> int:
         text = delivery.read_text(path)
         _, manifest = _load(text)
         _refuse_released(path, [p.name for p in manifest.repos])
+        if args.converge:
+            try:
+                converge(args.stack, path, allow_dirty=args.allow_dirty)
+            except ConvergeError as err:
+                print(f"repin: {err}", file=sys.stderr)
+                return 1
         heads = read_heads(args.stack, [p.name for p in manifest.repos], allow_dirty=args.allow_dirty)
         moved = changes(text, heads)
         new = repin_text(text, heads)

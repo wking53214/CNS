@@ -170,12 +170,21 @@ class UnrecordedTriadOutput(RuntimeError):
 
 
 class CccRecordGate:
-    """ALPHA gate: Triad output is refused unless CCC holds a record of it."""
+    """ALPHA gate: Triad output is refused unless CCC holds a record of it.
+
+    `source` is the machine identity the records are filed under in CCC. It defaults to the Triad's, which is
+    the only behaviour this gate had; another advisory source passes its own name and its items in the same
+    shape (`TriadOutput` carries any source's item; the name is historical). The source is part of what a
+    verdict binds, so a verdict for one source never binds the same item under another.
+    """
 
     name = GATE_NAME
     position = GatePosition.ALPHA
 
-    def __init__(self, lookup: RecordLookup, *, attestation_key: Optional[bytes] = None) -> None:
+    def __init__(self, lookup: RecordLookup, *, attestation_key: Optional[bytes] = None,
+                 source: str = SOURCE) -> None:
+        if not isinstance(source, str) or not source:
+            raise ValueError("source must be a non-empty string")
         if not isinstance(lookup, RecordLookup):
             raise TypeError(
                 "CccRecordGate needs CCC's record lookup "
@@ -190,13 +199,14 @@ class CccRecordGate:
                     f"(ccc.record_status.MachineRecords.stamps); {type(lookup).__name__} does not")
         self._lookup = lookup
         self._key = attestation_key
+        self._source = source
 
     def check(self, candidate: object) -> GateResult:
         if not isinstance(candidate, TriadOutput):
             raise TypeError(
                 f"CccRecordGate judges a TriadOutput; got {type(candidate).__name__}")
         digest = text_digest(candidate.text)
-        answer = self._lookup.status(SOURCE, candidate.candidate_id, digest)
+        answer = self._lookup.status(self._source, candidate.candidate_id, digest)
         outcome, reason = _VERDICTS.get(
             answer if isinstance(answer, str) else "",
             (GateOutcome.TERMINAL_BREACH,
@@ -211,9 +221,9 @@ class CccRecordGate:
             position=GatePosition.ALPHA,
             outcome=outcome,
             reason=reason,
-            subject=f"{SOURCE}:{candidate.candidate_id}",
+            subject=f"{self._source}:{candidate.candidate_id}",
             subject_digest=subject_digest({
-                "source": SOURCE,
+                "source": self._source,
                 "candidate_id": candidate.candidate_id,
                 "text_digest": digest,
             }),
@@ -223,8 +233,8 @@ class CccRecordGate:
     def _stamp_verifies(self, candidate: TriadOutput, digest: str) -> bool:
         if self._key is None:
             return False
-        expected = handoff_stamp(self._key, source=SOURCE, candidate_id=candidate.candidate_id, text_digest=digest)
-        shown = self._lookup.stamps(SOURCE, candidate.candidate_id, digest)  # type: ignore[attr-defined]
+        expected = handoff_stamp(self._key, source=self._source, candidate_id=candidate.candidate_id, text_digest=digest)
+        shown = self._lookup.stamps(self._source, candidate.candidate_id, digest)  # type: ignore[attr-defined]
         if isinstance(shown, (str, bytes)) or not isinstance(shown, Sequence):
             return False
         return any(isinstance(stamp, str) and hmac.compare_digest(stamp, expected) for stamp in shown)
