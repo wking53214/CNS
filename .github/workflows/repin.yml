@@ -118,7 +118,8 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: |
-          python -m cns_composition.repin --stack ../stack --released ../released --manifest contracts/warden-stack.json | tee ../repin.txt
+          set -o pipefail
+          python -m cns_composition.repin --stack ../stack --released ../released --manifest contracts/warden-stack.json --converge | tee ../repin.txt
           if git diff --quiet -- contracts/warden-stack.json contracts/install-stack.txt contracts/released-seats.json; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else

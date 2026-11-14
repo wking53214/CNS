@@ -243,7 +243,7 @@ def test_the_canary_reads_the_released_repositories_into_their_own_folder_and_re
     block = job("canary")
     assert 'seats = json.load(open("hub/contracts/released-seats.json", encoding="utf-8"))["repos"]' in block
     assert 'f"released/{name}"' in block and "path: stack/" + "DRAFTER" not in block
-    assert "python -m cns_composition.repin --stack ../stack --released ../released --manifest contracts/warden-stack.json" in block
+    assert "python -m cns_composition.repin --stack ../stack --released ../released --manifest contracts/warden-stack.json --converge" in block
     assert block.index("released/{name}") < block.index("cns_composition.repin")
     assert "git diff --quiet -- contracts/warden-stack.json contracts/install-stack.txt contracts/released-seats.json" in block
     assert "cp hub/contracts/released-seats.json proposed/released-seats.json" in block
