@@ -22,7 +22,7 @@ WORKFLOW = (ROOT / ".github" / "workflows" / "stack.yml").read_text(encoding="ut
 MANIFEST = json.loads((ROOT / "contracts" / "warden-stack.json").read_text(encoding="utf-8"))
 INSTALL = (ROOT / "contracts" / "install-stack.txt").read_text(encoding="utf-8")
 
-CHECKOUT = "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0"
+CHECKOUT = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2"
 SETUP_PYTHON = "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0"
 HORSEMEN = "claude/horsemen-production-status-5wsndb"
 
