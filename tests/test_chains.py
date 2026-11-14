@@ -324,3 +324,16 @@ def test_the_uai_to_ccc_script_runs_in_the_workflow_with_the_evidence_spines_rep
     text = (ROOT / "chains" / "uai_to_ccc.py").read_text(encoding="utf-8")
     assert "SCENARIOS" in text and "return 1 if wrong else 0" in text and "raise SystemExit(main())" in text
     assert "grants=table, action=ACTION" in text      # CCC's only write permission is built from the receiver's own grants
+
+
+def test_the_floating_chains_job_writes_the_commits_it_tested_to_the_job_summary():
+    """The job runs each repository's floating default branch, so a red run can only be pinned on a repository if the
+    commits are recorded. The step runs before anything is installed and whatever an earlier checkout did."""
+    import yaml
+    steps = yaml.safe_load(WORKFLOW)["jobs"]["chains"]["steps"]
+    names = [s.get("name") for s in steps]
+    step = steps[names.index("Which commits this run tested")]
+    assert names.index("Which commits this run tested") < names.index("Install CNS")
+    assert step.get("if") == "always()"
+    assert "rev-parse HEAD" in step["run"] and '>> "$GITHUB_STEP_SUMMARY"' in step["run"]
+    assert "${{" not in step["run"], "nothing from the event may be spliced into the script"
