@@ -2994,17 +2994,18 @@ def a_declared_threshold_is_the_one_the_pack_uses() -> List[str]:
         NAME = "looser_service"
 
         def parameters(self):
-            return tuple(dataclasses.replace(p, value=2000.0) if p.name == "interactive_latency_high" else p
+            return tuple(dataclasses.replace(p, value=800.0) if p.name == "interactive_latency_high" else p
                          for p in super().parameters())
 
     registry = PackRegistry()
     registry.register(Looser())
-    keys = registry.observe("looser_service", SERVICE_BAD)  # 1500 ms is under the declared 2000
+    reading = ServiceObservation(latency_p95_ms=500.0, error_rate=0.0, queue_depth=0, tier="interactive")
+    keys = registry.observe("looser_service", reading)  # 500 ms is over the stock 300 but under the declared 800
     out = []
     if "latency_high" in keys.names_present():
-        out.append("latency_high fired at 1500 ms although the declared threshold is 2000: the detector used another value")
-    if "latency_critical" not in keys.names_present():
-        out.append("latency_critical (declared 1000) did not fire at 1500 ms")
+        out.append("latency_high fired at 500 ms although the declared threshold is 800: the detector used another value")
+    if "latency_critical" in keys.names_present():
+        out.append("latency_critical (declared 1000) fired at 500 ms")
     return out
 
 
