@@ -171,14 +171,14 @@ How far this has got is in `docs/STATUS.md` and in "What works" and "What does n
 | hop | what it does with the document |
 |---|---|
 | HERALD | reads it and extracts claims, judging the document first and then each claim |
-| TIE | records HERALD's signed export as evidence, and refuses an export that was changed |
+| TIE | records HERALD's signed export as evidence, and refuses an export that was changed; its intake gate (`TieIntakeGate`) reports which |
 | Conservation_Kernel | judges a root artifact built from that evidence before it becomes ancestry |
 | Governance_Gateway | judges the artifact at its admission door |
 | CCC | judges the attempt to ingest the document into its store |
 
 Each of the five is tested alone and binds its own verdict to what it judged. What no single suite can see is the
 seams: whether the document that reaches the last door is the one HERALD read, and whether a verdict at one hop says
-anything about the next. The spine holds the five gates in one roster (`SuperGate`), refuses a decision unless every
+anything about the next. The spine holds the six gates in one roster (`SuperGate`), TIE's intake among them,, refuses a decision unless every
 seat judged the same document (`same_subject`), and turns an approved decision into a one-use permission
 (`DecisionGuard`) that the kernel needs to register a root and CCC needs to write. A refused decision, or one written
 by hand, opens nothing.
