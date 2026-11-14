@@ -23,7 +23,7 @@ MANIFEST = json.loads((ROOT / "contracts" / "warden-stack.json").read_text(encod
 INSTALL = (ROOT / "contracts" / "install-stack.txt").read_text(encoding="utf-8")
 
 CHECKOUT = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2"
-SETUP_PYTHON = "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0"
+SETUP_PYTHON = "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0"
 HORSEMEN = "claude/horsemen-production-status-5wsndb"
 
 
