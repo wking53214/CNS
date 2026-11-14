@@ -34,7 +34,7 @@ KW, POS = "KEYWORD_ONLY", "POSITIONAL_OR_KEYWORD"
 def test_super_gate_construction_keeps_its_original_parameters_and_only_adds_keywords():
     assert shape(SuperGate.__init__) == [
         ("self", POS, False), ("seats", POS, False), ("required", KW, False), ("require_complete", KW, True),
-        ("same_subject", KW, True), ("binding_of", KW, True), ("strict_binding", KW, True), ("clock", KW, True)]
+        ("same_subject", KW, True), ("binding_of", KW, True), ("strict_binding", KW, True), ("gate_types", KW, True), ("clock", KW, True)]
 
 
 def test_decide_keeps_candidates_and_ttl_and_adds_context_as_an_optional_keyword():
@@ -45,7 +45,7 @@ def test_decide_keeps_candidates_and_ttl_and_adds_context_as_an_optional_keyword
 def test_the_guard_keeps_its_reader_and_clock_and_adds_optional_keywords_for_the_checks():
     assert shape(DecisionGuard.__init__) == [
         ("self", POS, False), ("subject_of", POS, False), ("clock", KW, True), ("expected_seats", KW, True),
-        ("expected_context", KW, True), ("require_strict_binding", KW, True), ("seat", KW, True),
+        ("expected_context", KW, True), ("require_strict_binding", KW, True), ("require_gate_types", KW, True), ("seat", KW, True),
         ("binding_of", KW, True)]
     assert shape(DecisionGuard.authorize) == [("self", POS, False), ("decision", POS, False)]
 
@@ -56,7 +56,7 @@ def test_a_decision_keeps_its_original_fields_in_order_and_new_ones_trail_with_d
     assert [n for n, _ in got][:len(original)] == original
     assert got[:3] == [("run", False), ("seats", False), ("root", False)]
     assert all(has_default for _, has_default in got[3:])
-    assert [n for n, _ in got][len(original):] == ["context_digest", "strict_binding"]
+    assert [n for n, _ in got][len(original):] == ["context_digest", "strict_binding", "gate_types_checked"]
 
 
 def test_the_rows_the_chains_and_guards_exchange_keep_their_fields():

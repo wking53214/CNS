@@ -205,6 +205,10 @@ class Decision:
     #: seat was handed. False means some seat's verdict was taken as the gate bound it. The proof covers it, the root
     #: does not (no root changes), so it is an in-process fact a guard can ask for, not part of a portable decision.
     strict_binding: bool = False
+    #: Whether the roster was built with `gate_types` covering every seat, so each seated gate passed the builder's own
+    #: check of what kind of gate it is. False means a seat's name was taken on trust. Carried like `strict_binding`: the
+    #: proof covers it, the root does not, and it is an in-process fact a guard can ask for.
+    gate_types_checked: bool = False
 
     @property
     def issued(self) -> bool:
@@ -214,7 +218,7 @@ class Decision:
         return (bool(self.proof) and self.binds(self.root)
                 and hmac.compare_digest(self.proof, _proof(self.run, self.root, self.subject, self.nonce,
                                                            self.issued_at, self.expires_at, self.context_digest,
-                                                           self.strict_binding)))
+                                                           self.strict_binding, self.gate_types_checked)))
 
     @property
     def outcome(self) -> GateOutcome:
@@ -264,7 +268,8 @@ class Decision:
 
 
 def _proof(run: ChainRun, root: str, subject: Optional[Judged], nonce: str = "", issued_at: float = 0.0,
-           expires_at: Optional[float] = None, context_digest: str = "", strict_binding: bool = False) -> str:
+           expires_at: Optional[float] = None, context_digest: str = "", strict_binding: bool = False,
+           gate_types_checked: bool = False) -> str:
     """HMAC over what a decision's `allowed` turns on: the root (roster and every verdict), the run's own
     outcome and flags, the agreed subject, the context it was decided for, and the nonce and times that make it one
     decision for one moment."""
@@ -273,7 +278,8 @@ def _proof(run: ChainRun, root: str, subject: Optional[Judged], nonce: str = "",
                            "subject": [subject.identity, subject.digest] if subject is not None else None,
                            "nonce": nonce, "issued_at": repr(issued_at),
                            "expires_at": repr(expires_at) if expires_at is not None else None,
-                           "context": context_digest, "strict_binding": strict_binding})
+                           "context": context_digest, "strict_binding": strict_binding,
+                           "gate_types_checked": gate_types_checked})
     return hmac.new(_ISSUER_KEY, body.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
@@ -327,6 +333,13 @@ class SuperGate:
     as (subject, digest). A PASS bound to anything else is a breach, so a gate that ignores its input cannot pass it
     with an unrelated fingerprint. With `strict_binding=True` every seat must have a reader.
 
+    `gate_types` maps seats to a predicate the builder supplies for what kind of gate belongs there (an isinstance check
+    on the real class, for example). A seated gate that does not pass its predicate, a predicate that raises and an
+    answer other than exactly `True` each refuse the roster at construction. The decision records whether every seat was
+    covered (`gate_types_checked`) and a guard can require it. A name on the roster is then backed by a check that the
+    object behind it is the kind the name says, which stops substitution by name and not code in the same process that
+    makes an object pass an isinstance check.
+
     Raises ValueError for invalid or incomplete rosters and KeyError for a
     repository with no row in repo_gates.
     """
@@ -334,6 +347,7 @@ class SuperGate:
     def __init__(self, seats: Iterable[Seat], *, required: Iterable[str],
                  require_complete: bool = True, same_subject: Optional[Mapping[str, SubjectOf]] = None,
                  binding_of: Optional[Mapping[str, BindingOf]] = None, strict_binding: bool = False,
+                 gate_types: Optional[Mapping[str, Callable[[object], bool]]] = None,
                  clock: Callable[[], float] = time.time) -> None:
         if not callable(clock):
             raise ValueError("clock must be a function that returns the time in seconds")
@@ -391,6 +405,23 @@ class SuperGate:
             if unread:
                 raise ValueError("strict_binding needs a binding reader for every seat; none for: "
                                  + ", ".join(unread))
+        self._gate_types_checked = False
+        if gate_types is not None:
+            types = dict(gate_types)
+            if any(not callable(kind) for kind in types.values()):
+                raise ValueError("gate_types must map each seat to a function that says whether its gate is the right kind")
+            stray = sorted((set(types) - set(keys)) | (set(types) & {SUBJECT_SEAT}))
+            if stray:
+                raise ValueError("gate_types names seat(s) not on the roster or added by the super gate: " + ", ".join(stray))
+            seated = dict(zip(keys, (gate for _, gate in self._seats)))
+            for key, kind in sorted(types.items()):
+                try:
+                    right = kind(seated[key]) is True
+                except Exception:  # a predicate that cannot answer never accepts
+                    right = False
+                if not right:
+                    raise ValueError(f"{key}: the gate seated there is not one the roster accepts for that seat")
+            self._gate_types_checked = set(types) >= set(keys) - {SUBJECT_SEAT}
         missing = sorted(set(required_keys) - set(keys))
         if missing:
             raise ValueError("the roster lacks required seat(s), refusing to decide without them: "
@@ -477,6 +508,7 @@ class SuperGate:
         issued_at = float(self._clock())
         expires_at = issued_at + ttl if ttl is not None else None
         return Decision(run=run, seats=self._keys, root=root, subject=subject,
-                        proof=_proof(run, root, subject, nonce, issued_at, expires_at, context_digest, self._strict_binding),
+                        proof=_proof(run, root, subject, nonce, issued_at, expires_at, context_digest, self._strict_binding,
+                                     self._gate_types_checked),
                         nonce=nonce, issued_at=issued_at, expires_at=expires_at, context_digest=context_digest,
-                        strict_binding=self._strict_binding)
+                        strict_binding=self._strict_binding, gate_types_checked=self._gate_types_checked)

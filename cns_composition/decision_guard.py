@@ -44,9 +44,13 @@ Left out, either check is simply not made: a guard with no `expected_seats` acce
 and `expected_seats` is None so a test can assert it was set.
   `require_strict_binding`  the decision came from a roster built with `strict_binding=True`, so each PASS was checked
                      against the candidate its own seat was handed and not taken on the gate's word.
+  `require_gate_types`  the decision came from a roster built with `gate_types` covering every seat, so each seat's
+                     name was backed by a check that the gate behind it is the kind the name says.
 
-A name is still not the code behind it: nothing here
-can tell that a seat's gate is the one the repository ships.
+A name is not the code behind it unless the roster says so: without `gate_types` (and `require_gate_types` here)
+nothing can tell that a seat's gate is the one the repository ships. With them, the roster's builder has checked what
+kind of gate stands in each seat; that is still a check on the object's type, and code in the same process that makes an
+object pass an isinstance check gets past it.
 
 BOUND TO A SEAT'S VERDICT, NOT ONLY TO A DOCUMENT
 
@@ -90,7 +94,7 @@ class DecisionGuard:
     def __init__(self, subject_of: Callable[[object], Judged], *, clock: Callable[[], float] = time.time,
                  expected_seats: Optional[Iterable[str]] = None,
                  expected_context: Optional[Mapping[str, str]] = None, require_strict_binding: bool = False,
-                 seat: Optional[str] = None,
+                 require_gate_types: bool = False, seat: Optional[str] = None,
                  binding_of: Optional[Callable[[object], Tuple[str, str]]] = None) -> None:
         if not callable(subject_of):
             raise ValueError("subject_of must be a function that reads which document an artifact is")
@@ -125,6 +129,7 @@ class DecisionGuard:
                 raise ValueError("expected_seats names a seat twice")
             self._expected_seats = seats
         self._require_strict_binding = bool(require_strict_binding)
+        self._require_gate_types = bool(require_gate_types)
         self._expected_context = digest_context(expected_context) if expected_context is not None else ""
         if expected_context is not None and not self._expected_context:
             raise ValueError("expected_context binds nothing")
@@ -199,6 +204,9 @@ class DecisionGuard:
         if self._require_strict_binding and not decision.strict_binding:
             raise ValueError("this guard requires strict binding, and the roster that decided did not check each "
                              "seat's verdict against its own candidate")
+        if self._require_gate_types and not decision.gate_types_checked:
+            raise ValueError("this guard requires gate types, and the roster that decided did not check that each seat "
+                             "holds the kind of gate its name says")
         if self._expected_context and decision.context_digest != self._expected_context:
             raise ValueError("the decision was made for a different context than this action, or for none")
         bound_to = self._seat_binding(decision)
