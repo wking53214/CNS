@@ -126,3 +126,9 @@ def test_the_module_imports_no_repository():
              for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom)) for a in getattr(n, "names", [None])
              if not (isinstance(n, ast.ImportFrom) and n.level)}
     assert roots <= {"__future__", "typing", "cns"}
+
+
+def test_tie_has_a_gate_end_at_alpha_only_so_its_intake_can_be_seated_and_no_omega_gate_can():
+    from cns.gate import GatePosition
+    assert ENDS["TIE"] == {GatePosition.ALPHA}
+    assert ends_of("TIE") == {GatePosition.ALPHA}

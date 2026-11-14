@@ -51,6 +51,7 @@ ENDS: Mapping[str, FrozenSet[GatePosition]] = {
     "URE": frozenset({_A, _O}),                   # omega by default (the state the work left), alpha on request
     "CNS": frozenset({_A}),                       # the composition layer's own checks (super_gate's same_subject), run first
     "CCC": frozenset({_A}),                       # ccc.transition judges an attempted store change before it commits
+    "TIE": frozenset({_A}),                       # tie_intake judges whether a HERALD export was taken in, before anything uses it
 }
 
 #: A step: the repository the gate came from, the gate, and the candidate it judges.
