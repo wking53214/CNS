@@ -146,7 +146,7 @@ from ccc.models import EpistemicStatus as CccStatus
 from ccc.models import ProvenanceStatus, RoadSignCategory
 from ccc.permission import WriteRequest
 from ccc.system import CCCSystem
-from cns.gate import GateOutcome
+from cns.gate import GateOutcome, GateResult
 from cns_composition.evidence_trace import EvidenceTrace, problems
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cns_composition.decision_guard import DecisionGuard
@@ -528,17 +528,40 @@ def binds_write(request: WriteRequest) -> Tuple[str, str]:
     return request.operation, write_request_digest(request)
 
 
+#: What kind of gate belongs in each seat: the class its own repository ships. A seat's name says which gate is meant;
+#: this says the object there is one. Policy, like READERS: reviewed with it.
+GATE_TYPES = {"HERALD:herald_source": lambda gate: isinstance(gate, HeraldSourceGate),
+              "Conservation_Kernel:root_admission": lambda gate: isinstance(gate, CnsRootAdmissionGate),
+              "Governance_Gateway:governance_gateway": lambda gate: isinstance(gate, GatewayGate),
+              "HERALD:herald_confidence": lambda gate: isinstance(gate, HeraldConfidenceGate),
+              "CCC:ccc.transition": lambda gate: isinstance(gate, CccGate)}
+
+
+class _Lookalike:
+    """A gate with the real one's name and position that checks nothing: it passes whatever it is handed and binds its
+    verdict to exactly what the spine expects for that seat, so only a check of what it IS can tell it apart."""
+
+    def __init__(self, seat: str, real: object) -> None:
+        self.name, self.position, self._seat = real.name, real.position, seat  # type: ignore[attr-defined]
+
+    def check(self, candidate: object) -> GateResult:
+        subject, digest = BINDINGS[self._seat](candidate)
+        return GateResult(gate=self.name, position=self.position, outcome=GateOutcome.PASS, reason="passes anything",
+                          subject=subject, subject_digest=digest)
+
+
 def fresh_guard(clock: Callable[[], float] = time.time) -> DecisionGuard:
     """A closed guard that will open, once, for the exact root the kernel's seat judged, and only for a decision from
     a roster that seats every required seat. Policy, like READERS."""
     return DecisionGuard(reads_root, seat="Conservation_Kernel:root_admission", binding_of=binds_root,
-                         expected_seats=REQUIRED_SEATS, clock=clock)
+                         expected_seats=REQUIRED_SEATS, require_gate_types=True, clock=clock)
 
 
 def fresh_ccc_guard() -> DecisionGuard:
     """A closed guard to give CCC as its `write_permission`: it opens, once, for the exact call CCC's seat judged, and
     only for a decision from a roster that seats every required seat. Policy, like READERS."""
-    return DecisionGuard(reads_write, seat="CCC:ccc.transition", binding_of=binds_write, expected_seats=REQUIRED_SEATS)
+    return DecisionGuard(reads_write, seat="CCC:ccc.transition", binding_of=binds_write, expected_seats=REQUIRED_SEATS,
+                         require_gate_types=True)
 
 
 def refused_by_permission(call: Callable[[], object]) -> bool:
@@ -639,12 +662,16 @@ def is_write_permission(permission: object) -> bool:
 
 
 def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: DoorArtifact, drop: str = "",
-           ccc: Optional[Attempt] = None, system: Optional[CCCSystem] = None, ttl: Optional[float] = SPINE_TTL):
+           ccc: Optional[Attempt] = None, system: Optional[CCCSystem] = None, ttl: Optional[float] = SPINE_TTL,
+           lookalike: str = "", type_checked: bool = True):
     """The whole roster, decided once. Returns the decision and how many claims HERALD judged without their document.
 
     CCC judges `ccc` (by default, the document HERALD read) against `system` (by default, an empty store that carries
     this script's write permission). The kernel's guards and CCC's permission must be the kinds this script builds.
-    The decision stops counting `ttl` seconds after it is issued (`SPINE_TTL`)."""
+    The decision stops counting `ttl` seconds after it is issued (`SPINE_TTL`). `lookalike` names a seat whose gate is
+    replaced by one that has the same name and position and passes whatever it is handed, bound correctly;
+    `type_checked=False` builds the roster without the check of what kind of gate stands in each seat. Both exist so a
+    scenario can show what the check is for."""
     steps = [("HERALD", HeraldSourceGate(), read.document),
              ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True,
                                                           accept_guard=is_root_guard,
@@ -656,6 +683,8 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
               ccc or ccc_ingest(read.document.text, read.document.source_id)),
              ("HERALD", HeraldConfidenceGate(read.gate, document=read.document), read.amount())]
     steps = [step for step in steps if f"{step[0]}:{step[1].name}" != drop]
+    steps = [(repo, _Lookalike(f"{repo}:{gate.name}", gate) if f"{repo}:{gate.name}" == lookalike else gate, c)
+             for repo, gate, c in steps]
     seats = [(repo, gate) for repo, gate, _ in steps]
     unchecked, log = _Unchecked(), logging.getLogger("herald.gate")
     propagate, log.propagate = log.propagate, False
@@ -663,8 +692,9 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
     try:
         readers = {seat: reads for seat, reads in READERS.items() if seat != drop}
         bindings = {seat: binds for seat, binds in BINDINGS.items() if seat != drop}
+        kinds = {seat: kind for seat, kind in GATE_TYPES.items() if seat != drop} if type_checked else None
         decision = SuperGate(seats, required=REQUIRED_SEATS, same_subject=readers, binding_of=bindings,
-                             strict_binding=True).decide(
+                             strict_binding=True, gate_types=kinds).decide(
             {f"{repo}:{gate.name}": c for repo, gate, c in steps}, ttl=ttl)
     finally:
         log.removeHandler(unchecked)
@@ -1341,6 +1371,46 @@ def evidence_with_odd_timestamp() -> Dict[str, object]:
             "honest_record_accepted": held is not None and held.created_at == honest.created_at}
 
 
+def lookalike_gate_refuses_the_roster() -> Dict[str, object]:
+    """Everything is in order except that CCC's seat holds a gate with CCC's name that checks nothing. The roster is
+    refused when it is built, naming the seat, so no decision exists for the kernel's guard to see."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    try:
+        decide(read, kernel, root, door(root, "doc-1"), lookalike="CCC:ccc.transition")
+    except ValueError as exc:
+        return {"roster_refused": True, "names_the_seat": "CCC:ccc.transition" in str(exc)}
+    return {"roster_refused": False, "names_the_seat": False}
+
+
+def lookalike_is_approved_without_the_check() -> Dict[str, object]:
+    """The same lookalike, with the roster built without the check of gate types: nothing else can tell it from CCC's
+    gate, so the roster approves. This is what the check is for, stated as a fact."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE)
+    decided = decide(read, kernel, root, door(root, "doc-1"), lookalike="CCC:ccc.transition", type_checked=False)
+    return facts(decided, evidence, refusal, gate_types_checked=decided[0].gate_types_checked)
+
+
+def roster_without_gate_types_cannot_open_the_guard() -> Dict[str, object]:
+    """The true roster's gates, built without the check of gate types. Allowed, and the guards still refuse it: they ask
+    that every seat was checked for what kind of gate it holds. A refusal does not use the guard up."""
+    read = herald(INVOICE, "doc-1")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    guard = fresh_guard()
+    kernel, root = kernel_root(evidence, "doc-1", INVOICE, guard=guard)
+    unchecked = decide(read, kernel, root, door(root, "doc-1"), type_checked=False)
+    refused_open = authorize(guard, unchecked[0])
+    registered, by_guard = register(kernel, root)
+    checked = decide(read, kernel, root, door(root, "doc-1"))
+    opened = authorize(guard, checked[0])
+    return facts(checked, evidence, refusal, unchecked_allowed=unchecked[0].allowed,
+                 unchecked_checked=unchecked[0].gate_types_checked, unchecked_guard_opened=refused_open,
+                 registered_on_unchecked=registered, refused_by_guard=by_guard, guard_opened=opened)
+
+
 def dropped_gate_is_refused(seat: str = "Conservation_Kernel:root_admission") -> str:
     """Empty if a roster built without `seat` is refused at construction, else what happened instead."""
     read = herald(INVOICE, "doc-1")
@@ -1709,6 +1779,14 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
     ("SEAM HOLDS: evidence under a real TIE id whose created_at is in the future, not a time, or has no offset is refused, and the id stays free",
      evidence_with_odd_timestamp,
      {"evidence_refused": [True, True, True], "evidence_held_after_refusals": 0, "honest_record_accepted": True}),
+    ("SEAM HOLDS: a gate with CCC's name that checks nothing, seated for CCC, refuses the roster when it is built",
+     lookalike_gate_refuses_the_roster, {"roster_refused": True, "names_the_seat": True}),
+    ("SEAM HOLDS: that same lookalike is approved by a roster built without the check of gate types, so the check is what stops it",
+     lookalike_is_approved_without_the_check, {**HELD, "gate_types_checked": False}),
+    ("SEAM HOLDS: a roster built without the check of gate types is allowed, and the kernel's guard refuses its decision without being used up",
+     roster_without_gate_types_cannot_open_the_guard,
+     {**HELD, "unchecked_allowed": True, "unchecked_checked": False, "unchecked_guard_opened": False,
+      "registered_on_unchecked": False, "refused_by_guard": True, "guard_opened": True}),
     ("GAP: the roster says no, yet a kernel built with the explicit allow_unguarded_roots opt-out and called directly registers the root (not passing the flag is the deployment's)",
      lambda: door_refused_kernel_proceeds(False),
      {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["governance_gateway", "root_admission"], "guard_opened": False,

@@ -154,7 +154,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 3
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 44
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 47
 
 
 def test_the_evidence_script_carries_the_roster_decision_across_the_process_boundary():
@@ -337,3 +337,23 @@ def test_the_floating_chains_job_writes_the_commits_it_tested_to_the_job_summary
     assert step.get("if") == "always()"
     assert "rev-parse HEAD" in step["run"] and '>> "$GITHUB_STEP_SUMMARY"' in step["run"]
     assert "${{" not in step["run"], "nothing from the event may be spliced into the script"
+
+
+def test_the_evidence_script_checks_what_kind_of_gate_stands_in_every_seat_and_its_guards_ask_for_it():
+    """Policy, pinned so loosening it is a change made in review. A seat's name says which gate is meant; GATE_TYPES says
+    the object there is one, for every required seat but the one the super gate adds, and both guards require that the
+    roster that decided did this."""
+    text = EVIDENCE.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    types = next(n for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "GATE_TYPES")
+    seats = [k.value for k in types.value.keys]
+    assert sorted(seats) == sorted(s for s in _required_seats(EVIDENCE)[0] if s != "CNS:same_subject")
+    functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    for name in ("fresh_guard", "fresh_ccc_guard"):
+        call = next(c for c in ast.walk(functions[name]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "DecisionGuard")
+        required = {k.arg: k.value for k in call.keywords}.get("require_gate_types")
+        assert isinstance(required, ast.Constant) and required.value is True, name
+    gate = next(c for c in ast.walk(functions["decide"]) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "SuperGate")
+    assert "gate_types" in {k.arg for k in gate.keywords}
+    assert next(a for a in functions["decide"].args.kwonlyargs + functions["decide"].args.args if a.arg == "type_checked")
+    assert [d.value for d in functions["decide"].args.defaults if isinstance(d, ast.Constant) and d.value is True] == [True]
