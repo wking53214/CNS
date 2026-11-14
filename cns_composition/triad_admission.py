@@ -61,13 +61,14 @@ class AdmissionReceipt:
 
     output: TriadOutput
     verdict: GateResult
+    source: str = SOURCE
 
 
 def _binds(receipt: AdmissionReceipt) -> bool:
     output = receipt.output
     return receipt.verdict.outcome is GateOutcome.PASS and receipt.verdict.binds(
-        f"{SOURCE}:{output.candidate_id}",
-        subject_digest({"source": SOURCE, "candidate_id": output.candidate_id,
+        f"{receipt.source}:{output.candidate_id}",
+        subject_digest({"source": receipt.source, "candidate_id": output.candidate_id,
                         "text_digest": text_digest(output.text)}))
 
 
@@ -78,23 +79,25 @@ def admit_with_receipts(
     guard: ResubmissionGuard,
     *,
     attestation_key: Optional[bytes] = None,
+    source: str = SOURCE,
 ) -> list[AdmissionReceipt]:
     """Admit each candidate in order, handing off and retrying on RETRY, and return a receipt for each.
 
     Raises UnrecordedTriadOutput on the first candidate refused for any reason other than RETRY, and any
-    exception from `hand_off` propagates unchanged.
+    exception from `hand_off` propagates unchanged. `source` is the machine identity the items are filed under
+    in CCC (the Triad's by default); each receipt remembers it, so `recheck` and `use` ask under the same name.
     """
     if not callable(hand_off):
         raise TypeError(
             f"admit_candidates needs a hand_off function; got {type(hand_off).__name__}"
         )
-    gate = GuardedCccRecordGate(lookup, guard, attestation_key=attestation_key)
+    gate = GuardedCccRecordGate(lookup, guard, attestation_key=attestation_key, source=source)
     receipts: list[AdmissionReceipt] = []
     for candidate in candidates:
         while True:
             result = gate.check(candidate)
             if result.outcome is GateOutcome.PASS:
-                receipts.append(AdmissionReceipt(candidate, result))
+                receipts.append(AdmissionReceipt(candidate, result, source))
                 break
             if result.outcome is not GateOutcome.RETRY:
                 raise UnrecordedTriadOutput(result)
@@ -109,6 +112,7 @@ def admit_candidates(
     guard: ResubmissionGuard,
     *,
     attestation_key: Optional[bytes] = None,
+    source: str = SOURCE,
 ) -> list[TriadOutput]:
     """Admit each candidate in order, handing off and retrying on RETRY.
 
@@ -118,7 +122,7 @@ def admit_candidates(
     same, with a receipt per item that `use` can check again later.
     """
     return [receipt.output for receipt in admit_with_receipts(
-        candidates, hand_off, lookup, guard, attestation_key=attestation_key)]
+        candidates, hand_off, lookup, guard, attestation_key=attestation_key, source=source)]
 
 
 def recheck(receipt: AdmissionReceipt, lookup: RecordLookup, *,
@@ -127,7 +131,8 @@ def recheck(receipt: AdmissionReceipt, lookup: RecordLookup, *,
     TERMINAL_BREACH without asking: it was not issued by an admission."""
     if not isinstance(receipt, AdmissionReceipt):
         raise TypeError(f"recheck takes an AdmissionReceipt; got {type(receipt).__name__}")
-    gate = CccRecordGate(lookup, attestation_key=attestation_key)
+    named = receipt.source if isinstance(receipt.source, str) and receipt.source else SOURCE
+    gate = CccRecordGate(lookup, attestation_key=attestation_key, source=named)
     if not _binds(receipt):
         return GateResult(gate=gate.name, position=gate.position, outcome=GateOutcome.TERMINAL_BREACH,
                           reason="the receipt's verdict is not a pass bound to its own item, so it admitted nothing")
