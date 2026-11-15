@@ -171,7 +171,7 @@ def test_the_runs_use_the_four_checkouts_and_cns_on_the_path(world):
     seen = []
 
     def run(python, argv, env, cwd):
-        seen.append((argv[:1], env["PYTHONPATH"], str(cwd)))
+        seen.append((argv[:1], env.get("PYTHONPATH"), str(cwd)))  # the interpreter-version call passes the plain process environment
         return (0, "3.13.1\n") if argv[:1] == ["-c"] else (0, "ok a\n" if argv[:1] == ["chains/spine_run.py"] else "1 passed\n")
 
     eb.run_checks(stack, cns, ["py"], run)
