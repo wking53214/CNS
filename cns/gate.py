@@ -88,13 +88,14 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Protocol, Tuple, runtime_checkable
+from typing import Any, Iterable, Mapping, Optional, Protocol, Tuple, runtime_checkable
 
 from cns.rowenum import RowEnum
 
 __all__ = [
     "GatePosition",
     "GateOutcome",
+    "RetryKind",
     "GateResult",
     "Gate",
     "GateChain",
@@ -130,6 +131,22 @@ class GateOutcome(RowEnum):
     TERMINAL_BREACH = 'terminal_breach'
 
 
+class RetryKind(RowEnum):
+    """What a RETRY asks for, when the gate says.
+
+    One outcome covered two remedies. CHANGE: the candidate must come back
+    different (the delta the RETRY invites). WAIT: the candidate may come back
+    exactly as it was once something outside it has happened (a record is
+    written, a dependency recovers). A caller that cannot tell them apart
+    either refuses the honest WAIT resubmission or lets an unchanged CHANGE
+    loop forever. Not an outcome: `resolve` and every PASS/RETRY/BREACH rule
+    are untouched, and a verdict that does not say is just a RETRY.
+    """
+
+    CHANGE = 'change'
+    WAIT = 'wait'
+
+
 @dataclass(frozen=True, slots=True)
 class GateResult:
     """One gate's verdict on one candidate.
@@ -145,10 +162,16 @@ class GateResult:
     reason: str = ""
     subject: str = ""
     subject_digest: str = ""
+    #: For a RETRY, what it asks for; None when the gate does not say. Ignored for any other outcome.
+    retry_kind: Optional[RetryKind] = None
 
     def blocking(self) -> bool:
         """Whether this verdict stops the request. Reads only its own fields."""
         return self.outcome is not GateOutcome.PASS
+
+    def waits(self) -> bool:
+        """Whether this is a RETRY that asks to come back unchanged later. Reads only its own fields."""
+        return self.outcome is GateOutcome.RETRY and self.retry_kind is RetryKind.WAIT
 
     def bound(self) -> bool:
         """Whether this verdict records what it judged. Reads only its own fields."""

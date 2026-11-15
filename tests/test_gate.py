@@ -98,6 +98,7 @@ def test_a_result_round_trips_through_json():
         "reason": "no",
         "subject": "",
         "subject_digest": "",
+        "retry_kind": None,
     }
 
 
@@ -421,3 +422,37 @@ def test_plain_values_digest_exactly_as_before():
     assert subject_digest(plain) == hashlib.sha256(
         b"d:7:" + b"s:1:as:1:s" + b"s:1:bi:1:" + b"s:1:cf:0.5:" + b"s:1:db:1" + b"s:1:en:"
         + b"s:1:fl:2:i:1:l:2:i:2:i:3:" + b"s:1:gd:1:s:1:hs:1:i").hexdigest()
+
+
+# ------------------------------------------------------------ CNS-102: what a RETRY asks for
+
+from cns.gate import RetryKind  # noqa: E402
+
+
+def _verdict(outcome, kind=None):
+    return GateResult(gate="g", position=GatePosition.ALPHA, outcome=outcome, reason="r", subject="s",
+                      subject_digest="d", retry_kind=kind)
+
+
+def test_a_verdict_that_does_not_say_what_its_retry_asks_for_is_just_a_retry():
+    plain = GateResult(gate="g", position=GatePosition.ALPHA, outcome=GateOutcome.RETRY)
+    assert plain.retry_kind is None and not plain.waits() and plain.blocking()
+
+
+def test_only_a_retry_marked_wait_waits():
+    assert _verdict(GateOutcome.RETRY, RetryKind.WAIT).waits()
+    assert not _verdict(GateOutcome.RETRY, RetryKind.CHANGE).waits()
+    assert not _verdict(GateOutcome.PASS, RetryKind.WAIT).waits()
+    assert not _verdict(GateOutcome.TERMINAL_BREACH, RetryKind.WAIT).waits()
+
+
+@pytest.mark.parametrize("kind", [None, RetryKind.CHANGE, RetryKind.WAIT])
+def test_the_kind_changes_neither_resolution_nor_binding(kind):
+    retry = _verdict(GateOutcome.RETRY, kind)
+    assert resolve([retry]) is GateOutcome.RETRY
+    assert resolve([retry, _verdict(GateOutcome.TERMINAL_BREACH)]) is GateOutcome.TERMINAL_BREACH
+    assert retry.blocking() and retry.binds("s", "d")
+
+
+def test_the_kinds_are_text_on_every_python():
+    assert [str(k) for k in RetryKind] == ["change", "wait"]
