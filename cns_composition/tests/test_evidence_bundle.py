@@ -208,3 +208,12 @@ def test_the_command_exits_2_when_a_repository_is_missing(world, tmp_path):
     import shutil
     shutil.rmtree(world[0] / "interconnected_beta")
     assert command(world, tmp_path, "--out", str(tmp_path / "b.json")) == 2
+
+
+def test_a_record_that_cannot_be_written_is_exit_2_and_named(world, tmp_path, capsys):
+    assert command(world, tmp_path, "--out", str(tmp_path / "no_such_folder" / "b.json")) == 2
+    assert "evidence_bundle:" in capsys.readouterr().err
+
+
+def test_the_command_ends_with_the_delivery_wrapper():
+    assert eb.main.__doc__ and "delivery" in eb.main.__doc__

@@ -29,7 +29,8 @@ THE COMMAND
 
     python -m cns_composition.evidence_bundle --stack stack [--python /path/to/python ...] [--out FILE]
 
-Exit 0 when the manifest check is empty and every named run exited 0; 1 when it is not; 2 when a repository could not be read.
+Exit 0 when the manifest check is empty and every named run exited 0; 1 when it is not; 2 when a repository could not be read or the record
+could not be delivered.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
+from . import delivery
 from . import spine_manifest as sm
 from .spine_trace import SPINE
 
@@ -171,7 +173,7 @@ def passed(bundle: Mapping[str, Any]) -> bool:
     return not verify(bundle)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _main(argv: Optional[Sequence[str]]) -> int:
     parser = argparse.ArgumentParser(description="Write the reproducible evidence record for the four decision-spine repositories.")
     parser.add_argument("--stack", type=Path, required=True, help="a folder holding one checkout per repository")
     parser.add_argument("--cns-root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -194,12 +196,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     bundle = collect(args.stack, args.cns_root, manifest, releases, runs)
     text = json.dumps(bundle, sort_keys=True, indent=2) + "\n"
     if args.out:
-        args.out.write_text(text, encoding="utf-8")
+        try:
+            delivery.write_file(args.out, text)
+        except delivery.DeliveryError as exc:
+            print(f"evidence_bundle: {exc}", file=sys.stderr)
+            return 2
     else:
         sys.stdout.write(text)
     for problem in bundle["problems"]:
         print(f"evidence_bundle: {problem}", file=sys.stderr)
     return 0 if passed(bundle) else 1
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """The command. A report that could not be delivered is exit 2, never 0 (see `delivery`)."""
+    return delivery.run(_main, argv, "evidence_bundle")
 
 
 if __name__ == "__main__":
