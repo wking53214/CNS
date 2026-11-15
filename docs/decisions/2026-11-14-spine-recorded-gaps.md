@@ -1,10 +1,10 @@
 # Decision record: the 14 recorded spine gaps
 
 Date: 2026-11-14, decided 2026-11-15. Base: CNS main `c75734e`; the spine runner is `chains/spine_run.py` (188 scenarios then, 14 of them GAP rows).
-Status: **decided by the owner on 2026-11-15, one design item open.** Each entry had a recommendation from the author of this document; the decision table
+Status: **decided by the owner on 2026-11-15.** Each entry had a recommendation from the author of this document; the decision table
 at the end records what the owner chose, group by group, by selecting an option in a chat. Where the owner chose the recommendation, it is recorded as
-chosen, not as a default. The open item is the opt-in flag that closes C3 (see the table): the owner's decisions for groups A and B chose no code, and the
-flag is the one place code is implied, so its design is to be planned and confirmed before any change.
+chosen, not as a default. There is no open design item: the opt-in that closes C3 already exists (`require_keyset_verifier`, see the table), which was found when the work began; an earlier
+version of this note said the flag did not exist, and that was wrong.
 
 A GAP row is an assertion, not a skip: it states a fact about what the strict check does not do, and it goes red the day the fact stops being true.
 That keeps each gap honest, but it does not say whether the gap should stay. This record asks that for each one.
@@ -53,7 +53,7 @@ All 14 are placed once:
 - **ACCEPT and keep stated (5):** A1, A2, A4, A5, C4.
 - **DOCUMENT with a deployer recipe (6):** A3, B1, B2, B3, B4, B5. The recipe exists for the checkpoint ones (Delta's README, with a test). A3 needs a "production profile" paragraph.
 - **CLOSE later, as part of other work (2):** C1 with the next Beta change (a shared re-pin wave); C2 with the next major version of CNS (it is breaking).
-- **CLOSE with one opt-in flag (1):** C3. The same flag would also make a safe configuration hard to forget for A3, B1, B2 and B3: require a signed receipt, a held checkpoint and Alpha's fingerprint recomputation together. It is small, additive and opt-in. It does not make the default safer; it makes a safe configuration impossible to misconfigure by omission.
+- **CLOSE with an opt-in (1):** C3. (Correction, 2026-11-15: the opt-in already exists as `require_keyset_verifier=True`; the bundled flag described next, which would also make a signed receipt and a held checkpoint mandatory together, does not exist and was not chosen.) A bundled flag would also make a safe configuration hard to forget for A3, B1, B2 and B3: require a signed receipt, a held checkpoint and Alpha's fingerprint recomputation together. It is small, additive and opt-in. It does not make the default safer; it makes a safe configuration impossible to misconfigure by omission.
 
 ## Decisions (owner)
 
@@ -74,5 +74,5 @@ Nothing in the runner changes by this record.
 | B5 | DOCUMENT | 2026-11-15 | same as B4 |
 | C1 | CLOSE with the next Beta change | 2026-11-15 | needs a native Beta change recording which locks a rule required open and closed; shares one re-pin wave |
 | C2 | CLOSE with the next major version of CNS | 2026-11-15 | refusing an empty entity id is breaking |
-| C3 | CLOSE via the opt-in flag | 2026-11-15 | **design item open**: the flag does not exist yet. Groups A and B chose no flag, so it would exist for C3 alone unless the owner widens it; I plan it and ask before coding |
+| C3 | CLOSE via the opt-in flag | 2026-11-15 | the flag already exists: `require_keyset_verifier=True` makes a missing `keyset_fingerprint_of` a named problem (a runner row holds it). Found on 2026-11-15 when the design was started; no code is needed. The GAP row still states the default, which stays off for compatibility, and the production profile paragraph now names the flag |
 | C4 | ACCEPT | 2026-11-15 | Delta's documented idempotent-sink contract; the row and Delta's README state it |
