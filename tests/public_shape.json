@@ -439,9 +439,33 @@
         "GateChain",
         "resolve",
         "subject_digest",
-        "unbound"
+        "unbound",
+        "DigestRef"
       ],
       "classes": {
+        "DigestRef": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "value",
+              "type": "str"
+            },
+            {
+              "default": "'cns-digest/1'",
+              "name": "version",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "text": "def(self) -> 'str'"
+          },
+          "slots": true
+        },
         "Gate": {
           "annotations": {
             "name": "str",

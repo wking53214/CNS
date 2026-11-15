@@ -102,6 +102,7 @@ __all__ = [
     "resolve",
     "subject_digest",
     "unbound",
+    "DigestRef",
 ]
 
 
@@ -383,6 +384,28 @@ def subject_digest(content: Mapping[str, object]) -> str:
     case to paper over.
     """
     return hashlib.sha256(_canonical(content).encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class DigestRef:
+    """A subject digest that names the encoding it was computed with.
+
+    A bare 64-hex fingerprint does not say how it was made, so a change of
+    encoding could not be told from a mismatch. This carries the name with
+    the value. Reading one, or checking it against content, is behaviour and
+    lives in `cns_composition.digest_ref`; a bare fingerprint reads as the
+    default version, so every digest already written stays readable. The
+    default is the name of the encoding `subject_digest` implements, the
+    `digest_version` of contracts/digest-vectors.json; a test holds the two
+    together.
+    """
+
+    value: str
+    version: str = "cns-digest/1"
+
+    def text(self) -> str:
+        """`version:value`, the form that travels. Reads only its own fields."""
+        return f"{self.version}:{self.value}"
 
 
 def unbound(results: Iterable[GateResult]) -> Tuple[str, ...]:
