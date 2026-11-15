@@ -334,6 +334,8 @@ the same scenarios on exactly the four commits `contracts/spine-manifest.json` n
 has held every pin and checkout to that file, on Python 3.10 (the floor) and 3.12. The checkout check refuses an edited, untracked, index-hidden (--skip-worktree, --assume-unchanged) or ignored importable file
 (a planted `__pycache__/x.pyc`); the 3.10 TOML fallback refuses any line separator TOML does not know (U+2028 and the like).
 
+**Evidence record.** `python -m cns_composition.evidence_bundle --stack STACK [--python PY ...] [--out FILE]` writes one JSON record of what was checked: the manifest as read, the CNS commit and whether its checkout is clean, each repository's expected and actual commit, cleanliness and tags, every problem the manifest check finds, and, for each interpreter named, the runner's counts and each repository's own suite summary. It carries no clock, host or path, so the same checkouts give the same record, and `bundle_digest` (SHA-256 of the canonical JSON) lets `verify` refuse an edited one. The digest is a label for comparison, not a MAC: anyone can write a record and its digest, so the record shows what was run on one machine, not that the machine reported truthfully. Exit 0 when the check is empty, the CNS checkout is clean and every run exited 0. The record's own `not_established` list says what it cannot show.
+
 ### Verify a package
 
 A run of the spine can be handed to someone else as files and checked there, by a command that trusts no object the
