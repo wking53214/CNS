@@ -87,6 +87,47 @@
       },
       "functions": {}
     },
+    "cns.authority": {
+      "__all__": [
+        "AuthorityKind"
+      ],
+      "classes": {
+        "AuthorityKind": {
+          "bases": [
+            "RowEnum"
+          ],
+          "enum_members": [
+            [
+              "HUMAN_SIGNOFF",
+              "human_signoff"
+            ],
+            [
+              "MACHINE_READING",
+              "machine_reading"
+            ],
+            [
+              "RECORD",
+              "record"
+            ],
+            [
+              "ATTESTATION",
+              "attestation"
+            ],
+            [
+              "DERIVED",
+              "derived"
+            ],
+            [
+              "UNKNOWN",
+              "unknown"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
+        }
+      },
+      "functions": {}
+    },
     "cns.caller": {
       "__all__": [
         "DynamicState",
@@ -439,9 +480,33 @@
         "GateChain",
         "resolve",
         "subject_digest",
-        "unbound"
+        "unbound",
+        "DigestRef"
       ],
       "classes": {
+        "DigestRef": {
+          "bases": [
+            "object"
+          ],
+          "fields": [
+            {
+              "default": null,
+              "name": "value",
+              "type": "str"
+            },
+            {
+              "default": "'cns-digest/1'",
+              "name": "version",
+              "type": "str"
+            }
+          ],
+          "frozen": true,
+          "kind": "dataclass",
+          "members": {
+            "text": "def(self) -> 'str'"
+          },
+          "slots": true
+        },
         "Gate": {
           "annotations": {
             "name": "str",
