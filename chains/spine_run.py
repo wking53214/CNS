@@ -65,6 +65,7 @@ import unicodedata
 import threading
 import warnings
 from collections.abc import Mapping
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -95,7 +96,7 @@ from cns_composition.spine_trace import (
     CONTEXT_SCHEMA, SpineRecord, context_problems, problems, root, strict_problems, strict_root)
 from delta import DecisionLedger
 from delta.ledger import DuplicateRecordError, LedgerCheckpoint
-from zeta import Combination, Key, KeySet, LockEvaluator, LockRegistry, LockSpec
+from zeta import Combination, Key, KeySet, LockEvaluator, LockRegistry, LockSpec, LockStateStore
 
 T0 = datetime(2026, 10, 1, 8, 0, 0)
 SICK = VitalsObservation(heart_rate=148, oxygen_saturation=90.0, respiratory_rate=36, temperature=39.6, age_months=14)
@@ -3032,6 +3033,164 @@ def GAP_a_pack_identity_is_the_producers_claim() -> List[str]:
     return check(p)
 
 
+# --- the handoffs under interruption, failure, concurrency and a stale sibling (the cells of the attack matrix that had no row) ---
+
+def an_interrupted_lock_pass_changes_nothing_and_the_retry_counts_once() -> List[str]:
+    """Zeta restores the entity's lock states if a pass raises. One real observation, interrupted between two locks and retried, must not open a
+    lock whose dwell is 2 (before that restore, the first lock had already counted it and the retry counted it again)."""
+    specs = [LockSpec(lock_id=f"l{i}", required_keys=("a",), dwell_threshold=2) for i in (1, 2)]
+    store = LockStateStore()
+    evaluator = LockEvaluator(LockRegistry(specs), store)
+    present = KeySet([Key("a", present=True)])
+    real = evaluator._evaluate
+    armed = [True]
+
+    def flaky(entity, keys, lock_id, timestamp):
+        if lock_id == "l2" and armed[0]:
+            armed[0] = False
+            raise RuntimeError("interrupted between two locks")
+        return real(entity, keys, lock_id, timestamp)
+
+    evaluator._evaluate = flaky  # type: ignore[method-assign]
+    out: List[str] = []
+    try:
+        evaluator.evaluate_all("e", present, T0)
+        out.append("the interrupted pass did not raise")
+    except RuntimeError:
+        pass
+    if store.snapshot("e"):
+        out.append("an interrupted pass left lock state behind")
+    retried = evaluator.evaluate_all("e", present, T0)
+    if any(r.open for r in retried.values()):
+        out.append("one real observation, retried after an interruption, opened a lock whose dwell threshold is 2")
+    return out
+
+
+def a_pack_that_raises_leaves_nothing_decided() -> List[str]:
+    """A pack that fails mid-observation must not become a decision: no lock state, no Decision, no ledger entry. (A registry that swallowed the
+    failure and returned an empty KeySet would let the pipeline record a healthy decision for a service nobody measured.)"""
+    class Failing(ServiceHealthPack):
+        NAME = "failing_service"
+
+        def observe(self, raw):
+            raise RuntimeError("the pack failed mid-observation")
+
+    registry = PackRegistry()
+    registry.register(Failing())
+    locks, engine = domain_build()
+    store = LockStateStore()
+    ledger = DecisionLedger(require_context=True)
+    entity = DOMAIN_CTX["entity_id"]
+
+    def pipeline():
+        keys = registry.observe("failing_service", SERVICE_BAD)
+        results = LockEvaluator(locks, store).evaluate_all(entity, keys, T0)
+        ledger.append(engine.decide(entity, keys, results, T0), context=DOMAIN_CTX)
+
+    return refused(pipeline, state=lambda: (ledger_state(ledger)(), store.snapshot(entity)), catch=(RuntimeError,))
+
+
+def a_stale_sibling_checkout_is_named_by_the_evidence_record() -> List[str]:
+    """The manifest check sees a sibling checked out at another commit; the evidence record carries that as a problem and is not a pass. (This
+    holds at the check, not at run time: nothing in the runner itself reads the installed commits.)"""
+    from cns_composition import evidence_bundle
+
+    def git(path, *args):
+        done = subprocess.run(["git", "-C", str(path), "-c", "user.email=t@example.invalid", "-c", "user.name=t", *args],
+                              capture_output=True, text=True, check=True)
+        return done.stdout.strip()
+
+    def repo(path, runtime):
+        deps = ",\n".join(f'    "{n} @ git+https://github.com/wking53214/interconnected_{n}@{ref}"' for n, ref in runtime)
+        path.mkdir(parents=True)
+        git(path, "init", "-q")
+        (path / "pyproject.toml").write_text(
+            f'[project]\nname = "x"\ndependencies = [\n{deps}\n]\n\n[project.optional-dependencies]\ndev = ["pytest>=7.0"]\n'
+            f'cns = ["cns @ git+https://github.com/wking53214/CNS.git@v2.3.0"]\n', encoding="utf-8")
+        git(path, "add", "pyproject.toml")
+        git(path, "commit", "-q", "-m", "x")
+        return git(path, "rev-parse", "HEAD")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        stack = Path(tmp) / "stack"
+        zeta = repo(stack / "interconnected_zeta", [])
+        alpha = repo(stack / "interconnected_alpha", [("zeta", zeta)])
+        beta = repo(stack / "interconnected_beta", [("zeta", zeta)])
+        delta = repo(stack / "interconnected_delta", [("zeta", zeta), ("beta", beta)])
+        cns = Path(tmp) / "cns"
+        repo(cns, [])
+        commit = "41592fb7b6735abe140f745353c09ba3eed8e7a2"
+        manifest = {"schema": spine_manifest.SCHEMA, "cns": {"tag": "v2.3.0", "commit": commit},
+                    "repos": {"interconnected_alpha": alpha, "interconnected_zeta": zeta, "interconnected_beta": beta, "interconnected_delta": delta}}
+        releases = {"releases": [{"ref": "v2.3.0", "commit": commit, "version": "2.3.0"}]}
+        out: List[str] = []
+        honest = evidence_bundle.collect(stack, cns, manifest, releases)
+        if honest["problems"] or not evidence_bundle.passed(honest):
+            out.append(f"an honest stack was not a pass: {honest['problems']}")
+        (stack / "interconnected_zeta" / "newer.txt").write_text("a newer zeta\n", encoding="utf-8")
+        git(stack / "interconnected_zeta", "add", "newer.txt")
+        git(stack / "interconnected_zeta", "commit", "-q", "-m", "a newer zeta")
+        stale = evidence_bundle.collect(stack, cns, manifest, releases)
+        if not any("interconnected_zeta is checked out at" in p for p in stale["problems"]):
+            out.append("a zeta checked out at another commit was not named")
+        if evidence_bundle.passed(stale):
+            out.append("a record with a stale sibling was called a pass")
+        return out
+
+
+def concurrent_pipelines_into_one_ledger_equal_a_single_thread_run() -> List[str]:
+    """Six threads run the whole pipeline (observe, lock pass, decide, record) for 15 distinct entities each into ONE ledger, with the interpreter
+    forced to switch threads constantly. The ledger holds every Decision exactly once, its chain verifies, and the set of Decisions equals a
+    single-thread run of the same inputs (their order differs, their content does not)."""
+    locks, engine = build()
+    work = [(f"p{t}-{n}", SICK if n % 2 else WELL) for t in range(6) for n in range(15)]
+
+    def one(ledger, entity, vitals):
+        keys = observe(vitals)
+        results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
+        ctx = {"schema": CONTEXT_SCHEMA, "entity_id": entity, "event_id": f"event-{entity}", "run_id": f"run-{entity}"}
+        ledger.append(engine.decide(entity, keys, results, T0), context=ctx)
+
+    def decisions(ledger):
+        return sorted((e.decision.entity_id, e.decision.decision, e.decision.decision_fingerprint) for e in ledger.entries)
+
+    sequential = DecisionLedger(require_context=True)
+    for entity, vitals in work:
+        one(sequential, entity, vitals)
+    shared = DecisionLedger(require_context=True)
+    errors: List[str] = []
+
+    def thread(index):
+        try:
+            for entity, vitals in work[index * 15:(index + 1) * 15]:
+                one(shared, entity, vitals)
+        except BaseException as exc:  # noqa: BLE001 - a thread's failure is a finding of this scenario
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=thread, args=(i,), daemon=True) for i in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=120)
+    finally:
+        sys.setswitchinterval(old)
+    out = list(errors[:3])
+    if any(t.is_alive() for t in threads):
+        out.append("a pipeline thread did not finish")
+    if len(shared.entries) != len(work):
+        out.append(f"the shared ledger holds {len(shared.entries)} entries, not {len(work)}")
+    try:
+        delta_pkg.verify_export(shared.export(), require_context=True)
+    except ValueError as exc:
+        out.append(f"the shared ledger's export does not verify: {exc}")
+    if decisions(shared) != decisions(sequential):
+        out.append("the Decisions of the concurrent run are not the Decisions of a single-thread run")
+    return out
+
+
 CLEAN = Expect("clean")
 GAP = Expect("gap")
 CHAIN_NOT_SHOWN = "the ledger chain was not shown to verify"
@@ -3464,6 +3623,15 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("needs exactly a ServiceObservation",), raises=("TypeError",))),
     ("domain: GAP, a pack identity is the producer's claim and nothing authenticates it",
      GAP_a_pack_identity_is_the_producers_claim, GAP),
+    # --- the handoffs under interruption, failure, concurrency and a stale sibling ---
+    ("handoff: an interrupted lock pass changes nothing, and the retry of one observation counts once",
+     an_interrupted_lock_pass_changes_nothing_and_the_retry_counts_once, CLEAN),
+    ("handoff: a pack that raises mid-observation leaves no lock state, no Decision and no ledger entry",
+     a_pack_that_raises_leaves_nothing_decided, Expect("refused", required=("the pack failed mid-observation",), raises=("RuntimeError",))),
+    ("handoff: a stale sibling checkout is named by the evidence record, which is then not a pass (at the check, not at run time)",
+     a_stale_sibling_checkout_is_named_by_the_evidence_record, CLEAN),
+    ("handoff: six threads running the whole pipeline into one ledger equal a single-thread run",
+     concurrent_pipelines_into_one_ledger_equal_a_single_thread_run, CLEAN),
     # --- the oracle held to account with real objects ---
     ("oracle: a component that exits fails its own scenario only", the_oracle_flags_a_component_that_exits, CLEAN),
     ("oracle: a refusal that edited an entry's content is a state change", the_oracle_flags_a_refusal_that_edited_an_entrys_content, CLEAN),
