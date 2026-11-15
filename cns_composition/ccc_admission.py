@@ -74,7 +74,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Optional, Protocol, runtime_checkable
 
-from cns.gate import GateOutcome, GatePosition, GateResult, subject_digest
+from cns.gate import GateOutcome, GatePosition, GateResult, RetryKind, subject_digest
 
 __all__ = [
     "GATE_NAME",
@@ -227,6 +227,8 @@ class CccRecordGate:
                 "candidate_id": candidate.candidate_id,
                 "text_digest": digest,
             }),
+            # Not recorded yet is the world's to fix: the same text comes back once CCC holds it (CNS-102).
+            retry_kind=RetryKind.WAIT if outcome is GateOutcome.RETRY else None,
         )
 
 

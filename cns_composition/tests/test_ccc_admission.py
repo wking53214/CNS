@@ -155,3 +155,13 @@ def test_ccc_answers_added_after_this_gate_are_breaches_that_say_why(answer, say
     assert says in result.reason and "unrecognised" not in result.reason
     with pytest.raises(UnrecordedTriadOutput):
         admit(ITEM, Lookup(answer))
+
+
+def test_not_recorded_yet_is_a_retry_that_waits_and_every_other_answer_says_no_kind():
+    """CNS-102: the remedy for absent is to hand the session to CCC and ask again with the same text."""
+    from cns.gate import RetryKind
+
+    absent = CccRecordGate(Lookup("absent")).check(ITEM)
+    assert absent.outcome is GateOutcome.RETRY and absent.retry_kind is RetryKind.WAIT and absent.waits()
+    for answer in ("held", "altered", "erased", "redacted", "rejected", "superseded", "unattested", "nonsense"):
+        assert CccRecordGate(Lookup(answer)).check(ITEM).retry_kind is None

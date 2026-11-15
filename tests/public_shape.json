@@ -433,6 +433,7 @@
       "__all__": [
         "GatePosition",
         "GateOutcome",
+        "RetryKind",
         "GateResult",
         "Gate",
         "GateChain",
@@ -550,6 +551,11 @@
               "default": "''",
               "name": "subject_digest",
               "type": "str"
+            },
+            {
+              "default": "None",
+              "name": "retry_kind",
+              "type": "Optional[RetryKind]"
             }
           ],
           "frozen": true,
@@ -557,9 +563,27 @@
           "members": {
             "binds": "def(self, subject: 'str', digest: 'str') -> 'bool'",
             "blocking": "def(self) -> 'bool'",
-            "bound": "def(self) -> 'bool'"
+            "bound": "def(self) -> 'bool'",
+            "waits": "def(self) -> 'bool'"
           },
           "slots": true
+        },
+        "RetryKind": {
+          "bases": [
+            "RowEnum"
+          ],
+          "enum_members": [
+            [
+              "CHANGE",
+              "change"
+            ],
+            [
+              "WAIT",
+              "wait"
+            ]
+          ],
+          "kind": "enum",
+          "members": {}
         }
       },
       "functions": {
