@@ -535,6 +535,13 @@ def fresh_guard(clock: Callable[[], float] = time.time) -> DecisionGuard:
                          expected_seats=REQUIRED_SEATS, clock=clock)
 
 
+def no_human_acts(request: object) -> bool:
+    """CCC's human verifier for these chains. They perform no human-only act on CCC (no ratify, erase, decide and the
+    rest), so it refuses every one: a human act reaching CCC here would be a defect, not a scenario. CCC refuses to
+    be built without a verifier (CCC c27b99b), and opting out would hide what CCC now guards."""
+    return False
+
+
 def fresh_ccc_guard() -> DecisionGuard:
     """A closed guard to give CCC as its `write_permission`: it opens, once, for the exact call CCC's seat judged, and
     only for a decision from a roster that seats every required seat. Policy, like READERS."""
@@ -651,7 +658,7 @@ def decide(read: Read, kernel: ConservationKernel, root: RootArtifact, entry: Do
                                                           accept_evidence_guard=is_evidence_guard,
                                                           require_statement_binding=True), root),
              ("Governance_Gateway", spine_gateway_gate(), entry),
-             ("CCC", CccGate(CCCSystem(write_permission=fresh_ccc_guard()) if system is None else system,
+             ("CCC", CccGate(CCCSystem(human_verifier=no_human_acts, write_permission=fresh_ccc_guard()) if system is None else system,
                              require_permission=True, accept_permission=is_write_permission),
               ccc or ccc_ingest(read.document.text, read.document.source_id)),
              ("HERALD", HeraldConfidenceGate(read.gate, document=read.document), read.amount())]
@@ -1000,7 +1007,7 @@ def ccc_deciding_registers_nothing() -> Dict[str, object]:
     """The roster allows the document. CCC's gate judged the ingest on a scratch copy, so its store is still empty."""
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
-    system = CCCSystem(write_permission=fresh_ccc_guard())
+    system = CCCSystem(human_verifier=no_human_acts, write_permission=fresh_ccc_guard())
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, door(root, "doc-1"), system=system)
     return facts(decided, evidence, refusal, ccc_artifacts=len(system.store.artifacts))
@@ -1014,7 +1021,7 @@ def door_refused_ccc_holds() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_ccc_guard()
-    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    system, attempt_ = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, tampered(door(root, "doc-1")), ccc=attempt_, system=system)
     opened = authorize(guard, decided[0])
@@ -1029,7 +1036,7 @@ def approved_ccc_ingest() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_ccc_guard()
-    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    system, attempt_ = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
     opened = authorize(guard, decided[0])
@@ -1046,7 +1053,7 @@ def handmade_ccc_decision() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_ccc_guard()
-    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    system, attempt_ = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     real = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)[0]
     copy = Decision(run=real.run, seats=real.seats, root=real.root, subject=real.subject)
@@ -1063,7 +1070,7 @@ def approval_used_for_another_ccc_document() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_ccc_guard()
-    system, true_attempt = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    system, true_attempt = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, door(root, "doc-1"), ccc=true_attempt, system=system)
     opened = authorize(guard, decided[0])
@@ -1082,7 +1089,7 @@ def approval_does_not_open_ccc_conclusions() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_ccc_guard()
-    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    system, attempt_ = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
     opened = authorize(guard, decided[0])
@@ -1106,7 +1113,7 @@ def door_refused_ccc_finding_doors_hold() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_ccc_guard()
-    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    system, attempt_ = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, tampered(door(root, "doc-1")), ccc=attempt_, system=system)
     opened = authorize(guard, decided[0])
@@ -1123,7 +1130,7 @@ def approval_does_not_open_ccc_finding_doors() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_ccc_guard()
-    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    system, attempt_ = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
     opened = authorize(guard, decided[0])
@@ -1179,7 +1186,7 @@ def approved_ccc() -> Tuple[Read, list, str, CCCSystem, Attempt, Tuple[Decision,
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     guard = fresh_ccc_guard()
-    system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+    system, attempt_ = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
     return read, evidence, refusal, system, attempt_, decided, authorize(guard, decided[0])
@@ -1249,7 +1256,7 @@ def ccc_without_permission_gets_no_approval() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
-    return facts(decide(read, kernel, root, door(root, "doc-1"), system=CCCSystem()), evidence, refusal)
+    return facts(decide(read, kernel, root, door(root, "doc-1"), system=CCCSystem(human_verifier=no_human_acts, allow_unguarded_writes=True)), evidence, refusal)
 
 
 def ccc_permissive_permission_gets_no_approval() -> Dict[str, object]:
@@ -1257,7 +1264,7 @@ def ccc_permissive_permission_gets_no_approval() -> Dict[str, object]:
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
-    return facts(decide(read, kernel, root, door(root, "doc-1"), system=CCCSystem(write_permission=lambda request: True)),
+    return facts(decide(read, kernel, root, door(root, "doc-1"), system=CCCSystem(human_verifier=no_human_acts, write_permission=lambda request: True)),
                  evidence, refusal)
 
 
@@ -1281,10 +1288,10 @@ def failed_write_gives_the_approval_back() -> Dict[str, object]:
     store would keep it used.)"""
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
-    seed = CCCSystem()
+    seed = CCCSystem(human_verifier=no_human_acts, allow_unguarded_writes=True)  # setup only: plants the source
     source = seed.ingest("Dana confirms the invoice is on file.", actor=CccActor.human("dana"), authorization_basis="on file")
     guard = fresh_ccc_guard()
-    system = CCCSystem(store=seed.store, write_permission=guard)
+    system = CCCSystem(human_verifier=no_human_acts, store=seed.store, write_permission=guard)
     attempt_ = ccc_ingest(INVOICE, "doc-1", source_material=(source.artifact_id,))
     kernel, root = kernel_root(evidence, "doc-1", INVOICE)
     decided = decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)
@@ -1361,7 +1368,7 @@ def dropped_agreement_is_refused() -> str:
     seats = [("HERALD", HeraldSourceGate()),
              ("Conservation_Kernel", CnsRootAdmissionGate(kernel, require_guard=True, require_evidence_guard=True,
                                                           require_statement_binding=True)),
-             ("Governance_Gateway", spine_gateway_gate()), ("CCC", CccGate(CCCSystem())),
+             ("Governance_Gateway", spine_gateway_gate()), ("CCC", CccGate(CCCSystem(human_verifier=no_human_acts, write_permission=fresh_ccc_guard()))),
              ("HERALD", HeraldConfidenceGate(read.gate, document=read.document))]
     try:
         SuperGate(seats, required=REQUIRED_SEATS)
@@ -1549,7 +1556,7 @@ def portable_ccc_ingest() -> Dict[str, object]:
     evidence, refusal = tie(read.export, "doc-1", INVOICE)
     with tempfile.TemporaryDirectory() as tmp:
         guard = portable_guard(reads_write, os.path.join(tmp, "spent.jsonl"))
-        system, attempt_ = CCCSystem(write_permission=guard), ccc_ingest(INVOICE, "doc-1")
+        system, attempt_ = CCCSystem(human_verifier=no_human_acts, write_permission=guard), ccc_ingest(INVOICE, "doc-1")
         kernel, root = kernel_root(evidence, "doc-1", INVOICE)
         signed = signed_decision(lambda: decide(read, kernel, root, door(root, "doc-1"), ccc=attempt_, system=system)[0])
         opened = authorize_remote(guard, signed)

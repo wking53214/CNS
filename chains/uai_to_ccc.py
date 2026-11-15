@@ -153,7 +153,7 @@ def receiver(parties: Parties, tmp: str, *, grants: Optional[List[Grant]] = None
                                 capability=(CAPABILITY.name, CAPABILITY.version),
                                 trust=TrustPolicy(pinned=frozenset({parties.decider.agent})),
                                 ledger=FileLedger(ledger or os.path.join(tmp, "spent.jsonl")), grants=table, action=ACTION)
-    return guard, es.CCCSystem(write_permission=guard)
+    return guard, es.CCCSystem(write_permission=guard, human_verifier=es.no_human_acts)
 
 
 def open_guard(guard: RemoteDecisionGuard, signed: Dict[str, Any]) -> str:
