@@ -105,7 +105,7 @@ What goes in: a decision from any repo that joins CNS, written in the shared sha
 
 ### CNS connection
 
-CNS is shared infrastructure that several systems use, not a stage in one pipeline. Each connected repo has a connector that sends its verdicts to CNS, and CNS has an admission module that reads them back. The ledger in `contracts/cns-links.json` lists 42 repositories: 37 two-way, 4 exempt and 1 hub (this one). A connector existing does not mean the application uses it, and a passing check is not permission to act. See "Where the six spine repositories stand" below for what was built, tested and used.
+CNS is shared infrastructure that several systems use, not a stage in one pipeline. Each connected repo has a connector that sends its verdicts to CNS, and CNS has an admission module that reads them back. The ledger in `contracts/cns-links.json` lists 42 repositories: 36 two-way, 5 exempt and 1 hub (this one). A connector existing does not mean the application uses it, and a passing check is not permission to act. See "Where the six spine repositories stand" below for what was built, tested and used.
 
 ### Implemented today, and what is not
 

@@ -17,6 +17,8 @@ entry says so.
 
 ## [Unreleased]
 
+- Step 1: Ecology is retired. The repository was deleted on 2026-11-13 and the owner decided on 2026-11-16 that it will not be restored. Its row in `contracts/cns-links.json` is exempt with that reason, as composition-engine's and synapsis's are; it leaves `cns_composition.consumers.REQUIRED`; and the `chains` workflow no longer checks it out or runs its chain, so `chains/ecology_answer.py` and the tests that read it are removed (they stay in this repository's git history). The `cns` package is unchanged.
+
 ## [4.1.0] - 2026-11-15
 
 Domain packs: the spine is no longer a pediatric tool. Not yet tagged.

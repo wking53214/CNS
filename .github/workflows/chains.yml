@@ -15,9 +15,6 @@
 #                        and a stale sibling (handoff:, 4). Each
 #                        scenario declares an Expect (chains/spine_oracle.py): required problems, the only extras allowed, and
 #                        whether state may change.
-# chains/ecology_answer.py  an Ecology answer record judged by DIT's gates through cns_composition.super_gate, the
-#                        verdicts bound to the answer text and tied to Ecology's record by its answer hash. Six scenarios, one of
-#                        them a DIT gate left out of the request, which cns_composition.super_gate refuses as a breach.
 # chains/evidence_spine.py  one document through HERALD, TIE, Conservation_Kernel, Governance_Gateway and CCC, then broken at
 #                        each seam. Fifty-two scenarios: forty-four seams that hold, three gaps stated as facts, four that cross
 #                        the process boundary as a signed decision, and the clean run. Four more checks follow them (three
@@ -119,16 +116,6 @@ jobs:
           repository: ${{ github.repository_owner }}/interconnected_delta
           path: stack/interconnected_delta
           persist-credentials: false
-      # Ecology answered 404 on 2026-11-13 (deleted, to be brought back). Its checkout may fail without failing the job, and the
-      # Ecology step below runs only when this checkout worked, so the other chains keep running and Ecology's chain comes
-      # back by itself the day the repository does. Nothing else depends on it.
-      - id: ecology
-        continue-on-error: true
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          repository: ${{ github.repository_owner }}/Ecology
-          path: stack/Ecology
-          persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: ${{ github.repository_owner }}/HERALD
@@ -169,11 +156,6 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/interconnected_alpha:${{ github.workspace }}/stack/interconnected_zeta:${{ github.workspace }}/stack/interconnected_beta:${{ github.workspace }}/stack/interconnected_delta
         run: python hub/chains/spine_run.py
-      - name: An Ecology answer, judged by DIT
-        if: steps.ecology.outcome == 'success'
-        env:
-          PYTHONPATH: ${{ github.workspace }}/stack/Ecology:${{ github.workspace }}/stack/DIT/src
-        run: python hub/chains/ecology_answer.py
       - name: One document through the evidence spine
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD:${{ github.workspace }}/stack/TIE/src:${{ github.workspace }}/stack/Conservation_Kernel/src:${{ github.workspace }}/stack/Governance_Gateway/src:${{ github.workspace }}/stack/ccc:${{ github.workspace }}/stack/UAI-2

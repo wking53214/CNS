@@ -103,9 +103,7 @@
       "from_cns": "cns_composition/repo_gates.py"
     },
     "Ecology": {
-      "to_cns": "ecology_cns_connector.py",
-      "from_cns": "cns_composition/consumers.py",
-      "private": true
+      "exempt": "retired: the repository was deleted on 2026-11-13 and the owner decided on 2026-11-16 that it will not be restored"
     },
     "GSA": {
       "to_cns": "gsa_cns_connector.py",
