@@ -17,6 +17,8 @@ entry says so.
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-15
+
 Domain packs: the spine is no longer a pediatric tool. Not yet tagged.
 
 - Step 6.1: `chains/spine_run.py` imports the reference pack from `alpha.packs.pediatric_vitals`. Alpha moved its vitals code there (clean break: the old top-level names are gone) and now holds a domain-blind core (`alpha.core`: `DomainPack`, `Parameter`, `PackRegistry`, total fail-loud validation, `pack_identity`) beside two packs.
