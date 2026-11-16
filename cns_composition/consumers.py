@@ -44,7 +44,7 @@ Imports = Mapping[str, Tuple[str, ...]]
 REQUIRED: Mapping[str, Imports] = {
     "Link": {
         "cns.gate": ("GateOutcome",),
-        "cns_composition.ccc_admission": ("TriadOutput",),
+        "cns_composition.ccc_admission": ("TriadOutput", "UnrecordedTriadOutput", "text_digest"),
         "cns_composition.resubmission": ("ResubmissionGuard",),
         "cns_composition.triad_admission": ("AdmissionReceipt", "admit_candidates", "admit_with_receipts", "recheck", "use"),
     },
@@ -63,7 +63,7 @@ REQUIRED: Mapping[str, Imports] = {
     "ZTS": {
         "cns": (),
         "cns.gate": ("subject_digest",),
-        "cns.governance": ("IdentityContext",),
+        "cns.governance": ("IdentityContext", "TrustLevel"),
     },
     "OBSERVE": {
         "cns.gate": ("GateOutcome", "GatePosition", "subject_digest"),

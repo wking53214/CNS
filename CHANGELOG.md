@@ -17,6 +17,8 @@ entry says so.
 
 ## [Unreleased]
 
+- The consumers ledger (`cns_composition/consumers.py`) lists two imports it was missing, found by the `links` job's `consumers` step: Link's `UnrecordedTriadOutput` and `text_digest` from `cns_composition.ccc_admission` (Link's front door calls CNS's admission door since Link#21), and ZTS's `TrustLevel` from `cns.governance`. Both are facts read from those repositories' source; nothing in CNS changed. Checked with `consumers --stack` over 36 checkouts (exit 0 after, 1 before) and the other three steps of the job (`link_ledger`, `digest_vectors`, `cns_versions`, exit 0); the CNS suite 2303 passed on Python 3.11; ruff and `release --check` hold.
+
 ## [4.1.0] - 2026-11-15
 
 Domain packs: the spine is no longer a pediatric tool. Not yet tagged.
