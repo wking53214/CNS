@@ -123,7 +123,7 @@ jobs:
           # Pinned to an exact commit, not the moving main branch. Moving it
           # is an explicit act: update this ref and HERALD_VERSION and
           # HERALD_CODE_HASH below together (see the pin step).
-          ref: 5540c6ef91a87a2d8f95f0de650df3e7774fbc16
+          ref: 68b9103952e82d5b4db00c5677af5efe2390d5c6
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -160,8 +160,8 @@ jobs:
         # update the ref above and the two values below in one commit.
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD
-          HERALD_VERSION: "0.3.1"
-          HERALD_CODE_HASH: 9501ca9fb17e26f9cd0f5061c3c16389390ac52c2ea7bf149f1f2e04b17acd23
+          HERALD_VERSION: "0.5.0"
+          HERALD_CODE_HASH: b0e8dd49119ed05eb4a072ce41161879cb92629c79f0d0626839785e8d22da69
         run: |
           python - <<'PY'
           import os
@@ -174,7 +174,7 @@ jobs:
         # refused; if it is accepted, this step fails the run.
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD
-          HERALD_VERSION: "0.3.1"
+          HERALD_VERSION: "0.5.0"
         run: |
           python - <<'PY'
           import os, sys
