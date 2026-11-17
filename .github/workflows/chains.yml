@@ -120,6 +120,10 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/HERALD
           path: stack/HERALD
+          # Pinned to an exact commit, not the moving main branch. Moving it
+          # is an explicit act: update this ref and HERALD_VERSION and
+          # HERALD_CODE_HASH below together (see the pin step).
+          ref: 75c17ef3ad679f5a44b031cc8da55cd20c956215
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -148,6 +152,23 @@ jobs:
           python-version: "3.12"
       - name: Install CNS
         run: python -m pip install "./hub[crypto]"
+      - name: Enforce the HERALD pin
+        # HERALD's constitution (section 7) asks every consumer to pin its
+        # version and code hash. This is that check: if the checked-out
+        # build is not the one recorded here, the run fails before any
+        # chain runs. To upgrade, re-run the chains on the new build, then
+        # update the ref above and the two values below in one commit.
+        env:
+          PYTHONPATH: ${{ github.workspace }}/stack/HERALD
+          HERALD_VERSION: "0.3.0"
+          HERALD_CODE_HASH: ac22540f2305c95f825c1c207db062b9a9c99f91ed949eb20497e3ccee775311
+        run: |
+          python - <<'PY'
+          import os
+          from herald.binding import Binding
+          Binding("cns-chains", os.environ["HERALD_VERSION"], os.environ["HERALD_CODE_HASH"]).verify()
+          print("HERALD pin ok")
+          PY
       - name: Four repositories, one chain
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/Governance_Gateway/src:${{ github.workspace }}/stack/DGK:${{ github.workspace }}/stack/DIT/src:${{ github.workspace }}/stack/URE
