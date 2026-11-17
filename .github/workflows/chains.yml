@@ -123,7 +123,7 @@ jobs:
           # Pinned to an exact commit, not the moving main branch. Moving it
           # is an explicit act: update this ref and HERALD_VERSION and
           # HERALD_CODE_HASH below together (see the pin step).
-          ref: 75c17ef3ad679f5a44b031cc8da55cd20c956215
+          ref: 5540c6ef91a87a2d8f95f0de650df3e7774fbc16
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -160,14 +160,32 @@ jobs:
         # update the ref above and the two values below in one commit.
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD
-          HERALD_VERSION: "0.3.0"
-          HERALD_CODE_HASH: ac22540f2305c95f825c1c207db062b9a9c99f91ed949eb20497e3ccee775311
+          HERALD_VERSION: "0.3.1"
+          HERALD_CODE_HASH: 9501ca9fb17e26f9cd0f5061c3c16389390ac52c2ea7bf149f1f2e04b17acd23
         run: |
           python - <<'PY'
           import os
           from herald.binding import Binding
           Binding("cns-chains", os.environ["HERALD_VERSION"], os.environ["HERALD_CODE_HASH"]).verify()
           print("HERALD pin ok")
+          PY
+      - name: Negative control, the pin refuses a wrong hash
+        # Proves the check above can fail. A deliberately wrong hash must be
+        # refused; if it is accepted, this step fails the run.
+        env:
+          PYTHONPATH: ${{ github.workspace }}/stack/HERALD
+          HERALD_VERSION: "0.3.1"
+        run: |
+          python - <<'PY'
+          import os, sys
+          from herald.binding import Binding
+          from herald.errors import BindingError
+          try:
+              Binding("cns-chains", os.environ["HERALD_VERSION"], "0" * 64).verify()
+          except BindingError as exc:
+              print("wrong hash refused, as required:", exc)
+              sys.exit(0)
+          sys.exit("pin accepted a wrong hash: enforcement is broken")
           PY
       - name: Four repositories, one chain
         env:
