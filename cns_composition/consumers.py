@@ -81,7 +81,6 @@ REQUIRED: Mapping[str, Imports] = {
     # gate tests cover the names (subject_digest, GateResult, GateOutcome, GatePosition, GateChain) they use.
     "TIE": {"cns.gate": ()},
     "CCCb": {"cns.gate": ()},
-    "Ecology": {"cns.gate": ()},
     "GSA": {"cns.gate": ()},
     "Triad-42": {"cns.gate": ()},
     "experimental": {"cns.gate": ()},

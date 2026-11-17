@@ -8,7 +8,6 @@ import ast
 import re
 from pathlib import Path
 
-from cns.gate import GatePosition
 from cns_composition.repo_gates import ENDS
 from cns_composition.spine_trace import SPINE
 
@@ -16,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / ".github" / "workflows" / "chains.yml").read_text(encoding="utf-8")
 FULL = ROOT / "chains" / "full_chain.py"
 SPINE_RUN = ROOT / "chains" / "spine_run.py"
-ECOLOGY = ROOT / "chains" / "ecology_answer.py"
 EVIDENCE = ROOT / "chains" / "evidence_spine.py"
 
 
@@ -37,7 +35,7 @@ def test_nothing_from_the_event_is_spliced_into_a_shell():
 
 def test_every_repository_the_chains_use_is_checked_out():
     declared = set(re.findall(r"repository: \$\{\{ github\.repository_owner \}\}/(\S+)", WORKFLOW))
-    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "Ecology", "HERALD", "TIE", "Conservation_Kernel", "ccc", "UAI-2", *SPINE}
+    assert declared == {"Governance_Gateway", "DGK", "DIT", "URE", "HERALD", "TIE", "Conservation_Kernel", "ccc", "UAI-2", *SPINE}
 
 
 def test_the_full_chain_names_only_repositories_whose_gate_ends_cns_declares():
@@ -60,41 +58,6 @@ def test_the_spine_script_exercises_every_repository_of_the_spine():
         assert f"{package}.cns_connector" in text or f"from {package} import" in text
 
 
-def test_the_ecology_script_runs_with_ecology_and_dit_importable_and_nothing_else_from_the_stack():
-    step = WORKFLOW.split("name: An Ecology answer, judged by DIT\n", 1)[1]
-    assert "run: python hub/chains/ecology_answer.py" in step.split("\n      - ", 1)[0]
-    path = re.search(r"PYTHONPATH: (.+)", step).group(1).split(":")
-    assert path == ["${{ github.workspace }}/stack/Ecology", "${{ github.workspace }}/stack/DIT/src"]
-
-
-def test_the_ecology_script_seats_only_dit_and_dit_declares_the_end_it_is_seated_at():
-    text = ECOLOGY.read_text(encoding="utf-8")
-    tree = ast.parse(text)
-    seated = {n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and n.elts
-              and isinstance(n.elts[0], ast.Constant) and n.elts[0].value in set(ENDS)}
-    assert seated == {"DIT"}
-    assert ENDS["DIT"] == {GatePosition.OMEGA}
-    imported = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-    assert imported == {"__future__", "cns", "cns_composition", "dit", "ecology_cns_connector", "pathlib", "typing"}
-    assert "require_complete=False" in text
-
-
-def test_the_ecology_chain_decides_through_the_super_gate_and_includes_a_left_out_gate():
-    """As for the full chain: a decision made without the one control point would not notice a gate left out."""
-    text = ECOLOGY.read_text(encoding="utf-8")
-    assert "SuperGate" in text and "run_repo_chain" not in text
-    assert "a DIT gate is left out of the request" in text and "leave_out=" in text
-
-
-def test_the_ecology_script_states_every_fact_each_scenario_must_produce_and_exits_nonzero_when_it_does_not():
-    text = ECOLOGY.read_text(encoding="utf-8")
-    ast.parse(text)
-    assert "SCENARIOS" in text and "return 1 if" in text and "raise SystemExit(main())" in text
-    for fact in ("outcome", "omega_ran", "blocked_by", "verdicts_unbound", "verdicts_bind_presented_text",
-                 "record_pins_judged_text", "ecology_digest_moved", "ecology_verified"):
-        assert f'"{fact}"' in text
-
-
 def test_the_full_chain_decides_through_the_super_gate_and_includes_a_left_out_gate():
     """The one control point is the thing under test: a decision made without it would not notice a gate left out."""
     text = FULL.read_text(encoding="utf-8")
@@ -115,7 +78,7 @@ def _required_seats(path: Path) -> tuple:
 
 def test_each_chain_requires_a_hand_written_roster_and_never_one_derived_from_its_own_seats():
     """A roster checked against itself passes with a gate missing, because it is missing from both."""
-    for path in (FULL, ECOLOGY, EVIDENCE):
+    for path in (FULL, EVIDENCE):
         seats, passed = _required_seats(path)
         assert seats and all(isinstance(s, str) and s.count(":") == 1 for s in seats) and len(set(seats)) == len(seats)
         assert {s.split(":")[0] for s in seats} <= set(ENDS)
@@ -124,7 +87,7 @@ def test_each_chain_requires_a_hand_written_roster_and_never_one_derived_from_it
 
 
 def test_both_chains_check_that_a_gate_dropped_from_the_roster_is_refused():
-    for path in (FULL, ECOLOGY, EVIDENCE):
+    for path in (FULL, EVIDENCE):
         text = path.read_text(encoding="utf-8")
         assert "dropped_gate_is_refused" in text and "drop=" in text
 
@@ -306,14 +269,12 @@ def test_every_spine_scenario_declares_an_expect_and_none_is_a_plain_string():
     assert "check_table(SCENARIOS)" in SPINE_RUN.read_text(encoding="utf-8")
 
 
-def test_the_ecology_checkout_may_fail_without_failing_the_job_and_its_step_runs_only_when_it_worked():
-    """Ecology was deleted on 2026-11-13 and is to be brought back: the other chains must keep running meanwhile."""
-    checkout = WORKFLOW.split("      - id: ecology\n", 1)[1].split("\n      - ", 1)[0]
-    assert "continue-on-error: true" in checkout and "/Ecology" in checkout and "path: stack/Ecology" in checkout
-    step = WORKFLOW.split("name: An Ecology answer, judged by DIT\n", 1)[1].split("\n      - ", 1)[0]
-    assert "if: steps.ecology.outcome == 'success'" in step and "run: python hub/chains/ecology_answer.py" in step
-    others = WORKFLOW.split("name: Four repositories, one chain", 1)[1]
-    assert "continue-on-error" not in others.replace(step, "").split("digest-second-language", 1)[0]
+def test_ecology_is_not_checked_out_its_chain_is_not_run_and_no_step_of_the_job_may_fail_without_failing_it():
+    """Ecology was deleted on 2026-11-13 and will not be restored (owner decision, 2026-11-16): nothing waits for it."""
+    assert "/Ecology" not in WORKFLOW and "stack/Ecology" not in WORKFLOW and "id: ecology" not in WORKFLOW
+    assert "ecology_answer.py" not in WORKFLOW and not (ROOT / "chains" / "ecology_answer.py").exists()
+    job = WORKFLOW.split("\njobs:\n", 1)[1]
+    assert "continue-on-error" not in job.split("digest-second-language", 1)[0]
 
 
 def test_the_uai_to_ccc_script_runs_in_the_workflow_with_the_evidence_spines_repositories_and_states_what_each_scenario_must_produce():
