@@ -123,7 +123,7 @@ jobs:
           # Pinned to an exact commit, not the moving main branch. Moving it
           # is an explicit act: update this ref and HERALD_VERSION and
           # HERALD_CODE_HASH below together (see the pin step).
-          ref: 5540c6ef91a87a2d8f95f0de650df3e7774fbc16
+          ref: 68b9103952e82d5b4db00c5677af5efe2390d5c6
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -160,8 +160,8 @@ jobs:
         # update the ref above and the two values below in one commit.
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD
-          HERALD_VERSION: "0.3.1"
-          HERALD_CODE_HASH: 9501ca9fb17e26f9cd0f5061c3c16389390ac52c2ea7bf149f1f2e04b17acd23
+          HERALD_VERSION: "0.5.0"
+          HERALD_CODE_HASH: b0e8dd49119ed05eb4a072ce41161879cb92629c79f0d0626839785e8d22da69
         run: |
           python - <<'PY'
           import os
@@ -169,23 +169,41 @@ jobs:
           Binding("cns-chains", os.environ["HERALD_VERSION"], os.environ["HERALD_CODE_HASH"]).verify()
           print("HERALD pin ok")
           PY
-      - name: Negative control, the pin refuses a wrong hash
-        # Proves the check above can fail. A deliberately wrong hash must be
-        # refused; if it is accepted, this step fails the run.
+      - name: Negative controls, the pin refuses what it must refuse
+        # Proves the check above can fail. Each case below must be refused
+        # with BindingError; if any is accepted, this step fails the run.
+        # The one case that must pass (the real pin) is the step above.
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD
-          HERALD_VERSION: "0.3.1"
+          HERALD_VERSION: "0.5.0"
+          HERALD_CODE_HASH: b0e8dd49119ed05eb4a072ce41161879cb92629c79f0d0626839785e8d22da69
         run: |
           python - <<'PY'
           import os, sys
           from herald.binding import Binding
           from herald.errors import BindingError
-          try:
-              Binding("cns-chains", os.environ["HERALD_VERSION"], "0" * 64).verify()
-          except BindingError as exc:
-              print("wrong hash refused, as required:", exc)
-              sys.exit(0)
-          sys.exit("pin accepted a wrong hash: enforcement is broken")
+          version = os.environ["HERALD_VERSION"]
+          good_hash = os.environ["HERALD_CODE_HASH"]
+          cases = {
+              "right version, wrong hash": (version, "0" * 64),
+              "right version, missing hash": (version, None),
+              "old version 0.4.0 with its old hash": (
+                  "0.4.0", "4cce2e1fd02feae34df54ce22092cd8168f70c7ace06b07469da33231f78262a"),
+              "old version 0.3.1 with its old hash": (
+                  "0.3.1", "9501ca9fb17e26f9cd0f5061c3c16389390ac52c2ea7bf149f1f2e04b17acd23"),
+              "old version with the current hash": ("0.4.0", good_hash),
+          }
+          failed = []
+          for name, (v, h) in cases.items():
+              try:
+                  Binding("cns-chains", v, h).verify()
+              except BindingError:
+                  print("refused, as required:", name)
+              else:
+                  failed.append(name)
+          if failed:
+              sys.exit("pin accepted: " + "; ".join(failed))
+          print("all negative controls refused")
           PY
       - name: Four repositories, one chain
         env:
