@@ -123,7 +123,7 @@ jobs:
           # Pinned to an exact commit, not the moving main branch. Moving it
           # is an explicit act: update this ref and HERALD_VERSION and
           # HERALD_CODE_HASH below together (see the pin step).
-          ref: 68b9103952e82d5b4db00c5677af5efe2390d5c6
+          ref: d7054aa7d53f91ff5912ab8d37b3df5503a71dff
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -160,8 +160,8 @@ jobs:
         # update the ref above and the two values below in one commit.
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD
-          HERALD_VERSION: "0.5.0"
-          HERALD_CODE_HASH: b0e8dd49119ed05eb4a072ce41161879cb92629c79f0d0626839785e8d22da69
+          HERALD_VERSION: "0.6.0"
+          HERALD_CODE_HASH: 3d231b0f2f63e16baa2324072c28ce6dd590403a8cd5b103cdfc0e2b158f0447
         run: |
           python - <<'PY'
           import os
@@ -175,8 +175,8 @@ jobs:
         # The one case that must pass (the real pin) is the step above.
         env:
           PYTHONPATH: ${{ github.workspace }}/stack/HERALD
-          HERALD_VERSION: "0.5.0"
-          HERALD_CODE_HASH: b0e8dd49119ed05eb4a072ce41161879cb92629c79f0d0626839785e8d22da69
+          HERALD_VERSION: "0.6.0"
+          HERALD_CODE_HASH: 3d231b0f2f63e16baa2324072c28ce6dd590403a8cd5b103cdfc0e2b158f0447
         run: |
           python - <<'PY'
           import os, sys
@@ -187,6 +187,8 @@ jobs:
           cases = {
               "right version, wrong hash": (version, "0" * 64),
               "right version, missing hash": (version, None),
+              "old version 0.5.0 with its old hash": (
+                  "0.5.0", "b0e8dd49119ed05eb4a072ce41161879cb92629c79f0d0626839785e8d22da69"),
               "old version 0.4.0 with its old hash": (
                   "0.4.0", "4cce2e1fd02feae34df54ce22092cd8168f70c7ace06b07469da33231f78262a"),
               "old version 0.3.1 with its old hash": (
