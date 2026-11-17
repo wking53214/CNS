@@ -238,7 +238,7 @@ class Read:
 
 
 def herald(text: str, source_id: str = "doc-1", gate: Optional[ConfidenceGate] = None, confirm: bool = False,
-           signing_key: Optional[Ed25519PrivateKey] = None) -> Read:
+           signing_key: Optional[Ed25519PrivateKey] = None, audience: str = "TIE") -> Read:
     """HERALD's governed run, then its export. With `confirm`, a named human signs off every refused claim first."""
     document = SourceDocument(source_id=source_id, text=text, standing=STANDING_RECORD)
     gate = gate if gate is not None else ConfidenceGate()
@@ -252,7 +252,8 @@ def herald(text: str, source_id: str = "doc-1", gate: Optional[ConfidenceGate] =
                 rationale="checked against the paper invoice"))
         decisions.append(gate.submit(claim, document=document, confirmation=confirmation))
     key = EXPORT_KEY if signing_key is None else signing_key
-    return Read(document, gate, claims, build_handoff(claims, decisions, document, export_signing_key=key).to_dict())
+    return Read(document, gate, claims, build_handoff(claims, decisions, document, export_signing_key=key,
+                                                         audience=audience).to_dict())
 
 
 def tie(export: dict, source_id: str, text: str) -> Tuple[list, str]:
@@ -1781,6 +1782,14 @@ def export_signed_by_another_key() -> Dict[str, object]:
     return {"tie_refused": bool(refusal), "refused_as_untrusted": "not trusted" in refusal, "tie_evidence": len(evidence)}
 
 
+def export_addressed_to_someone_else() -> Dict[str, object]:
+    """HERALD signs a genuine export, but addressed to another receiver. TIE refuses it by name; nothing runs downstream."""
+    read = herald(INVOICE, "doc-1", audience="SomeoneElse")
+    evidence, refusal = tie(read.export, "doc-1", INVOICE)
+    return {"tie_refused": bool(refusal), "refused_as_wrong_audience": "addressed to" in refusal,
+            "tie_evidence": len(evidence)}
+
+
 def export_verified_in_another_process() -> Dict[str, object]:
     """A separate process holding only HERALD's public key verifies the export; it refuses an altered copy.
 
@@ -1840,6 +1849,8 @@ SCENARIOS.extend([
      caller_verifier_is_not_taken, {"caller_verifier_taken": False}),
     ("SEAM HOLDS: an export signed by a key TIE does not pin is refused by TIE, by name, before anything downstream runs",
      export_signed_by_another_key, {"tie_refused": True, "refused_as_untrusted": True, "tie_evidence": 0}),
+    ("SEAM HOLDS: a genuinely signed export addressed to another receiver is refused by TIE, by name, before anything downstream runs",
+     export_addressed_to_someone_else, {"tie_refused": True, "refused_as_wrong_audience": True, "tie_evidence": 0}),
     ("SEAM HOLDS: a separate process holding only HERALD's public key verifies the export, and refuses an altered copy",
      export_verified_in_another_process, {"honest_verified_elsewhere": True, "altered_refused_elsewhere": True,
                                           "answer_elsewhere": "verified"}),
