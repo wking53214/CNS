@@ -714,7 +714,8 @@ def stopped(refusal: str, **extra) -> Dict[str, object]:
 
 
 #: TIE's own words for the two refusals the seams rest on (tie.evidence.herald_intake).
-REFUSAL_PHRASES = {"different text": "read from different text", "export did not verify": "export did not verify"}
+REFUSAL_PHRASES = {"different text": "read from different text", "export did not verify": "export did not verify",
+                   "renamed source": "HERALD export is about source"}
 
 
 def _because(refusal: str) -> str:
@@ -746,12 +747,10 @@ def export_edited() -> Dict[str, object]:
 
 
 def export_relabelled() -> Dict[str, object]:
-    """HERALD read doc-1; TIE is told the same text is doc-7 and records it under that id."""
+    """HERALD read doc-1; TIE is told the same text is doc-7. TIE refuses: the export names the document it is about."""
     read = herald(INVOICE, "doc-1")
     evidence, refusal = tie(read.export, "doc-7", INVOICE)
-    kernel, root = kernel_root(evidence, "doc-7", INVOICE)
-    entry = door(root, "doc-7")
-    return facts(decide(read, kernel, root, entry), evidence, refusal, trace(read, "doc-7", INVOICE, evidence, root, entry))
+    return stopped(refusal) if refusal else {"tie_refused": False, "tie_evidence": len(evidence)}
 
 
 def mixed_run() -> Dict[str, object]:
@@ -1604,9 +1603,8 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      export_to_other_text, {**NOT_REACHED, "tie_refused_because": "different text"}),
     ("SEAM HOLDS: HERALD's export edited after it was signed is refused by TIE",
      export_edited, {**NOT_REACHED, "tie_refused_because": "export did not verify"}),
-    ("SEAM HOLDS: HERALD read doc-1, TIE is told the same text is doc-7 and records it as doc-7; same_subject refuses it",
-     export_relabelled, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"], "tie_source": ["doc-7"],
-                          "one_document": False}),
+    ("SEAM HOLDS: HERALD read doc-1, TIE is told the same text is doc-7; TIE refuses it before anything downstream runs",
+     export_relabelled, {**NOT_REACHED, "tie_refused_because": "renamed source"}),
     ("SEAM HOLDS: HERALD judged the true invoice, kernel and gateway judged the inflated one; same_subject refuses it",
      mixed_run, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["same_subject"],
                  "root_text_is_what_herald_read": False, "one_document": False}),
