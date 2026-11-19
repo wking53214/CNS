@@ -23,6 +23,20 @@ Where the five-repository circuit stood on 2026-11-06 (what was checked, what it
 still open; older than this README and not refreshed): [docs/STATUS.md](docs/STATUS.md). Which three repositories were released from the circuit, why, and what
 remains to be done: [docs/RELEASED_SEATS.md](docs/RELEASED_SEATS.md).
 
+## Role Within ≡TACK
+
+- **What it is.** The shared vocabulary: one package of shapes (gate, verdict, row, run record, digest) that other ≡TACK repositories import so they can read each other's verdicts.
+- **What it owns.** The shapes and pure functions of them in `cns/`, such as `cns.gate.subject_digest`. Behavior written against the shapes lives beside the package in `cns_composition/` (the circuit runner, the stack manifest, admission checks), never inside it (`CLAUDE.md` rule 3, held by `tests/test_graph.py`).
+- **What it contributes.** A common verdict (PASS, RETRY, TERMINAL_BREACH), a digest that binds a verdict to the content it judged, and cross-repository checks (the spine run, the circuit install check, the links check).
+- **What it does not own.** Policy definition and authentication. The `cns` package (the shapes) decides nothing and enforces nothing. A digest-bound verdict says who judged what, not that anyone may act. The receiving system keeps authority (see "How it works, and where authority stays"). Signing, signature checking, freshness and replay checking of UAI-1 envelopes live in UAI-2, not here.
+- **Where `cns_composition` goes beyond shapes.** Two parts of the composition package take part in a decision when a caller wires them in, as the evidence spine script does. `SuperGate` holds a roster of other repositories' gates and resolves their verdicts into one go or no-go. It adds no judgment of its own, and its module calls itself "the one place that says go". `DecisionGuard` turns an approved decision into a one-use permission that a kernel or a store asks before it writes. It answers no after a refusal, after a first use, or for a different document. Both work inside one process: the proof that a decision was issued is a process-local key, and the record of spent decisions lives in that process (the module's own notes say so). Across processes the spine script uses UAI-2's `RemoteDecisionGuard` instead. So the diagram's line "grants no permission" is true of the `cns` package and not of `DecisionGuard`.
+- **Depends on.** The Python standard library for the two packages, plus the optional `anthropic` SDK for the provider adapter. The circuit checks pull sibling repositories at pinned commits. At `6e713e5` the `chains` workflow pins HERALD by commit, version and code hash, and checks out the `main` of TIE, Conservation_Kernel, Governance_Gateway, CCC and UAI-2 (INSPECTED 2026-11-17). Two chain scripts (`chains/evidence_spine.py`, `chains/uai_to_ccc.py`) and three evidence scripts under `docs/evidence/` import `cns_interop`, which lives in UAI-2 and is not in this repository or its wheel. UAI-2 in turn depends on CNS (it pins the tag v4.0.0). The two repositories therefore depend on each other: UAI-2's package needs `cns`, and these CNS scripts need UAI-2. Running the evidence spine needs UAI-2 on the Python path; without it the script stops at an import error (EXECUTED 2026-11-17).
+- **Depended on by.** Many repositories import it. `contracts/cns-links.json` is the ledger (42 entries per this README, checked 2026-10-22; not re-checked 2026-11-15).
+- **Verified versus declared.** Verified by tests: shapes, digest, composition rules (below). A connector existing in another repository does not mean that repository's application uses it (see "CNS connection").
+- **Failure behavior.** Shapes refuse bad input with an error (for example `subject_digest` refuses subclasses of builtin types). A skipped test fails the run (`conftest.py`).
+
+EXECUTED 2026-11-15 at `5ad55ce`: `python3 -m pytest -q` in a clean checkout, 2303 passed, no skips. The status block above is dated 2026-11-12 and was not rewritten here; its repository pin counts and test figure (2170) are older than this run. `ruff`, `mypy` and `release --check` were not run. Re-run 2026-11-17 at `6e713e5` (version 4.1.0), same command: 2298 passed, no skips. License: Apache-2.0 (`LICENSE`).
+
 ## The interoperability foundation (read this first)
 
 CNS is meant to be the common ground that independent systems can stand on to exchange structured, checkable objects
@@ -81,6 +95,8 @@ receiver's **own** grant allows it, and a person's approval is bound to one deci
 | That terms, disclosures and evidence match what was agreed | Anything on behalf of a participant's own policy |
 | That native and CNS-added information stay distinguishable | Truth, fairness or safety of what is exchanged |
 
+**Which code makes these checks (checked 2026-11-17 at `6e713e5`).** The table describes CNS together with UAI-1. The signature row (Ed25519) and the freshness and replay row are checks made by the UAI-1 code in UAI-2 (`cns_interop`), not by this repository. A search of the `cns` and `cns_composition` packages finds no signature code, no replay ledger and no network transport; the one outside call is the optional Anthropic adapter, which uses the provider's SDK. "Transport" in the diagram above is likewise UAI-2's. What this repository's own packages check is shape, the content digest and digest binding (`cns.gate.subject_digest`, `GateResult.binds`).
+
 Validation is not judgment. Integrity is not truth. Identity is not permission. Interoperability is not authority.
 
 ### How it relates to UAI-1, and how AI providers and agents connect
@@ -105,7 +121,7 @@ What goes in: a decision from any repo that joins CNS, written in the shared sha
 
 ### CNS connection
 
-CNS is shared infrastructure that several systems use, not a stage in one pipeline. Each connected repo has a connector that sends its verdicts to CNS, and CNS has an admission module that reads them back. The ledger in `contracts/cns-links.json` lists 42 repositories: 36 two-way, 5 exempt and 1 hub (this one). A connector existing does not mean the application uses it, and a passing check is not permission to act. See "Where the six spine repositories stand" below for what was built, tested and used.
+CNS is shared infrastructure that several systems use, not a stage in one pipeline. Each connected repo has a connector that expresses its verdicts in CNS's shapes by importing `cns`. Nothing is sent to CNS over a network, and CNS runs no service. For some repos, CNS's composition package has a module that reads those verdicts. The ledger in `contracts/cns-links.json` lists 42 repositories: 36 two-way, 5 exempt and 1 hub (this one). A connector existing does not mean the application uses it, and a passing check is not permission to act. See "Where the six spine repositories stand" below for what was built, tested and used.
 
 ### Implemented today, and what is not
 
@@ -175,6 +191,14 @@ How far this has got is in `docs/STATUS.md` and in "What works" and "What does n
 | Conservation_Kernel | judges a root artifact built from that evidence before it becomes ancestry |
 | Governance_Gateway | judges the artifact at its admission door |
 | CCC | judges the attempt to ingest the document into its store |
+
+The table is the order the script runs, not a set of shipped handoffs. HERALD to TIE is a real handoff: TIE verifies
+HERALD's signed export itself. None of the five repositories ships the step from TIE evidence to a kernel root, or from a
+kernel root to a gateway artifact. The script writes those steps itself and says so in its header. The three middle
+hand-offs (TIE evidence into a kernel root, a kernel root into the gateway's artifact, the document into CCC's attempt)
+are also shipped as library functions in the [Spine](https://github.com/wking53214/Spine) repository (`spine.evidence`,
+`spine.door`, `spine.ccc`). Spine passes its own 41 tests at its pinned versions and has no running service (EXECUTED
+2026-11-19 at Spine `7717f12`); it pins this repository at `64c68b5`, 36 commits behind main.
 
 Each of the five is tested alone and binds its own verdict to what it judged. What no single suite can see is the
 seams: whether the document that reaches the last door is the one HERALD read, and whether a verdict at one hop says
@@ -912,7 +936,7 @@ Each line names the test or workflow job that holds it. A claim without one is n
   so nothing breaks today; the owner deferred the rename on 2026-10-22 (the decision record says why).
 - `release --check` sees a tag only where it is visible; a shallow CI checkout has none, so "the tag exists but
   the table has no row" is caught in a local checkout, not in CI.
-- The `links` job cannot read ATS and Resume_OS (private); their to_cns proofs are named as unverified every run.
+- The `links` job names the to_cns proofs of ATS and Resume_OS as unverified every run, because `contracts/cns-links.json` marks both private. Resume_OS is private. ATS is public (VERIFIED on GitHub, 2026-11-19).
 - `consumers` reads imports. A repository that takes `cns.gate` as a module and uses its names as attributes is
   registered with the module only, so a rename of such a name is not caught for it.
 - The circuit is run on Python 3.12 only (the `stack` job); the four-interpreter matrix covers the shapes.
@@ -968,7 +992,7 @@ From the git history and the sibling changelogs. Each row names the commit or th
 - No outside user. Every consumer is in the same account; the ledger has nothing to say about anyone else.
 - Every circuit repository pins CNS by its tag and every other circuit pin is a full commit. What the other
   repositories have tagged is for their own tags and releases pages to say; a statement here would go stale.
-- Two repositories are private and cannot be verified by the `links` job.
+- Two repositories are marked private in `contracts/cns-links.json` and are not verified by the `links` job: Resume_OS, and ATS, which is public (VERIFIED on GitHub, 2026-11-19).
 
 <!-- ghost_buster:name-disagreements:begin -->
 ## Name disagreements
