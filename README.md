@@ -5,16 +5,19 @@
 > `release --check` were not re-run). `chains/spine_run.py` 164 of 164 and `chains/evidence_spine.py` 56 results, 3 of
 > them recorded GAPs, exit 0, both against the floating `main` of the sibling repositories; for beta and delta that is
 > newer than the commits `contracts/spine-manifest.json` names, and the `spine-pinned` job is the run at those commits.
-> `pip install -r contracts/install-stack.txt` resolves in a clean virtual environment. **Not done:** the library's
-> move to 3.0.0 is in progress ([runbook](docs/releases/v3.0.0-sweep-runbook.md)). Of the 37 repositories in
-> `contracts/cns-links.json` whose pin could be read, 25 pin `v3.0.0` on `main`, 11 still pin an older tag and
-> STACK-Kernel carries no CNS pin. Open pull requests move eight of the 11: GSA#15, ATS#15, Ecology#25,
-> experimental#14, sentinel_os#126, Resume_OS#6, OBSERVE#29 and ZTS#32. The other three are held for the owner:
-> fortress-kernel and observe-perceive (a test in each depends on how CNS 2.3.0 behaved) and GSA-815 (it vendors
-> sentinel_os and must carry the same pin, so it follows sentinel_os#126). The `stack` workflow passed on the pull request run for #142. The `chains` job,
-> which runs each repository's floating `main`, last passed on 2026-11-11 (branch `ccr-271ac8e8-y0qkj4`) after failing
-> on the pull request run for #137. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`;
-> `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release.
+> `pip install -r contracts/install-stack.txt` resolves in a clean virtual environment. **Pins, checked 2026-11-20:** the move to
+> 3.0.0 is finished and the library has gone past it. `python -m cns_composition.cns_versions` over fresh checkouts of the 36
+> repositories in `contracts/cns-links.json` that could be cloned read 40 pins in 35 repositories (the current release is `v4.1.0`).
+> **Pinning `v4.1.0` (15):** ASSAY, BURNISH, DRAFTER, Governance_Gateway, HERALD, JUDGE, Link, SWIZZLE, WARDEN, WATCHER_MCU,
+> ghost_tools and the four interconnected repositories (alpha, beta, delta, zeta). **Pinning `v4.0.0` (20):** ATS, CCC, CCCb,
+> Conservation_Kernel, DGK, DIT, GEMS, GSA, GSA-815, OBSERVE, PERCEIVE, Resume_OS, TIE, Triad-42, URE, ZTS, experimental,
+> fortress-kernel, observe-perceive and sentinel_os. ZTS also pins `v3.0.0` in its `cns-3` workflow job on purpose, to hold the
+> dock's acceptance of major 3. No direct pin: STACK-Kernel and p3-2-governance-research. Not read: composition-engine, WATCHER and
+> synapsis (not cloneable from here), and Ecology, which was retired and deleted on 2026-11-13. The earlier list of open pull
+> requests (GSA#15, ATS#15, Ecology#25, experimental#14, sentinel_os#126, Resume_OS#6, OBSERVE#29, ZTS#32) is finished, and
+> fortress-kernel, observe-perceive and GSA-815, once held for the owner, pin `v4.0.0` too. This list is a snapshot from the
+> checker's output, not a ledger; rerun the checker for the current state. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`,
+> `v2.0.0` and `v1.5.1`; later tags have their text in `docs/releases/` or the changelog and no Release.
 
 The central nervous system of the library: one package holding
 the contracts every repo joins on.
