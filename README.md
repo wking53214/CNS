@@ -8,14 +8,10 @@
 > `pip install -r contracts/install-stack.txt` resolves in a clean virtual environment. **Pins, checked 2026-11-20:** the move to
 > 3.0.0 is finished and the library has gone past it. `python -m cns_composition.cns_versions` over fresh checkouts of the 36
 > repositories in `contracts/cns-links.json` that could be cloned read 40 pins in 35 repositories (the current release is `v4.1.0`).
-> **Pinning `v4.1.0` (15):** ASSAY, BURNISH, DRAFTER, Governance_Gateway, HERALD, JUDGE, Link, SWIZZLE, WARDEN, WATCHER_MCU,
-> ghost_tools and the four interconnected repositories (alpha, beta, delta, zeta). **Pinning `v4.0.0` (20):** ATS, CCC, CCCb,
-> Conservation_Kernel, DGK, DIT, GEMS, GSA, GSA-815, OBSERVE, PERCEIVE, Resume_OS, TIE, Triad-42, URE, ZTS, experimental,
-> fortress-kernel, observe-perceive and sentinel_os. ZTS also pins `v3.0.0` in its `cns-3` workflow job on purpose, to hold the
+> **Every one of the 35 repositories pins `v4.1.0`**, including the four interconnected repositories (alpha, beta, delta, zeta) and
+> the earlier `v4.0.0` pins, which were all moved on 2026-11-20. ZTS also pins `v3.0.0` in its `cns-3` workflow job on purpose, to hold the
 > dock's acceptance of major 3. No direct pin: STACK-Kernel and p3-2-governance-research. Not read: composition-engine, WATCHER and
-> synapsis (not cloneable from here), and Ecology, which was retired and deleted on 2026-11-13. The earlier list of open pull
-> requests (GSA#15, ATS#15, Ecology#25, experimental#14, sentinel_os#126, Resume_OS#6, OBSERVE#29, ZTS#32) is finished, and
-> fortress-kernel, observe-perceive and GSA-815, once held for the owner, pin `v4.0.0` too. This list is a snapshot from the
+> synapsis (not cloneable from here), and Ecology, which was retired and deleted on 2026-11-13. This list is a snapshot from the
 > checker's output, not a ledger; rerun the checker for the current state. GitHub Releases exist for `v2.2.0` (latest), `v2.1.0`,
 > `v2.0.0` and `v1.5.1`; later tags have their text in `docs/releases/` or the changelog and no Release.
 
