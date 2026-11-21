@@ -3,9 +3,9 @@
   "contract": "1",
   "repos": {
     "ghost_tools": "9acd655f7cc387b4ff355c90b4449fb8bb5e809e",
-    "SWIZZLE": "36fc4dc2986abc20ada88edd5547cc7217b1539c",
-    "ASSAY": "4da96411eb09f25e68a024cd1aeb004322c1c99f",
-    "JUDGE": "40209eb1e679db64be1ad45ea71bc81e944c4628",
+    "SWIZZLE": "cecbe5fe9932961af5c10cf1c692c829e66f3015",
+    "ASSAY": "d784427432f934f9e65aec7f81baea114ec4ad22",
+    "JUDGE": "65adaf8b102d88b3123acfff391dd585d9fc6d4b",
     "WARDEN": "26d8128ecd75c841125128533812763385dc7497"
   }
 }
