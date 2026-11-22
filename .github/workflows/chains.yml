@@ -30,7 +30,7 @@
 #                        this job runs the set the four repositories declare. It first holds every pin and every checkout to
 #                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 192 scenarios, including the hardened
 #                        components' refusals, the delta receipt, its signature and the file store. The manifest names the tips
-#                        alpha 5ed5ca9, zeta 97f7899, beta 585d601 and delta 3497c8b. Individual green CI is not this. It runs on Python 3.10 (the floor in
+#                        alpha 5ed5ca9, zeta 97f7899, beta 46d59a9 and delta b0ed6a4. Individual green CI is not this. It runs on Python 3.10 (the floor in
 #                        pyproject.toml) and 3.12, so the floor is exercised and not only declared.
 #
 # Each script exits 1 when a scenario differs from what it states, so this goes red the day a repository changes in a
