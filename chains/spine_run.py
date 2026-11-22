@@ -24,7 +24,7 @@ never ends the run), if a refusal's text came back without a refusal having been
 state it guarded (the whole content of every entry, not only its hash). Thirteen scenarios, marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
 recomputes every digest and fingerprint and writes a consistent receipt), a receipt written by hand over real contents
 with no ledger behind it, a narrative forged by someone who also recomputes the keyless content fingerprint, a Decision
-citing a closed lock, a legacy lock result with no entity id, a KeySet swapped under a copied fingerprint when no
+citing a closed lock, a KeySet swapped under a copied fingerprint when no
 recomputation is supplied, a sink whose own store keeps a write the ledger does not have (delta's idempotency
 contract), and a rewritten ledger given a fresh checkpoint when no checkpoint is held outside it (`held_checkpoint`), and, with the
 signed receipts and the durable store, a holder of a trusted key signing a forged receipt, an older signed checkpoint (a signature
