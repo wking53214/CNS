@@ -328,12 +328,12 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
 The `chains` workflow runs 192 scenarios (counted from the runner): seven lenient, and 185 more (the strict ones, the oracle and
 the manifest checks held to account with real objects, the signed receipts, the durable store, the verify command and the
 domain packs). Of the
-192 in all, 46 are checks that hold, 132 are attacks (58 problems, 74 refusals)
+192 in all, 46 are checks that hold, 133 are attacks (58 problems, 75 refusals)
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
 only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
 that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
-change), and the fourteen gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
-fingerprint, a cited closed lock, a legacy lock result, a KeySet swapped when no recomputation is supplied, the sink's
+change), and the thirteen gaps stated as facts that go red the day they close (authorship, a hand-built receipt, a keyless content
+fingerprint, a cited closed lock, a KeySet swapped when no recomputation is supplied, the sink's
 own store, a rewritten ledger with a fresh checkpoint when none is held outside it, a truncated export and a rewritten, rechained export
 when no checkpoint is held outside, a holder of a trusted key signing a forged receipt, an older signed checkpoint, and a
 ledger rolled back to an older signed package: limits 1, 8 and 9, and a pack identity that is the producer's own claim); 13 of the first 106 verify delta's public `export` with `verify_export` and a checkpoint held

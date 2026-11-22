@@ -24,7 +24,7 @@ never ends the run), if a refusal's text came back without a refusal having been
 state it guarded (the whole content of every entry, not only its hash). Thirteen scenarios, marked GAP, record what the strict check does NOT catch as facts that expect no problem: authorship (a forger who
 recomputes every digest and fingerprint and writes a consistent receipt), a receipt written by hand over real contents
 with no ledger behind it, a narrative forged by someone who also recomputes the keyless content fingerprint, a Decision
-citing a closed lock, a legacy lock result with no entity id, a KeySet swapped under a copied fingerprint when no
+citing a closed lock, a KeySet swapped under a copied fingerprint when no
 recomputation is supplied, a sink whose own store keeps a write the ledger does not have (delta's idempotency
 contract), and a rewritten ledger given a fresh checkpoint when no checkpoint is held outside it (`held_checkpoint`), and, with the
 signed receipts and the durable store, a holder of a trusted key signing a forged receipt, an older signed checkpoint (a signature
@@ -85,8 +85,8 @@ from alpha.packs.pediatric_vitals import VitalsObservation, observe
 from alpha.packs.pediatric_vitals import PediatricVitalsPack
 from alpha.packs.service_health import ServiceHealthPack, ServiceObservation
 from beta import (
-    Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError,
-    StaleLockResultError, decision_fingerprint)
+    Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError, MissingEvidenceError,
+    StaleLockResultError, SuppliedLockResultsRefused, decision_fingerprint)
 from beta.fingerprint import content_fingerprint
 from cns.gate import subject_digest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -124,6 +124,17 @@ def build():
     return locks, DecisionEngine(rules, locks)
 
 
+# Beta refuses lock results it did not evaluate itself, before any lock state changes. Scenarios that hand beta another
+# patient's, a stale, a borrowed or a legacy lock result are answered by this refusal; beta's own tests cover the detailed
+# checks behind it (entity, staleness, KeySet lineage).
+SUPPLIED_REFUSED = "decide does not accept lock results it did not evaluate"
+
+
+def decide_fresh(entity: str, keys: KeySet, at: datetime) -> Decision:
+    """A Decision from a new engine with no lock state, made the normal way: beta evaluates the locks from `keys` itself."""
+    return build()[1].evaluate_and_decide(entity, keys, at).decision
+
+
 def facts(keys, results, decision, entry, entity="patient_1") -> SpineRecord:
     return SpineRecord(
         entity_id=entity,
@@ -140,8 +151,8 @@ def run(vitals=SICK):
     locks, engine = build()
     ledger = DecisionLedger()
     keys = observe(vitals)
-    results = LockEvaluator(locks).evaluate_all("patient_1", keys, T0)
-    decision = engine.decide("patient_1", keys, results, T0)
+    evaluated = engine.evaluate_and_decide("patient_1", keys, T0)
+    results, decision = evaluated.lock_results, evaluated.decision
     return engine, ledger, keys, results, decision, ledger.append(decision)
 
 
@@ -163,7 +174,7 @@ def cites_a_lock_zeta_never_evaluated() -> List[str]:
 def ledger_recorded_another_decision() -> List[str]:
     engine, ledger, keys, results, decision, _ = run()
     well = observe(WELL)
-    other = engine.decide("patient_1", well, LockEvaluator(build()[0]).evaluate_all("patient_1", well, T0), T0)
+    other = decide_fresh("patient_1", well, T0)
     return problems(facts(keys, results, decision, ledger.append(other)))
 
 
@@ -197,10 +208,18 @@ def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind
     alpha = alpha_cns.keyset_content(keys, context=ctx, origin=origin)
     # zeta and beta are told which KeySet digest to name; nothing in either can check it against what they evaluated.
     da = subject_digest(alpha if bind_keyset_of is None else alpha_cns.keyset_content(observe(bind_keyset_of), context=ctx))
-    results = LockEvaluator(locks).evaluate_all(entity, keys, at)
+    if results_from is None and keys_for_decision is None:
+        # The normal path: beta evaluates the locks itself and hands back the lock results it decided from.
+        evaluated = engine.evaluate_and_decide(entity, keys, at)
+        results, decision = evaluated.lock_results, evaluated.decision
+        decided_on = results
+    else:
+        # An attack that hands beta lock results it did not evaluate (or evaluated from another KeySet). Beta refuses
+        # these at the door with SuppliedLockResultsRefused, before any lock state or ledger changes.
+        results = LockEvaluator(locks).evaluate_all(entity, keys, at)
+        decided_on = results if results_from is None else results_from
+        decision = engine.decide(entity, keys if keys_for_decision is None else keys_for_decision, decided_on, at)
     zeta = {lid: zeta_cns.lock_result_content(r, context=ctx, keyset_digest=da) for lid, r in results.items()}
-    decided_on = results if results_from is None else results_from
-    decision = engine.decide(entity, keys if keys_for_decision is None else keys_for_decision, decided_on, at)
     beta = beta_cns.decision_content(
         decision, context=ctx, keyset_digest=da,
         lock_result_digests={lid: zeta_cns.lock_result_digest(r, context=ctx, keyset_digest=da) for lid, r in decided_on.items()})
@@ -289,7 +308,8 @@ def refused(thunk: Callable[[], Any], state: Callable[[], Any] | None = None, ca
     and after: a refusal that changed it is a second problem (see spine_oracle.refused). `catch` adds exception classes
     beyond the ValueErrors, TypeErrors and OverflowErrors the oracle already treats as refusals. `record` is the scenario's
     own record (`attempts()`), handed to a thread the scenario started; see spine_oracle.attempts."""
-    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError) + tuple(catch), state=state, record=record)
+    return _refused(thunk, catch=(StaleLockResultError, KeySetMismatchError, SuppliedLockResultsRefused,
+                                  MissingEvidenceError) + tuple(catch), state=state, record=record)
 
 
 def ledger_state(ledger: DecisionLedger) -> Callable[[], Any]:
@@ -376,7 +396,7 @@ def beta_decided_from_another_lock_result() -> List[str]:
 
 def delta_recorded_another_decision() -> List[str]:
     p = stages(SICK)
-    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    other = decide_fresh("patient_1", observe(WELL), T0)
     p["delta"] = delta_cns.entry_content(DecisionLedger().append(other, context=CTX), context=CTX,
                                          decision_digest=subject_digest(p["beta"]))
     return check(p)
@@ -433,11 +453,9 @@ def three_decisions_in_a_ledger() -> DecisionLedger:
     """Three real Decisions, each a minute later (an identical Decision is a replay, which delta refuses)."""
     ledger = DecisionLedger()
     for i, vitals in enumerate((SICK, WELL, SICK)):
-        engine = build()[1]
         keys = observe(vitals)
         at = T0 + timedelta(minutes=i)
-        results = LockEvaluator(build()[0]).evaluate_all("patient_1", keys, at)
-        ledger.append(engine.decide("patient_1", keys, results, at), context={**CTX, "run_id": f"run_{i}", "event_id": f"event_{i}"})
+        ledger.append(decide_fresh("patient_1", keys, at), context={**CTX, "run_id": f"run_{i}", "event_id": f"event_{i}"})
     return ledger
 
 
@@ -475,8 +493,8 @@ def a_checkpoint_taken_from_another_ledger() -> List[str]:
     """An honest ledger and an honest checkpoint of a different ledger (other Decisions, a length the first one reaches)."""
     ledger = three_decisions_in_a_ledger()
     other = DecisionLedger()
-    engine, keys = build()[1], observe(WELL)
-    other.append(engine.decide("patient_9", keys, LockEvaluator(build()[0]).evaluate_all("patient_9", keys, T0), T0),
+    keys = observe(WELL)
+    other.append(decide_fresh("patient_9", keys, T0),
                  context={**CTX, "entity_id": "patient_9"})
     foreign = other.checkpoint()
     return refused(lambda: ask_delta(ledger, foreign, context=MIDDLE_CTX, decision_digest=subject_digest({})), ledger_state(ledger))
@@ -696,22 +714,19 @@ def an_unbound_append_to_a_ledger_that_requires_a_context() -> List[str]:
 
 def a_second_decision_for_an_event_already_recorded() -> List[str]:
     p = stages(SICK)
-    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    other = decide_fresh("patient_1", observe(WELL), T0)
     return refused(lambda: p["ledger"].append(other, context={**CTX, "run_id": "run_9"}), ledger_state(p["ledger"]))
 
 
 def one_run_spanning_two_events() -> List[str]:
     p = stages(SICK)
-    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    other = decide_fresh("patient_1", observe(WELL), T0)
     return refused(lambda: p["ledger"].append(other, context={**CTX, "event_id": "event_9"}), ledger_state(p["ledger"]))
 
 
 def an_older_decision_after_a_newer_one_for_the_same_entity() -> List[str]:
     p = stages(SICK)
-    locks, engine = build()
-    keys = observe(WELL)
-    older = engine.decide("patient_1", keys, LockEvaluator(locks).evaluate_all("patient_1", keys, T0 - timedelta(days=1)),
-                          T0 - timedelta(days=1))
+    older = decide_fresh("patient_1", observe(WELL), T0 - timedelta(days=1))
     return refused(lambda: p["ledger"].append(older, context={**CTX, "run_id": "run_9", "event_id": "event_9"}),
                    ledger_state(p["ledger"]))
 
@@ -1150,7 +1165,7 @@ class NeverEarlier(datetime):
 
 def a_datetime_subclass_that_backdates_an_entry() -> List[str]:
     p = stages(SICK)
-    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    other = decide_fresh("patient_1", observe(WELL), T0)
     return refused(lambda: p["ledger"].append(other, timestamp=NeverEarlier(1970, 1, 1), context={**CTX, "run_id": "run_9", "event_id": "event_9"}),
                    ledger_state(p["ledger"]))
 
@@ -1218,7 +1233,7 @@ def a_receipt_asked_for_an_entry_beyond_the_checkpoint() -> List[str]:
     issues no receipt for it."""
     p = stages(SICK)
     held = p["checkpoint"]
-    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    other = decide_fresh("patient_1", observe(WELL), T0)
     second = {**CTX, "run_id": "run_2", "event_id": "event_2"}
     p["ledger"].append(other, context=second)
     return refused(lambda: ask_delta(p["ledger"], held, context=second, decision_digest="a" * 64), ledger_state(p["ledger"]))
@@ -1348,7 +1363,7 @@ def a_backdated_entry_timestamp() -> List[str]:
     """Row 14b. A contradictory Decision at the same instant is not stale (equal times are allowed), but recording it with
     an entry time of 1970 is a backdated entry."""
     p = stages(SICK)
-    other = p["engine"].decide("patient_1", observe(WELL), LockEvaluator(build()[0]).evaluate_all("patient_1", observe(WELL), T0), T0)
+    other = decide_fresh("patient_1", observe(WELL), T0)
     return refused(lambda: p["ledger"].append(other, timestamp=datetime(1970, 1, 1), context={**CTX, "run_id": "run_9", "event_id": "event_9"}),
                    ledger_state(p["ledger"]))
 
@@ -1388,9 +1403,9 @@ def lock_results_from_another_entity_are_refused_by_beta() -> List[str]:
 
 
 def GAP_a_legacy_lock_result_with_no_entity_id_is_accepted() -> List[str]:
-    """KNOWN GAP, stated as a fact, kept for compatibility. A LockResult with an empty entity_id (what zeta produced before
-    it recorded one, or any object a caller builds) is accepted for any entity: the field is caller-settable and empty
-    means legacy. The same cross-entity borrowing as the scenario before this one, with the entity stripped, is decided."""
+    """Formerly a KNOWN GAP: a LockResult with an empty entity_id (what zeta produced before it recorded one, or any object
+    a caller builds) was accepted for any entity. Beta now evaluates the locks itself and refuses lock results handed in,
+    so the same cross-entity borrowing, with the entity stripped, is refused at the door."""
     locks, engine = build()
     ev = LockEvaluator(locks)
     ev.evaluate_all("patient_2", observe(SICK), T0)
@@ -2853,9 +2868,9 @@ def domain_stages(raw=SERVICE_BAD, pack: str = "service_health", registry: Optio
     claimed = registry.identity(pack) if identity is None else identity  # the identity read and validated at registration
     alpha = alpha_cns.keyset_content(keys, context=ctx, origin=domain_origin(claimed))
     da = subject_digest(alpha)
-    results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
+    evaluated = engine.evaluate_and_decide(entity, keys, T0)
+    results, decision = evaluated.lock_results, evaluated.decision
     zeta = {lid: zeta_cns.lock_result_content(r, context=ctx, keyset_digest=da) for lid, r in results.items()}
-    decision = engine.decide(entity, keys, results, T0)
     beta = beta_cns.decision_content(
         decision, context=ctx, keyset_digest=da,
         lock_result_digests={lid: zeta_cns.lock_result_digest(r, context=ctx, keyset_digest=da) for lid, r in results.items()})
@@ -3078,14 +3093,13 @@ def a_pack_that_raises_leaves_nothing_decided() -> List[str]:
     registry = PackRegistry()
     registry.register(Failing())
     locks, engine = domain_build()
-    store = LockStateStore()
+    store = engine.state_store
     ledger = DecisionLedger(require_context=True)
     entity = DOMAIN_CTX["entity_id"]
 
     def pipeline():
         keys = registry.observe("failing_service", SERVICE_BAD)
-        results = LockEvaluator(locks, store).evaluate_all(entity, keys, T0)
-        ledger.append(engine.decide(entity, keys, results, T0), context=DOMAIN_CTX)
+        ledger.append(engine.evaluate_and_decide(entity, keys, T0).decision, context=DOMAIN_CTX)
 
     return refused(pipeline, state=lambda: (ledger_state(ledger)(), store.snapshot(entity)), catch=(RuntimeError,))
 
@@ -3147,9 +3161,8 @@ def concurrent_pipelines_into_one_ledger_equal_a_single_thread_run() -> List[str
 
     def one(ledger, entity, vitals):
         keys = observe(vitals)
-        results = LockEvaluator(locks).evaluate_all(entity, keys, T0)
         ctx = {"schema": CONTEXT_SCHEMA, "entity_id": entity, "event_id": f"event-{entity}", "run_id": f"run-{entity}"}
-        ledger.append(engine.decide(entity, keys, results, T0), context=ctx)
+        ledger.append(engine.evaluate_and_decide(entity, keys, T0).decision, context=ctx)
 
     def decisions(ledger):
         return sorted((e.decision.entity_id, e.decision.decision, e.decision.decision_fingerprint) for e in ledger.entries)
@@ -3254,7 +3267,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("problems", required=("delta recorded a Decision other than the one beta produced",
                                   "the Decision delta recorded differs from beta's in: instructions"))),
     ("strict: beta is given another lock state's results", beta_decided_from_another_lock_result,
-     Expect("refused", required=("evaluated from a different KeySet than the one given",), raises=("KeySetMismatchError",))),
+     Expect("refused", required=(SUPPLIED_REFUSED,), raises=("SuppliedLockResultsRefused",))),
     # extra: the foreign entry is not a member of the ledger the run holds
     ("strict: delta recorded another Decision, quoting beta's digest", delta_recorded_another_decision,
      Expect("problems", required=("the Decision delta recorded differs from beta's in:",),
@@ -3266,8 +3279,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      contradictory_basis_that_skips_construction_is_refused_by_delta,
      Expect("refused", required=("confidence_basis is 'absence' but triggered_by_keys implies 'keys'",), raises=("ValueError",))),
     ("strict: beta refuses to decide from a stale replay", stale_replay_is_refused_by_beta,
-     Expect("refused", required=("zeta refused the observation behind lock result(s) as stale",),
-            raises=("StaleLockResultError",))),
+     Expect("refused", required=(SUPPLIED_REFUSED,), raises=("SuppliedLockResultsRefused",))),
     ("strict: the same Decision recorded twice in one run", the_same_decision_is_recorded_twice_in_one_run,
      Expect("refused", required=("already recorded a Decision",), raises=("DuplicateRecordError",))),
     # extra: a missing context also leaves out the decision_digest that the context carries
@@ -3398,7 +3410,7 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: an injected failure during append leaves the ledger as it was", an_injected_failure_during_append_leaves_the_ledger_as_it_was,
      Expect("refused", required=("the store refused the write",), raises=("RuntimeError",))),
     ("strict: beta refuses lock results recorded for another entity", lock_results_from_another_entity_are_refused_by_beta,
-     Expect("refused", required=("lock result(s) record another entity",), raises=("EntityMismatchError",))),
+     Expect("refused", required=(SUPPLIED_REFUSED,), raises=("SuppliedLockResultsRefused",))),
     ("strict: str-subclass ids in a context are refused", str_subclass_ids_in_a_context_are_refused,
      Expect("refused", required=("context field event_id must be a str",), raises=("TypeError",))),
     ("strict: a context that changes between reads is recorded as its first read",
@@ -3464,8 +3476,8 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
     ("strict: GAP, a narrative forged by someone who recomputes the content fingerprint",
      GAP_a_decisions_narrative_forged_by_someone_who_recomputes_the_content_fingerprint, GAP),
     ("strict: GAP, a Decision cites a lock that is closed", GAP_a_decision_cites_a_lock_that_is_closed, GAP),
-    ("strict: GAP, a legacy lock result with no entity id is accepted for any entity",
-     GAP_a_legacy_lock_result_with_no_entity_id_is_accepted, GAP),
+    ("strict: a legacy lock result with no entity id is refused at beta's door",
+     GAP_a_legacy_lock_result_with_no_entity_id_is_accepted, Expect("refused", required=(SUPPLIED_REFUSED,), raises=("SuppliedLockResultsRefused",))),
     ("strict: GAP, a KeySet substituted under a copied fingerprint, no recomputation supplied",
      GAP_a_keyset_substituted_under_a_copied_fingerprint_without_a_recomputation, GAP),
     ("strict: GAP, a fully hand-built consistent receipt is accepted", GAP_a_fully_hand_built_consistent_receipt_is_accepted, GAP),
