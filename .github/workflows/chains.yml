@@ -5,14 +5,15 @@
 #                        DGK's perimeter are shown differently, which `same_subject` refuses.
 # chains/spine_run.py    interconnected alpha, zeta, beta and delta run for real, then checked at their seams by
 #                        cns_composition.spine_trace, leniently (seven scenarios) and strictly, from each stage's content with a
-#                        pipeline context and a delta verification receipt. 195 scenarios in all, counted from the runner: 47 checks
-#                        that hold, 135 attacks each naming the problem or refusal that should answer it (58 problems, 77 refusals),
+#                        pipeline context and a delta verification receipt. 202 scenarios in all, counted from the runner: 50 checks
+#                        that hold, 139 attacks each naming the problem or refusal that should answer it (58 problems, 81 refusals),
 #                        and 13 gaps the check does not close, recorded as facts. They include the receipt signature (signed:, 14, and keys:, 2,
 #                        with delta's signing hook and the reference keys in chains/receipt_keys.py), the durable store across
 #                        separate processes (store:, 19, through chains/store_worker.py, with a real SIGKILL) and the verify
 #                        command as two processes (package:, 26, chains/make_package.py and chains/verify_package.py) and the domain packs (domain:, 14, a
 #                        second domain through all four stages and the pack contract's refusals) and the handoffs under interruption, failure, concurrency
-#                        and a stale sibling (handoff:, 4) and signed lock results (signed lock results:, 3). Each
+#                        and a stale sibling (handoff:, 4) and signed lock results (signed lock results:, 3) and the same slots filled by SIGNET running as its own process
+#                        (signet:, 7, through chains/signet_live.py; SIGNET is checked out at a pinned commit). Each
 #                        scenario declares an Expect (chains/spine_oracle.py): required problems, the only extras allowed, and
 #                        whether state may change.
 # chains/evidence_spine.py  one document through HERALD, TIE, Conservation_Kernel, Governance_Gateway and CCC, then broken at
@@ -28,7 +29,7 @@
 # spine-pinned           the same decision spine, but on the four commits contracts/spine-manifest.json names and nothing else.
 #                        The `chains` job above runs each repository's floating default branch, which is the drift detector;
 #                        this job runs the set the four repositories declare. It first holds every pin and every checkout to
-#                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 195 scenarios, including the hardened
+#                        the manifest (cns_composition.spine_manifest), then runs spine_run.py: all 202 scenarios, including the hardened
 #                        components' refusals, the delta receipt, its signature and the file store. The manifest names the tips
 #                        alpha a54d1dc, zeta 0ab30b2, beta 9cabc93 and delta 525217b. Individual green CI is not this. It runs on Python 3.10 (the floor in
 #                        pyproject.toml) and 3.12, so the floor is exercised and not only declared.
@@ -115,6 +116,14 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/interconnected_delta
           path: stack/interconnected_delta
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository_owner }}/SIGNET
+          path: stack/SIGNET
+          # Pinned to an exact commit, the keyholder the `signet:` scenarios start as its own process. Moving it is
+          # an explicit act: update this ref in both jobs together, after re-running the chains on the new commit.
+          ref: 75c994eaf9902d4c0808ff5f3ad7d2cda36a7b05
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -213,7 +222,7 @@ jobs:
         run: python hub/chains/full_chain.py
       - name: The decision spine, end to end
         env:
-          PYTHONPATH: ${{ github.workspace }}/stack/interconnected_alpha:${{ github.workspace }}/stack/interconnected_zeta:${{ github.workspace }}/stack/interconnected_beta:${{ github.workspace }}/stack/interconnected_delta
+          PYTHONPATH: ${{ github.workspace }}/stack/interconnected_alpha:${{ github.workspace }}/stack/interconnected_zeta:${{ github.workspace }}/stack/interconnected_beta:${{ github.workspace }}/stack/interconnected_delta:${{ github.workspace }}/stack/SIGNET
         run: python hub/chains/spine_run.py
       - name: One document through the evidence spine
         env:
@@ -298,10 +307,18 @@ jobs:
           ref: ${{ steps.manifest.outputs.delta }}
           path: stack/interconnected_delta
           persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository_owner }}/SIGNET
+          path: stack/SIGNET
+          # Pinned to an exact commit, the keyholder the `signet:` scenarios start as its own process. Moving it is
+          # an explicit act: update this ref in both jobs together, after re-running the chains on the new commit.
+          ref: 75c994eaf9902d4c0808ff5f3ad7d2cda36a7b05
+          persist-credentials: false
       - name: Every pin and every checkout is the manifest's
         working-directory: hub
         run: python -m cns_composition.spine_manifest --stack ../stack
       - name: The decision spine, end to end, on exactly those commits
         env:
-          PYTHONPATH: ${{ github.workspace }}/stack/interconnected_alpha:${{ github.workspace }}/stack/interconnected_zeta:${{ github.workspace }}/stack/interconnected_beta:${{ github.workspace }}/stack/interconnected_delta
+          PYTHONPATH: ${{ github.workspace }}/stack/interconnected_alpha:${{ github.workspace }}/stack/interconnected_zeta:${{ github.workspace }}/stack/interconnected_beta:${{ github.workspace }}/stack/interconnected_delta:${{ github.workspace }}/stack/SIGNET
         run: python hub/chains/spine_run.py
