@@ -85,8 +85,8 @@ from alpha.packs.pediatric_vitals import VitalsObservation, observe
 from alpha.packs.pediatric_vitals import PediatricVitalsPack
 from alpha.packs.service_health import ServiceHealthPack, ServiceObservation
 from beta import (
-    Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError, MissingEvidenceError,
-    StaleLockResultError, SuppliedLockResultsRefused, decision_fingerprint)
+    Decision, DecisionEngine, DecisionRule, DecisionRuleRegistry, KeySetMismatchError, LockResultSignatureError,
+    MissingEvidenceError, StaleLockResultError, SuppliedLockResultsRefused, decision_fingerprint, lock_result_signature_ok)
 from beta.fingerprint import content_fingerprint
 from cns.gate import subject_digest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -103,7 +103,7 @@ SICK = VitalsObservation(heart_rate=148, oxygen_saturation=90.0, respiratory_rat
 WELL = VitalsObservation(heart_rate=100, oxygen_saturation=99.0, respiratory_rate=24, temperature=37.0, age_months=14)
 
 
-def build():
+def build(**engine_options):
     locks = LockRegistry([
         LockSpec(lock_id="sepsis_lock", required_keys=("septic_shock", "respiratory_distress", "hypovolemic_shock"),
                  combination=Combination.OR, dwell_threshold=1, force=True, lock_seconds=3600),
@@ -121,7 +121,7 @@ def build():
                      closed_locks=("sepsis_lock", "abnormal_vitals_lock"), priority=0,
                      reasoning_template="{decision}: vitals normal", instructions="Discharge with follow-up."),
     ])
-    return locks, DecisionEngine(rules, locks)
+    return locks, DecisionEngine(rules, locks, **engine_options)
 
 
 # Beta refuses lock results it did not evaluate itself, before any lock state changes. Scenarios that hand beta another
@@ -1413,6 +1413,41 @@ def GAP_a_legacy_lock_result_with_no_entity_id_is_accepted() -> List[str]:
     at = T0 + timedelta(minutes=5)
     legacy = {lid: dataclasses.replace(r, entity_id="") for lid, r in ev.evaluate_all("patient_2", well, at).items()}
     return refused(lambda: engine.decide("patient_1", well, legacy, at))
+
+
+# --- signed lock results: zeta signs, beta checks (the same signing slot, the deployer's keys) ---------------------------
+
+def a_signed_run_with_a_checker_plugged_in_decides() -> List[str]:
+    """A run where the deployer plugs in a signer and a checker. Every lock result carries a signature that verifies under the
+    deployer's key, and the Decision is the one an unsigned run makes (signing adds no field to the Decision)."""
+    verifier = deployer_verifier()
+    _, engine = build(lock_result_signer=receipt_keys.make_signer(DEPLOYER_KEY, "k1"), lock_result_verifier=verifier)
+    evaluated = engine.evaluate_and_decide("patient_1", observe(SICK), T0)
+    out: List[str] = []
+    for lid, result in evaluated.lock_results.items():
+        if not lock_result_signature_ok(result, verifier):
+            out.append(f"lock result {lid} does not verify under the deployer's key")
+    plain = build()[1].evaluate_and_decide("patient_1", observe(SICK), T0).decision
+    if evaluated.decision != plain:
+        out.append("the signed run's Decision differs from the unsigned run's")
+    return out
+
+
+def a_lock_result_signed_by_a_stranger_is_refused_by_beta() -> List[str]:
+    """The signer holds a key the checker does not trust. Beta refuses, no Decision is made, and the entity's lock states
+    are put back (a retry with the right key counts the observation once)."""
+    stranger = receipt_keys.make_signer(STRANGER_KEY, "k1")
+    _, engine = build(lock_result_signer=stranger, lock_result_verifier=deployer_verifier())
+    return refused(lambda: engine.evaluate_and_decide("patient_1", observe(SICK), T0),
+                   state=lambda: engine.state_store.snapshot("patient_1"), catch=(LockResultSignatureError,))
+
+
+def a_checker_with_no_signer_is_refused_before_any_lock_state_changes() -> List[str]:
+    """A checker is plugged in and no signer is, so every lock result would be unsigned. Beta refuses before it evaluates
+    anything."""
+    _, engine = build(lock_result_verifier=deployer_verifier())
+    return refused(lambda: engine.evaluate_and_decide("patient_1", observe(SICK), T0),
+                   state=lambda: engine.state_store.snapshot("patient_1"), catch=(LockResultSignatureError,))
 
 
 def str_subclass_ids_in_a_context_are_refused() -> List[str]:
@@ -3411,6 +3446,14 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      Expect("refused", required=("the store refused the write",), raises=("RuntimeError",))),
     ("strict: beta refuses lock results recorded for another entity", lock_results_from_another_entity_are_refused_by_beta,
      Expect("refused", required=(SUPPLIED_REFUSED,), raises=("SuppliedLockResultsRefused",))),
+    ("signed lock results: a run with a checker plugged in decides", a_signed_run_with_a_checker_plugged_in_decides, CLEAN),
+    ("signed lock results: a lock result signed by a stranger is refused by beta", a_lock_result_signed_by_a_stranger_is_refused_by_beta,
+     Expect("refused", required=("a lock result signature checker is plugged in and lock result(s) failed it",),
+            raises=("LockResultSignatureError",))),
+    ("signed lock results: a checker with no signer is refused before any lock state changes",
+     a_checker_with_no_signer_is_refused_before_any_lock_state_changes,
+     Expect("refused", required=("a lock result signature checker is plugged in but no signer is",),
+            raises=("LockResultSignatureError",))),
     ("strict: str-subclass ids in a context are refused", str_subclass_ids_in_a_context_are_refused,
      Expect("refused", required=("context field event_id must be a str",), raises=("TypeError",))),
     ("strict: a context that changes between reads is recorded as its first read",
