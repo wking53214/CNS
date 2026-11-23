@@ -70,6 +70,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import receipt_keys
+import signet_live
 from spine_oracle import Expect, attempts, check_table, entries_digest, judge
 from spine_oracle import refused as _refused
 
@@ -198,10 +199,11 @@ SICK_ELSEWHERE = VitalsObservation(heart_rate=149, oxygen_saturation=90.0, respi
 
 
 def stages(vitals=SICK, ctx=CTX, results_from=None, keys_for_decision=None, bind_keyset_of=None, origin=None,
-           ledger=None, at=T0) -> Dict[str, Any]:
+           ledger=None, at=T0, engine_options=None) -> Dict[str, Any]:
     """Run the four stages for real, binding each to the context and to the digest of the stage before it. `ledger` (default a
-    new one that requires a context) and `at` (the Decision's time) let a caller record several runs into one ledger."""
-    locks, engine = build()
+    new one that requires a context) and `at` (the Decision's time) let a caller record several runs into one ledger.
+    `engine_options` go to beta's DecisionEngine (a lock result signer and checker, for the `signet:` scenarios)."""
+    locks, engine = build(**(engine_options or {}))
     ledger = DecisionLedger(require_context=True) if ledger is None else ledger
     entity = ctx["entity_id"]
     keys = observe(vitals)
@@ -1448,6 +1450,106 @@ def a_checker_with_no_signer_is_refused_before_any_lock_state_changes() -> List[
     _, engine = build(lock_result_verifier=deployer_verifier())
     return refused(lambda: engine.evaluate_and_decide("patient_1", observe(SICK), T0),
                    state=lambda: engine.state_store.snapshot("patient_1"), catch=(LockResultSignatureError,))
+
+
+# --- signet: the same slots, filled by a keyholder running as its own process (chains/signet_live.py) ---------------------
+
+def the_spine_signs_through_signet_and_checks_through_its_registry() -> List[str]:
+    """The whole spine, strict, with every signature made by a signet in another process: zeta's lock results (checked by
+    beta through the registry as it decides) and delta's receipt (checked by CNS's strict check through the registry). The
+    Decision is the one an unsigned run makes, and signet's log holds one signed line per signature, in order, and verifies."""
+    out: List[str] = []
+    with signet_live.LiveSignet() as live:
+        registry = live.registry()
+        zeta_check = live.verifier(signet_live.ZETA, registry)
+        p = stages(SICK, engine_options=dict(lock_result_signer=live.signer(signet_live.ZETA),
+                                             lock_result_verifier=zeta_check))
+        for lid, result in p["results"].items():
+            if not lock_result_signature_ok(result, zeta_check):
+                out.append(f"lock result {lid} does not verify through signet's registry")
+        if p["decision"] != stages(SICK)["decision"]:
+            out.append("the Decision signed through signet differs from the unsigned run's")
+        receipt, why = chain_receipt(p)
+        if receipt is None:
+            return out + [f"delta issued no receipt: {why}"]
+        signature = delta_signing.sign_receipt(receipt, live.signer(signet_live.DELTA))
+        out += signed_check(p, receipt, signature, live.verifier(signet_live.DELTA, registry))
+        signed = [line["purpose"] for line in live.log_lines() if line["outcome"] == "signed"]
+        expected = [signet_live.ZETA] * len(p["results"]) + [signet_live.DELTA]
+        if signed != expected:
+            out.append(f"signet's log holds {signed}, not one line per signature made: {expected}")
+        if not live.log_verifies():
+            out.append("signet's log does not verify")
+    return out
+
+
+def a_lock_result_from_another_signet_is_refused_by_beta() -> List[str]:
+    """Another signet, with its own keys, signs zeta's lock results. Beta checks them through the first signet's registry,
+    refuses, makes no Decision, and puts the entity's lock states back."""
+    with signet_live.LiveSignet() as live, signet_live.LiveSignet() as stranger:
+        _, engine = build(lock_result_signer=stranger.signer(signet_live.ZETA),
+                          lock_result_verifier=live.verifier(signet_live.ZETA, live.registry()))
+        return refused(lambda: engine.evaluate_and_decide("patient_1", observe(SICK), T0),
+                       state=lambda: engine.state_store.snapshot("patient_1"), catch=(LockResultSignatureError,))
+
+
+def with_signet_down_beta_makes_no_decision() -> List[str]:
+    """signet stops before the run. The signer raises instead of returning a signature; beta makes no Decision and the lock
+    states are put back (fail closed: no signet, no signed lock result, no Decision)."""
+    from signet.client import SignetUnavailable
+    with signet_live.LiveSignet() as live:
+        check = live.verifier(signet_live.ZETA, live.registry())
+        sign = live.signer(signet_live.ZETA)
+        live.stop()
+        _, engine = build(lock_result_signer=sign, lock_result_verifier=check)
+        return refused(lambda: engine.evaluate_and_decide("patient_1", observe(SICK), T0),
+                       state=lambda: engine.state_store.snapshot("patient_1"), catch=(SignetUnavailable,))
+
+
+def a_key_revoked_in_the_next_registry_is_refused_by_beta() -> List[str]:
+    """The registry's next version revokes zeta's key. signet still signs with it (it has not been restarted), and a checker
+    that holds the new version refuses those signatures: beta makes no Decision and puts the lock states back."""
+    with signet_live.LiveSignet() as live:
+        live.registry("registry-1.json")
+        second = live.registry("registry-2.json", "--previous", str(live.root / "registry-1.json"),
+                               "--root-key", live.public["root"], "--revoke", live.ids["zeta"])
+        _, engine = build(lock_result_signer=live.signer(signet_live.ZETA),
+                          lock_result_verifier=live.verifier(signet_live.ZETA, second, min_version=2))
+        return refused(lambda: engine.evaluate_and_decide("patient_1", observe(SICK), T0),
+                       state=lambda: engine.state_store.snapshot("patient_1"), catch=(LockResultSignatureError,))
+
+
+def zetas_key_at_signet_cannot_sign_a_delta_receipt() -> List[str]:
+    """A caller asks signet to sign delta's receipt under zeta's purpose. signet refuses (the bytes do not start with zeta's
+    label), so one key never signs for another purpose, whatever the caller asks."""
+    from signet.client import SignetRefused
+    p = stages(SICK)
+    receipt, why = chain_receipt(p)
+    if receipt is None:
+        return [f"delta issued no receipt: {why}"]
+    with signet_live.LiveSignet() as live:
+        return refused(lambda: delta_signing.sign_receipt(receipt, live.signer(signet_live.ZETA)), catch=(SignetRefused,))
+
+
+def the_spine_runner_holds_no_signet_key() -> List[str]:
+    """After signet's scenarios ran, this process has loaded none of signet's key store, server, log or config: the runner
+    asked for signatures and checked them, and never held a key to make one."""
+    with signet_live.LiveSignet() as live:
+        live.signer(signet_live.ZETA)(signet_live.ZETA_LABEL.encode() + b"probe")
+    return [f"the runner loaded {name}, which holds or uses signet's keys" for name in signet_live.loaded_key_side_modules()]
+
+
+def signets_pins_are_the_manifests() -> List[str]:
+    """signet's interop tests run against zeta, beta and delta at the commits its own dev extra pins. Those must be the
+    commits this spine manifest names, or signet proves itself against a different spine than the one run here."""
+    text = signet_live.signet_pyproject().read_text(encoding="utf-8")
+    manifest = spine_manifest.load(Path(__file__).resolve().parents[1] / "contracts" / "spine-manifest.json")["repos"]
+    out: List[str] = []
+    for repo in ("interconnected_zeta", "interconnected_beta", "interconnected_delta"):
+        pinned = re.findall(rf"github\.com/{spine_manifest.OWNER}/{repo}(?:\.git)?@([0-9a-f]{{40}})", text)
+        if pinned != [manifest[repo]]:
+            out.append(f"signet pins {repo} at {pinned}; the spine manifest names {manifest[repo]}")
+    return out
 
 
 def str_subclass_ids_in_a_context_are_refused() -> List[str]:
@@ -3454,6 +3556,20 @@ SCENARIOS: List[Tuple[str, Callable[[], List[str]], Expect]] = [
      a_checker_with_no_signer_is_refused_before_any_lock_state_changes,
      Expect("refused", required=("a lock result signature checker is plugged in but no signer is",),
             raises=("LockResultSignatureError",))),
+    ("signet: the spine signs through signet in its own process and checks through its registry",
+     the_spine_signs_through_signet_and_checks_through_its_registry, CLEAN),
+    ("signet: a lock result signed by another signet is refused by beta", a_lock_result_from_another_signet_is_refused_by_beta,
+     Expect("refused", required=("a lock result signature checker is plugged in and lock result(s) failed it",),
+            raises=("LockResultSignatureError",))),
+    ("signet: with signet down, beta makes no Decision and puts the lock states back", with_signet_down_beta_makes_no_decision,
+     Expect("refused", required=("did not answer",), raises=("SignetUnavailable",))),
+    ("signet: a key revoked in the next registry is refused by beta", a_key_revoked_in_the_next_registry_is_refused_by_beta,
+     Expect("refused", required=("a lock result signature checker is plugged in and lock result(s) failed it",),
+            raises=("LockResultSignatureError",))),
+    ("signet: zeta's key at signet cannot sign a delta receipt", zetas_key_at_signet_cannot_sign_a_delta_receipt,
+     Expect("refused", required=("signet refused (wrong-label)",), raises=("SignetRefused",))),
+    ("signet: the spine runner holds no signet key", the_spine_runner_holds_no_signet_key, CLEAN),
+    ("signet: signet's pins are the spine manifest's", signets_pins_are_the_manifests, CLEAN),
     ("strict: str-subclass ids in a context are refused", str_subclass_ids_in_a_context_are_refused,
      Expect("refused", required=("context field event_id must be a str",), raises=("TypeError",))),
     ("strict: a context that changes between reads is recorded as its first read",
