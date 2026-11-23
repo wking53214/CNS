@@ -1543,7 +1543,7 @@ def signets_pins_are_the_manifests() -> List[str]:
     """signet's interop tests run against zeta, beta and delta at the commits its own dev extra pins. Those must be the
     commits this spine manifest names, or signet proves itself against a different spine than the one run here."""
     text = signet_live.signet_pyproject().read_text(encoding="utf-8")
-    manifest = spine_manifest.load()["repos"]
+    manifest = spine_manifest.load(Path(__file__).resolve().parents[1] / "contracts" / "spine-manifest.json")["repos"]
     out: List[str] = []
     for repo in ("interconnected_zeta", "interconnected_beta", "interconnected_delta"):
         pinned = re.findall(rf"github\.com/{spine_manifest.OWNER}/{repo}(?:\.git)?@([0-9a-f]{{40}})", text)
