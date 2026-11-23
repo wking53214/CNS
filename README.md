@@ -325,10 +325,10 @@ Recorded limits, none of them hidden, each one a scenario marked GAP or stated h
    storage the checkpoint came from, and the trust list the keys came from. A checkpoint beside the ledger file it protects,
    or a trust list from the producer, agrees with whatever the producer wrote.
 
-The `chains` workflow runs 192 scenarios (counted from the runner): seven lenient, and 185 more (the strict ones, the oracle and
+The `chains` workflow runs 195 scenarios (counted from the runner): seven lenient, and 188 more (the strict ones, the oracle and
 the manifest checks held to account with real objects, the signed receipts, the durable store, the verify command and the
 domain packs). Of the
-192 in all, 46 are checks that hold, 133 are attacks (58 problems, 75 refusals)
+195 in all, 47 are checks that hold, 135 are attacks (58 problems, 77 refusals)
 each stating the problem or refusal that must answer it (the boundary that should refuse it, the problems it must name, the
 only extras it may add; four of them, a context that changes between reads, a list a caller mutates after recording, a list
 that changes between reads and a checkpoint that answers honestly once, must come out clean because the record must not
@@ -356,6 +356,8 @@ its own tests in `tests/test_spine_oracle.py`. The scenario run on the manifest'
 the same scenarios on exactly the four commits `contracts/spine-manifest.json` names, after `cns_composition.spine_manifest`
 has held every pin and checkout to that file, on Python 3.10 (the floor) and 3.12. The checkout check refuses an edited, untracked, index-hidden (--skip-worktree, --assume-unchanged) or ignored importable file
 (a planted `__pycache__/x.pyc`); the 3.10 TOML fallback refuses any line separator TOML does not know (U+2028 and the like).
+
+**Signed lock results.** Zeta can sign each lock result it makes, and beta can check those signatures before it decides. Both take a callable the deployer supplies and hold no key. Three scenarios (`signed lock results:`) run it with the reference keys of `chains/receipt_keys.py`: a run with a signer and a checker plugged in decides, every lock result verifies, and the Decision equals the unsigned run's; a lock result signed by a key the checker does not trust is refused, no Decision is made and the lock states are put back; a checker with no signer is refused before any lock state changes. What this does not show: signer and checker run in the same process here, so code in that process can still sign a fake (a separate signer process is the next step); with no checker plugged in beta behaves as before and that setup is unprotected; keys, trust and revocation are the deployer's; and nothing authenticates the readings alpha was given. The delta side (the outside anchor for signed checkpoints) is documented in that repository and is not exercised by this runner.
 
 **Evidence record.** `python -m cns_composition.evidence_bundle --stack STACK [--python PY ...] [--out FILE]` writes one JSON record of what was checked: the manifest as read, the CNS commit and whether its checkout is clean, each repository's expected and actual commit, cleanliness and tags, every problem the manifest check finds, and, for each interpreter named, the runner's counts and each repository's own suite summary. It carries no clock, host or path, so the same checkouts give the same record, and `bundle_digest` (SHA-256 of the canonical JSON) lets `verify` refuse an edited one. The digest is a label for comparison, not a MAC: anyone can write a record and its digest, so the record shows what was run on one machine, not that the machine reported truthfully. Exit 0 when the check is empty, the CNS checkout is clean and every run exited 0. The record's own `not_established` list says what it cannot show.
 
