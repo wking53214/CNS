@@ -147,6 +147,7 @@ from ccc.models import ProvenanceStatus, RoadSignCategory
 from ccc.permission import WriteRequest
 from ccc.system import CCCSystem
 from cns.gate import GateOutcome
+from cns_composition.figure_check import disagreements
 from cns_composition.evidence_trace import EvidenceTrace, problems
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cns_composition.decision_guard import DecisionGuard
@@ -723,7 +724,17 @@ def _because(refusal: str) -> str:
     return next((label for label, phrase in REFUSAL_PHRASES.items() if phrase in refusal), refusal)
 
 
+def held_for_figures(odd: list) -> Dict[str, object]:
+    """The document disagrees with itself about a figure, so nothing downstream is asked to judge it: a person looks.
+    This is a flag, not a verdict (see cns_composition.figure_check for what it can and can not see)."""
+    return {"outcome": "not reached", "allowed": False, "blocked_by": [], "tie_refused": False, "tie_evidence": 0,
+            "tie_source": [], "figures_disagree": [list(pair) for pair in odd]}
+
+
 def run(text: str = INVOICE, source_id: str = "doc-1") -> Dict[str, object]:
+    odd = disagreements(text)
+    if odd:
+        return held_for_figures(odd)
     read = herald(text, source_id)
     evidence, refusal = tie(read.export, source_id, text)
     if refusal:
@@ -731,6 +742,15 @@ def run(text: str = INVOICE, source_id: str = "doc-1") -> Dict[str, object]:
     kernel, root = kernel_root(evidence, source_id, text)
     entry = door(root, source_id)
     return facts(decide(read, kernel, root, entry), evidence, refusal, trace(read, source_id, text, evidence, root, entry))
+
+
+TRANSPOSED = ("Invoice INV-2207 dated 2026-03-04 came to $412.00 for the burst kitchen pipe. "
+              "Payment of $421.00 was received on 2026-03-11.")
+
+
+def transposed_figures_run() -> Dict[str, object]:
+    """One document states $412.00 and $421.00. Every stage would carry it faithfully; the figure check holds it."""
+    return run(TRANSPOSED, "doc-1")
 
 
 def export_to_other_text() -> Dict[str, object]:
@@ -1599,6 +1619,9 @@ SCENARIOS: List[Tuple[str, Callable[[], Dict[str, object]], Dict[str, object]]] 
      run, {"outcome": PASS, "allowed": True, "omega_source_checked": True}),
     ("SEAM HOLDS: the record HERALD read is handed to the roster relabelled as an attestation; same_subject cannot see standing, and HERALD's confidence gate refuses the claim against it",
      standing_relabelled, {**HELD, "outcome": BREACH, "allowed": False, "blocked_by": ["herald_confidence"]}),
+    ("SEAM HOLDS: one document states $412.00 and $421.00 (two digits swapped); the figure check holds it for a person before anything downstream runs",
+     transposed_figures_run, {"outcome": "not reached", "allowed": False, "tie_refused": False,
+                              "figures_disagree": [["412.00", "421.00", "swapped digits"]]}),
     ("SEAM HOLDS: HERALD's export offered to TIE with different text is refused before anything downstream runs",
      export_to_other_text, {**NOT_REACHED, "tie_refused_because": "different text"}),
     ("SEAM HOLDS: HERALD's export edited after it was signed is refused by TIE",

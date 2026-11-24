@@ -117,7 +117,7 @@ def test_every_gap_the_evidence_script_records_is_an_assertion_with_a_stated_fac
     names = [n.elts[0].value for n in ast.walk(tree) if isinstance(n, ast.Tuple) and len(n.elts) == 3
              and isinstance(n.elts[0], ast.Constant) and isinstance(n.elts[0].value, str)]
     assert sum(name.startswith("GAP: ") for name in names) == 3
-    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 45
+    assert sum(name.startswith("SEAM HOLDS: ") for name in names) == 46
 
 
 def test_the_evidence_script_carries_the_roster_decision_across_the_process_boundary():
