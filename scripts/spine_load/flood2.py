@@ -6,6 +6,8 @@ import json
 import resource
 import multiprocessing as mp
 import os
+import collections
+import math
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import flood
@@ -54,25 +56,56 @@ def staged(text, sid="doc-1"):
 
 
 def soak_worker(args):
+    """One soak process. Memory stays flat however long it runs: a 2000-run window gives the rolling median, and a
+    log-spaced histogram (5 percent buckets) gives the overall 99th percentile. A heartbeat line goes to stderr
+    every 60 seconds so a multi-day run can be watched, and a run that raises counts as wrong instead of ending the soak."""
     wid, secs = args
-    i, lat, bad, rss = wid * 50_000_000, [], 0, []
+    i = wid * 50_000_000
+    n = bad = 0
+    window = collections.deque(maxlen=2000)
+    hist = collections.Counter()
+    rss = []
     t0 = time.perf_counter()
     next_s = 60
     while time.perf_counter() - t0 < secs:
-        d, ok, _ = flood.one(i)
+        try:
+            d, ok, _ = flood.one(i)
+        except Exception:
+            d, ok = 0.0, False
         i += 1
-        lat.append(d)
+        n += 1
+        window.append(d)
+        hist[int(math.log(max(d, 1e-6) / 1e-6) / math.log(1.05))] += 1
         bad += not ok
         if time.perf_counter() - t0 > next_s:
-            rss.append(
-                (
-                    int(next_s),
-                    resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024,
-                    round(flood.pct(lat[-2000:], 0.5) * 1000, 1),
-                )
+            row = (
+                int(next_s),
+                resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024,
+                round(flood.pct(window, 0.5) * 1000, 1),
+            )
+            rss.append(row)
+            print(
+                json.dumps(
+                    {
+                        "worker": wid,
+                        "elapsed_s": row[0],
+                        "runs": n,
+                        "wrong_or_errors": bad,
+                        "rss_mb": row[1],
+                        "p50_ms": row[2],
+                    }
+                ),
+                file=sys.stderr,
+                flush=True,
             )
             next_s += 60
-    return len(lat), bad, rss, flood.pct(lat, 0.99)
+    target, seen, p99 = 0.99 * n, 0, 0.0
+    for b in sorted(hist):
+        seen += hist[b]
+        if seen >= target:
+            p99 = 1e-6 * 1.05 ** (b + 1)
+            break
+    return n, bad, rss, p99
 
 
 if __name__ == "__main__":
