@@ -152,6 +152,14 @@ def test_the_steps_run_in_the_order_that_makes_each_one_meaningful():
     assert position("actions/checkout") < position("actions/setup-python") < position(order[0])
 
 
+def test_the_circuit_runs_this_checkouts_cns_after_the_release_checks_and_before_the_canary():
+    """Warden's isolated seats ignore PYTHONPATH, so without this a shape change runs two CNS versions at once."""
+    reinstall = "python -m pip install --no-deps --force-reinstall ."
+    block = step(reinstall)
+    assert "working-directory: hub" in block and f"run: {reinstall}\n" in block + "\n"
+    assert position(CHECKS[5]) < position(reinstall) < position(CHECKS[6])
+
+
 @pytest.mark.parametrize("command", CHECKS)
 def test_each_check_runs_as_its_own_step_with_nothing_that_could_hide_a_failure(command):
     block = step(command)

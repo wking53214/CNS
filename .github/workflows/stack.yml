@@ -165,6 +165,13 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/hub
         run: python -m cns_composition.repin --stack ../stack --check
+      - name: The circuit runs this checkout's CNS in every process, the isolated seats' too
+        # The canary puts this checkout on PYTHONPATH for Warden, but Warden starts each seat with `python -I`, which
+        # ignores PYTHONPATH and imports the installed CNS (the pinned release). On a change that adds a field to a
+        # shape, the two disagree and the seat cannot rebuild what Warden sends it. A real install has one CNS, so
+        # the circuit runs on this checkout's alone. The checks above have already read the release as installed.
+        working-directory: hub
+        run: python -m pip install --no-deps --force-reinstall .
       - name: The whole circuit runs on that combination and ends ACCEPT
         working-directory: hub
         env:

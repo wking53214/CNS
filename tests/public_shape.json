@@ -1426,6 +1426,11 @@
               "default": "None",
               "name": "finisher_ran",
               "type": "Optional[bool]"
+            },
+            {
+              "default": "None",
+              "name": "edit_sources",
+              "type": "Optional[Tuple[Union[int, str], ...]]"
             }
           ],
           "frozen": true,
