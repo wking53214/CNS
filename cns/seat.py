@@ -18,7 +18,7 @@ and the judge agree on these fields by importing them from here.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping, Optional, Tuple
+from typing import Mapping, Optional, Tuple, Union
 
 from cns.defect import Defect
 from cns.suite import SuiteRun
@@ -93,6 +93,13 @@ class Evidence:
     #: NOTHING_TO_PROPOSE whether or not a finisher then edited files, so without this the judge cannot
     #: tell a finishing edit from a fabricated one; JUDGE 0.4.8 records that limit in its own docstring.
     finisher_ran: Optional[bool] = None
+    #: Where each entry of `changed` came from, in the same order and of the same length: the number of the cycle
+    #: whose applied proposal made it, or the word "finish" for an edit the finisher made after the loop converged.
+    #: None: the governor did not say (a governor older than this field). Added in 4.2.0 because `finisher_ran`
+    #: settles only a run in which no cycle applied anything: with one applied cycle, a padded `changed` list
+    #: cannot be told from a real one (JUDGE 0.8.0, KNOWN DEFECTS 1). The text "finish" is used, not a number, so a
+    #: finishing edit is never read as a cycle's.
+    edit_sources: Optional[Tuple[Union[int, str], ...]] = None
 
 
 @dataclass(frozen=True)

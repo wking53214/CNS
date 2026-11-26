@@ -466,7 +466,7 @@ must. Revisit this entry when a second repository reads the summary.
 | `cns.suite` | `SuiteRun` | new in 1.7.0; what one run of a target's suite reported, with `green` and `describe` |
 | `cns.epistemic` | `EpistemicState` | new in 1.7.0; the vocabulary for what kind of claim a finding makes |
 | `cns.defect` | `Defect`, `DefectSeverity`, `DefectLifecycle` | new in 1.7.0; one defect as the scanner, governor and drafter share it |
-| `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return. 2.0.0 adds `Evidence.finisher_ran` (None when the governor does not say); 2.1.0 adds `Evidence.ghost_severity` (finding id -> the scanner's own severity word, None when the writer did not say) |
+| `cns.seat` | `FileEdit`, `Facts`, `Evidence`, `Verdict` | new in 1.7.0; the rows the governor hands the seats and the seats return. 2.0.0 adds `Evidence.finisher_ran` (None when the governor does not say); 2.1.0 adds `Evidence.ghost_severity` (finding id -> the scanner's own severity word, None when the writer did not say); the next release adds `Evidence.edit_sources` (where each entry of `changed` came from: a cycle number or "finish", None when the governor does not say) |
 | `cns.run` | `RunRecord` | new in 1.6.0; the record one circuit run leaves behind (Warden writes it, the Watcher reads it). 2.0.0 adds `reobserved`, `declined`, `swizzle_sound` and the pure functions `gaps`, `participants`, `dirty_parts`, `findings_remaining`, `clean`; 2.1.0 adds the optional mappings `claim` and `evidence`; the schema stays `cns.run/1` |
 | `cns.assay` | `AssaySummary` | new in 1.9.0; the one-line summary ASSAY reports on an answer key (all claims hold, status, counts, failures) |
 | `cns.attack` | `AttackResult` | new in 1.8.0; one attack SWIZZLE reported against the governor (scenario, severity, status) |
@@ -925,7 +925,7 @@ Each line names the test or workflow job that holds it. A claim without one is n
   (`cns_composition/tests/test_repin.py`).
 - The six places the release is written agree (`tests/test_release.py`).
 - The three 2.1.0 fields are additive: an `Evidence` built the 2.0.0 way, by keyword or positionally, reads
-  `ghost_severity` as None and keeps `finisher_ran` last (`tests/test_seat_contract.py`); a record with or without
+  `ghost_severity` as None and keeps `finisher_ran` after the fields a 2.0.0 construction names, followed only by `edit_sources`, which reads None when it is not given (`tests/test_seat_contract.py`); a record with or without
   `claim` and `evidence` reads, the extra-keys rule still holds and the schema is still `cns.run/1`
   (`tests/test_run.py`); the public shape records all three (`tests/test_public_shape.py`).
 - No test skips; a skip fails the run (`conftest.py`, held by `tests/test_no_skips.py`).

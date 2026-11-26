@@ -74,7 +74,22 @@ def test_evidence_says_whether_the_finisher_ran_and_not_said_is_none():
     assert Evidence(**base).finisher_ran is None
     assert Evidence(**base, finisher_ran=True).finisher_ran is True
     assert Evidence(**base, finisher_ran=False).finisher_ran is False
-    assert [f.name for f in dataclasses.fields(Evidence)][-1] == "finisher_ran"
+    assert [f.name for f in dataclasses.fields(Evidence)][-2] == "finisher_ran"
+
+
+def test_evidence_names_where_each_listed_edit_came_from_and_not_said_is_none():
+    """4.2.0. One label per entry of `changed`, in order: a cycle number or "finish". A governor that does not say
+    leaves None, never an empty tuple, so "not said" and "no edits" stay apart."""
+    base = dict(target="/t", scope="code", cycles=((1, "APPLIED"), (2, "NOTHING_TO_PROPOSE")),
+                changed=(("a.py", "write"), ("README.md", "write")), judging_files_touched=(), suite_before=None,
+                suite_after=None, ghost_before=None, ghost_after=None, declined=(), swizzle_proofs=None,
+                attacks=None, unmeasured=())
+    assert Evidence(**base).edit_sources is None
+    assert Evidence(**base, finisher_ran=True, edit_sources=(1, "finish")).edit_sources == (1, "finish")
+    assert Evidence(**{**base, "changed": ()}, edit_sources=()).edit_sources == ()
+    field = {f.name: f for f in dataclasses.fields(Evidence)}["edit_sources"]
+    assert field.default is None and field.type == "Optional[Tuple[Union[int, str], ...]]"
+    assert [f.name for f in dataclasses.fields(Evidence)][-1] == "edit_sources"
 
 
 def _evidence_base() -> dict:
