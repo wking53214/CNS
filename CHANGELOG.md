@@ -17,6 +17,8 @@ entry says so.
 
 ## [Unreleased]
 
+- Step 1 (record the v4.2.0 tag): `contracts/cns-releases.json` gains the v4.2.0 row (670246f) and `current` moves to it, through `python -m cns_composition.release --record v4.2.0`; the install file, the README's pin examples, tag list and status row, and `contracts/spine-manifest.json`'s CNS tag follow. Why: v4.2.0 was tagged without a row, so in a checkout that has the tag 10 tests failed on main (`tests/test_release.py`, 2, and the `release` cases of `cns_composition/tests/test_delivery.py`, 8), and the `links` job refused the Warden and BURNISH pins at v4.2.0. The `cns` package is unchanged. Known consequence: the spine manifest's four interconnected commits pin the v4.1.0 extra, so the `spine-pinned` job holds until they are re-pinned. Suite 2308 passed. Pre-existing tests edited: none.
+
 ## [4.2.0] - 2026-11-26
 
 Evidence edit sources: a governor can say where each listed edit came from. Not yet tagged.
