@@ -1,13 +1,13 @@
 # cns
 
-> **Status, checked 2026-11-12 at `main` `038eae6`.** The current release is `v4.1.0` (tag at `c84ef8c`, recorded in
-> `contracts/cns-releases.json`); the figures below were taken at `038eae6`, before that tag. Run here in a clean checkout: 2170 tests passed, none skipped (`ruff`, `mypy` and
+> **Status, checked 2026-11-12 at `main` `038eae6`.** The current release is `v4.2.0` (tag at `670246f`, recorded in
+> `contracts/cns-releases.json` on 2026-11-27); the figures below were taken at `038eae6`, before the `v4.1.0` tag. Run here in a clean checkout: 2170 tests passed, none skipped (`ruff`, `mypy` and
 > `release --check` were not re-run). `chains/spine_run.py` 164 of 164 and `chains/evidence_spine.py` 56 results, 3 of
 > them recorded GAPs, exit 0, both against the floating `main` of the sibling repositories; for beta and delta that is
 > newer than the commits `contracts/spine-manifest.json` names, and the `spine-pinned` job is the run at those commits.
 > `pip install -r contracts/install-stack.txt` resolves in a clean virtual environment. **Pins, checked 2026-11-20:** the move to
 > 3.0.0 is finished and the library has gone past it. `python -m cns_composition.cns_versions` over fresh checkouts of the 36
-> repositories in `contracts/cns-links.json` that could be cloned read 40 pins in 35 repositories (the current release is `v4.1.0`).
+> repositories in `contracts/cns-links.json` that could be cloned read 40 pins in 35 repositories (the current release was then `v4.1.0`).
 > **Every one of the 35 repositories pins `v4.1.0`**, including the four interconnected repositories (alpha, beta, delta, zeta) and
 > the earlier `v4.0.0` pins, which were all moved on 2026-11-20. ZTS also pins `v3.0.0` in its `cns-3` workflow job on purpose, to hold the
 > dock's acceptance of major 3. No direct pin: STACK-Kernel and p3-2-governance-research. Not read: composition-engine, WATCHER and
@@ -683,14 +683,14 @@ Pin a tag, the way sentinel_os already pins Conservation_Kernel. In a requiremen
 `pyproject.toml` dependency list the line is:
 
 ```
-cns @ git+https://github.com/wking53214/CNS.git@v4.1.0
+cns @ git+https://github.com/wking53214/CNS.git@v4.2.0
 ```
 
 and to put it in an environment by hand:
 
 ```
 python3 -m venv .venv
-.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v4.1.0"
+.venv/bin/pip install "cns @ git+https://github.com/wking53214/CNS.git@v4.2.0"
 ```
 
 Then `from cns.graph import Node, Edge, Graph` and delete the vendored
@@ -714,9 +714,9 @@ Released tags: `v0.1.0` (graph only), `v0.2.0` (adds caller, governance,
 perception), `v1.0.0`, `v1.4.0` (adds `cns.gate`; the composition layer
 moved out of the package to `cns_composition`), `v1.5.0` (adds `cns.stack`
 and the circuit's manifest in `contracts/`), `v1.5.1` (an oddity: it points at a commit older than `v1.5.0` whose
-package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and recorded so, see `CHANGELOG.md`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`), `v2.2.0` (the decision guard: `DecisionGuard`, `same_subject`, `Decision.subject` and the issuance proof; see `CHANGELOG.md`). `v2.3.0` (the evidence spine's fifth hop, CCC's write permission and the evidence guard, `SuperGate` binding and decision expiry; see `CHANGELOG.md`). `v2.4.0` (the strict decision-spine check, roster and context pins on `DecisionGuard`, `consumers.drift(expect=)`, and the `resolve` and `subject_digest` refusals; see `CHANGELOG.md`). `v3.0.0` (`subject_digest` refuses subclasses of `str`, `int`, `float`, `dict`, `list` and `tuple`, and the decision-spine check is hardened; see `CHANGELOG.md`). `v4.0.0` (the decision-spine capability build and its reviews, a major version because `subject_digest` now refuses input it used to digest; see `CHANGELOG.md`). `v4.1.0` (the keyword-only `source` on the CCC record gate and the admission functions, so a source other than the Triad can be admitted; see `CHANGELOG.md`). A raw commit SHA still
-works, but a tag says which contract you are joining on. The newest tag, `v4.1.0`, is the release a consumer pins; what 4.1.0 adds is in
-the `[4.1.0]` entry of `CHANGELOG.md`, what 4.0.0 adds is in the `[4.0.0]` entry, what 3.0.0 adds is in `CHANGELOG.md`, and
+package says 1.4.0, so pinning it installs 1.4.0; it is left where it is and recorded so, see `CHANGELOG.md`), `v1.6.0` (adds `cns.run`, the run record contract), `v1.7.0` (adds the seat contract: `cns.seat`, `cns.defect`, `cns.epistemic`, `cns.suite`), `v1.8.0` (adds `cns.attack` and `cns.finding`, the SWIZZLE attack row and the Ghost finding row), `v1.9.0` (adds `cns.assay`, the ASSAY answer-key summary row), `v2.0.0` (the breaking `StackPin` change and the run-record additions; see `CHANGELOG.md`), `v2.1.0` (the three optional fields `Evidence.ghost_severity`, `RunRecord.claim` and `RunRecord.evidence`), `v2.2.0` (the decision guard: `DecisionGuard`, `same_subject`, `Decision.subject` and the issuance proof; see `CHANGELOG.md`). `v2.3.0` (the evidence spine's fifth hop, CCC's write permission and the evidence guard, `SuperGate` binding and decision expiry; see `CHANGELOG.md`). `v2.4.0` (the strict decision-spine check, roster and context pins on `DecisionGuard`, `consumers.drift(expect=)`, and the `resolve` and `subject_digest` refusals; see `CHANGELOG.md`). `v3.0.0` (`subject_digest` refuses subclasses of `str`, `int`, `float`, `dict`, `list` and `tuple`, and the decision-spine check is hardened; see `CHANGELOG.md`). `v4.0.0` (the decision-spine capability build and its reviews, a major version because `subject_digest` now refuses input it used to digest; see `CHANGELOG.md`). `v4.1.0` (the keyword-only `source` on the CCC record gate and the admission functions, so a source other than the Triad can be admitted; see `CHANGELOG.md`). `v4.2.0` (the optional `Evidence.edit_sources`, where each listed edit came from; see `CHANGELOG.md`). A raw commit SHA still
+works, but a tag says which contract you are joining on. The newest tag, `v4.2.0`, is the release a consumer pins; what 4.2.0 adds is in
+the `[4.2.0]` entry of `CHANGELOG.md`, what 4.1.0 adds is in the `[4.1.0]` entry, what 4.0.0 adds is in the `[4.0.0]` entry, what 3.0.0 adds is in `CHANGELOG.md`, and
 `docs/migrations/2.0.0.md` says what each consumer does about 2.0.0.
 
 ## Anthropic model-provider adapter
@@ -865,7 +865,7 @@ repository's own suite with CNS absent, the second with the `cns` extra installe
 
 | Repository | Version | Tag and GitHub Release | CI on main | Tests (no CNS / with CNS) | CNS pin |
 |---|---|---|---|---|---|
-| CNS | 4.1.0, tagged | Tags `v0.1.0` to `v4.1.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`; `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release. | `ci` and `links` green at `27b0bad` on 2026-11-11; `stack` red (the install file does not resolve until the circuit is re-pinned) | 2150 passed, 0 skipped (measured 2026-11-11 at `27b0bad` in a clean worktree) | not applicable |
+| CNS | 4.2.0, tagged | Tags `v0.1.0` to `v4.2.0`. Releases: `v2.2.0` (latest), `v2.1.0`, `v2.0.0` and `v1.5.1`; `v2.3.0`, `v2.4.0` and `v3.0.0` have their text in `docs/releases/` and no Release. | `ci` and `links` green at `27b0bad` on 2026-11-11; `stack` red (the install file does not resolve until the circuit is re-pinned) | 2150 passed, 0 skipped (measured 2026-11-11 at `27b0bad` in a clean worktree) | not applicable |
 | HERALD | 0.3.0 | none | green | 436 / 464 | the tag `v2.3.0` |
 | TIE | 0.1.0 | none | green | 61 and 1 skipped / 182 | the tag `v2.3.0` |
 | Conservation_Kernel | 0.3.0 | none | green | 177 and 2 skipped / 320 | the tag `v2.3.0` |
