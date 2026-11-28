@@ -124,7 +124,7 @@ jobs:
           path: stack/SIGNET
           # Pinned to an exact commit, the keyholder the `signet:` scenarios start as its own process. Moving it is
           # an explicit act: update this ref in both jobs together, after re-running the chains on the new commit.
-          ref: 75c994eaf9902d4c0808ff5f3ad7d2cda36a7b05
+          ref: e0d7c608e8f1b6cabe888e300bad34492caa99b9
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -314,7 +314,7 @@ jobs:
           path: stack/SIGNET
           # Pinned to an exact commit, the keyholder the `signet:` scenarios start as its own process. Moving it is
           # an explicit act: update this ref in both jobs together, after re-running the chains on the new commit.
-          ref: 75c994eaf9902d4c0808ff5f3ad7d2cda36a7b05
+          ref: e0d7c608e8f1b6cabe888e300bad34492caa99b9
           persist-credentials: false
       - name: Every pin and every checkout is the manifest's
         working-directory: hub
